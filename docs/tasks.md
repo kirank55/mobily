@@ -8,9 +8,9 @@
 ## Phase 0 — CLI Scaffold
 **Goal:** A standalone `cli/` package builds green. Nothing functional yet.
 
-- [ ] `cli/` package: `package.json`, TypeScript, eslint, prettier, tsup, `bin` entry for `npx mobily`
-- [ ] Stub `main()` that prints version (no functionality yet)
-- [ ] Verify: `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` (in `cli/`) all succeed
+- [x] `cli/` package: `package.json`, TypeScript, eslint, prettier, tsup, `bin` entry for `npx mobily`
+- [x] Stub `main()` that prints version (no functionality yet)
+- [x] Verify: `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` (in `cli/`) all succeed
 
 **DoD:** All of the above pass.
 
