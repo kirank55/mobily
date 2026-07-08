@@ -20,10 +20,10 @@
 **Goal:** Local terminal streaming with session persistence, validated from a browser.
 
 ### Monorepo Setup
-- [ ] `pnpm-workspace.yaml` (packages: `cli`, `shared`)
-- [ ] `turbo.json` with `typecheck`, `lint`, `build`, `test` pipelines
-- [ ] Create `shared/` package (`package.json`, TypeScript)
-- [ ] CI: GitHub Actions — typecheck + lint + build + test via turbo pipelines across `cli` + `shared`
+- [x] `pnpm-workspace.yaml` (packages: `cli`, `shared`)
+- [x] `turbo.json` with `typecheck`, `lint`, `build`, `test` pipelines
+- [x] Create `shared/` package (`package.json`, TypeScript)
+- [x] CI: GitHub Actions — typecheck + lint + build + test via turbo pipelines across `cli` + `shared`
 
 ### Shared Wire Protocol
 - [ ] `shared/protocol.ts`: frame types — `input`, `output`, `resize`

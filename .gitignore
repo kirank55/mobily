@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 *.tsbuildinfo
+.turbo/
 
 # Env files
 .env

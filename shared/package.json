@@ -1,18 +1,19 @@
 {
-  "name": "mobily",
+  "name": "@mobily/shared",
   "version": "0.0.0",
-  "description": "Mobile remote-control for terminal-based development environments.",
+  "description": "Shared wire protocol and types for mobily.",
   "type": "module",
   "license": "MIT",
-  "bin": {
-    "mobily": "dist/index.js"
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
-  "files": [
-    "dist"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
+  "files": ["dist"],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
