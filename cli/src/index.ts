@@ -49,7 +49,12 @@ export async function main(): Promise<void> {
 
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
-  console.log(`Pairing code: ${pairingCode}`);
+  console.log();
+  console.log(`  Pairing code: ${pairingCode}`);
+  console.log();
+  console.log('  Enter this code in the Mobily app to pair your device.');
+  console.log('  (QR code display arrives in Phase 3, when the phone scanner ships.)');
+  console.log();
 
   const smokePath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),

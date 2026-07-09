@@ -89,7 +89,7 @@
 - [x] Test (vitest): `cli/tests/auth.test.ts` — code gen/validation, burn, challenge-response (real EC keypair)
 
 ### Pairing Code Display
-- [ ] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
+- [x] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
 
 ### Version Negotiation
 - [ ] `shared/protocol.ts`: add `hello` / `hello-ack` frame types
