@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeFrame,
   encodeFrame,
+  PROTOCOL_VERSION,
+  type AuthChallengeFrame,
+  type AuthResponseFrame,
   type Frame,
+  type HelloAckFrame,
+  type HelloFrame,
   type InputFrame,
   type OutputFrame,
   type ResizeFrame,
@@ -60,11 +65,58 @@ describe('round-trip: union type narrowing', () => {
       { type: 'input', data: 'x' },
       { type: 'output', data: 'y' },
       { type: 'resize', cols: 80, rows: 24 },
+      { type: 'hello', protocolVersion: 1 },
+      { type: 'hello-ack', protocolVersion: 1 },
+      { type: 'auth-challenge', nonce: 'abc123' },
+      { type: 'auth-response', deviceId: 'dev1', signature: 'sig' },
     ];
 
     for (const f of frames) {
       expect(decodeFrame(encodeFrame(f)).type).toBe(f.type);
     }
+  });
+});
+
+describe('round-trip: hello frame', () => {
+  it('preserves protocol version', () => {
+    const frame: HelloFrame = { type: 'hello', protocolVersion: PROTOCOL_VERSION };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('round-trip: hello-ack frame', () => {
+  it('preserves protocol version', () => {
+    const frame: HelloAckFrame = { type: 'hello-ack', protocolVersion: PROTOCOL_VERSION };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('round-trip: auth-challenge frame', () => {
+  it('preserves a base64 nonce', () => {
+    const frame: AuthChallengeFrame = {
+      type: 'auth-challenge',
+      nonce: 'aG VsbG8=',
+    };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('round-trip: auth-response frame', () => {
+  it('preserves deviceId and signature', () => {
+    const frame: AuthResponseFrame = {
+      type: 'auth-response',
+      deviceId: 'android-abc123',
+      signature: 'MEUCIQD...base64sig...',
+    };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('PROTOCOL_VERSION', () => {
+  it('is a positive integer', () => {
+    expect(typeof PROTOCOL_VERSION).toBe('number');
+    expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
+    expect(PROTOCOL_VERSION).toBeGreaterThan(0);
   });
 });
 

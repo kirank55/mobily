@@ -72,28 +72,35 @@
 - [x] Test (vitest): `cli/tests/tunnel.test.ts` — LocalBackend URL shape, bindHost, disconnect
 
 ### Dev Tunnels Integration
-- [ ] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
-- [ ] CLI flag: `--tunnel local|devtunnels` (default: `local`)
+- [x] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
+- [x] `cli/src/tunnel/device-code.ts`: OAuth 2.0 device-code flow against Entra ID (SDK has no built-in auth)
+- [x] `cli/src/tunnel/index.ts`: `createTunnelBackend(tunnelId)` factory + `isTunnelId()` type guard
+- [x] CLI flag: `--tunnel local|devtunnels` (default: `local`) wired in `index.ts` via `node:util.parseArgs`
+- [x] Test (vitest): factory returns LocalBackend for 'local'; throws for 'devtunnels' when unconfigured; `isTunnelId` validates
 
 ### Auth & Pairing
-- [ ] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
-- [ ] HTTPS pairing endpoint at `/.well-known/mobily/pair`
-- [ ] On pairing: validate code → receive Device Key (public key) → store `{ deviceId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
-- [ ] On reconnect: send nonce challenge → verify Device Key signature → accept/reject
-- [ ] Pairing code burned after first successful bind
+- [x] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
+- [x] HTTPS pairing endpoint at `/.well-known/mobily/pair` (HTTP on local, TLS via Dev Tunnels ingress on remote)
+- [x] On pairing: validate code → receive Device Key (public key) → store `{ deviceId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
+- [x] On reconnect: send nonce challenge → verify Device Key signature → accept/reject
+- [x] Pairing code burned after first successful bind
+- [x] `shared/protocol.ts`: add `auth-challenge` / `auth-response` frame types + `PROTOCOL_VERSION`
+- [x] `cli/src/ws.ts` refactored to shared HTTP+WS server (pairing endpoint + WS on same port/tunnel)
+- [x] Test (vitest): `cli/tests/auth.test.ts` — code gen/validation, burn, challenge-response (real EC keypair)
 
 ### Pairing Code Display
-- [ ] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
+- [x] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
 
 ### Version Negotiation
-- [ ] `shared/protocol.ts`: add `hello` / `hello-ack` frame types
-- [ ] `hello`/`hello-ack` frame exchange on WS connect
-- [ ] Incompatible versions: send error message and close connection
+- [x] `shared/protocol.ts`: add `hello` / `hello-ack` frame types
+- [x] `hello`/`hello-ack` frame exchange on WS connect (handshake in `session.ts`: hello → hello-ack → auth-challenge → auth-response)
+- [x] Incompatible versions: send error message and close connection
+- [x] Integration tests: full handshake with valid auth, version mismatch, invalid signature, unbound device
 
 ### Tests
-- [ ] Unit tests: auth/token lifecycle (mock tunnel)
-- [ ] Integration test: pairing flow end-to-end
-- [ ] Integration test: challenge-response auth
+- [x] Unit tests: auth/token lifecycle (mock tunnel) — `cli/tests/auth.test.ts`: code expiry, replacement, multiple devices, re-pair, multiple challenge-response cycles
+- [x] Integration test: pairing flow end-to-end — `cli/tests/pairing.test.ts`: HTTP pair → WS handshake → PTY stream; HTTP error cases (wrong code, missing fields, unknown path, invalid JSON); reconnect after disconnect
+- [x] Integration test: challenge-response auth — `cli/tests/ws.test.ts`: full handshake, version mismatch, invalid signature, unbound device
 
 **DoD:** remote machine connects via tunnel URL and streams shell; unauthenticated connections refused; Device Key challenge-response works; unbound device rejected.
 

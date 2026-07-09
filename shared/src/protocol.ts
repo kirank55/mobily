@@ -4,22 +4,38 @@
  * All WebSocket messages are UTF-8 JSON strings matching one of the frame
  * types below.  Each frame is a discriminated union keyed on `type`.
  *
- * Phase 1 frames (this file):
+ * Phase 1 frames:
  *   input   — keyboard / paste data sent from the client to the CLI
  *   output  — PTY data sent from the CLI to the client
  *   resize  — terminal dimension change (either direction)
  *
+ * Phase 2 frames (this file):
+ *   hello           — client → CLI: protocol version negotiation
+ *   hello-ack       — CLI → client: version acknowledged
+ *   auth-challenge  — CLI → client: nonce for Device Key authentication
+ *   auth-response   — client → CLI: signed nonce for authentication
+ *
  * Later phases will add:
- *   hello / hello-ack  (Phase 2 — version negotiation)
  *   rpc / rpc-stream   (Phase 4 — Git features)
  *   alert              (Phase 5 — backgrounding)
  */
+
+/** Mobily wire protocol version. Incremented on breaking protocol changes. */
+export const PROTOCOL_VERSION = 1;
 
 // ---------------------------------------------------------------------------
 // Frame type literals
 // ---------------------------------------------------------------------------
 
-export const FRAME_TYPES = ['input', 'output', 'resize'] as const;
+export const FRAME_TYPES = [
+  'input',
+  'output',
+  'resize',
+  'hello',
+  'hello-ack',
+  'auth-challenge',
+  'auth-response',
+] as const;
 export type FrameType = (typeof FRAME_TYPES)[number];
 
 // ---------------------------------------------------------------------------
@@ -49,8 +65,45 @@ export interface ResizeFrame {
   rows: number;
 }
 
-/** Union of all Phase 1 wire frames. */
-export type Frame = InputFrame | OutputFrame | ResizeFrame;
+/** CLI → Client: nonce challenge for Device Key authentication. */
+export interface AuthChallengeFrame {
+  type: 'auth-challenge';
+  /** Cryptorandom nonce (base64). The client signs this with its Device Key. */
+  nonce: string;
+}
+
+/** Client → CLI: signed nonce proving Device Key ownership. */
+export interface AuthResponseFrame {
+  type: 'auth-response';
+  /** Device identifier (assigned during pairing). */
+  deviceId: string;
+  /** Base64-encoded signature of the nonce from the challenge. */
+  signature: string;
+}
+
+/** Client → CLI: protocol version negotiation. Sent on WS connect. */
+export interface HelloFrame {
+  type: 'hello';
+  /** Client's protocol version (compared against PROTOCOL_VERSION). */
+  protocolVersion: number;
+}
+
+/** CLI → Client: protocol version acknowledged. */
+export interface HelloAckFrame {
+  type: 'hello-ack';
+  /** Server's protocol version. */
+  protocolVersion: number;
+}
+
+/** Union of all wire frames. */
+export type Frame =
+  | InputFrame
+  | OutputFrame
+  | ResizeFrame
+  | HelloFrame
+  | HelloAckFrame
+  | AuthChallengeFrame
+  | AuthResponseFrame;
 
 // ---------------------------------------------------------------------------
 // Encode
@@ -98,6 +151,14 @@ export function decodeFrame(raw: string): Frame {
       return validateOutputFrame(obj);
     case 'resize':
       return validateResizeFrame(obj);
+    case 'auth-challenge':
+      return validateAuthChallengeFrame(obj);
+    case 'auth-response':
+      return validateAuthResponseFrame(obj);
+    case 'hello':
+      return validateHelloFrame(obj);
+    case 'hello-ack':
+      return validateHelloAckFrame(obj);
     default:
       throw new TypeError(
         `mobily/protocol: unknown frame type "${String(obj['type'])}"`,
@@ -143,4 +204,47 @@ function validateResizeFrame(obj: Record<string, unknown>): ResizeFrame {
   }
 
   return { type: 'resize', cols, rows };
+}
+
+function validateAuthChallengeFrame(obj: Record<string, unknown>): AuthChallengeFrame {
+  if (typeof obj['nonce'] !== 'string' || obj['nonce'].length === 0) {
+    throw new TypeError(
+      `mobily/protocol: AuthChallengeFrame.nonce must be a non-empty string, got ${typeof obj['nonce']}`,
+    );
+  }
+  return { type: 'auth-challenge', nonce: obj['nonce'] };
+}
+
+function validateAuthResponseFrame(obj: Record<string, unknown>): AuthResponseFrame {
+  if (typeof obj['deviceId'] !== 'string' || obj['deviceId'].length === 0) {
+    throw new TypeError(
+      `mobily/protocol: AuthResponseFrame.deviceId must be a non-empty string, got ${typeof obj['deviceId']}`,
+    );
+  }
+  if (typeof obj['signature'] !== 'string' || obj['signature'].length === 0) {
+    throw new TypeError(
+      `mobily/protocol: AuthResponseFrame.signature must be a non-empty string, got ${typeof obj['signature']}`,
+    );
+  }
+  return { type: 'auth-response', deviceId: obj['deviceId'], signature: obj['signature'] };
+}
+
+function validateHelloFrame(obj: Record<string, unknown>): HelloFrame {
+  const v = obj['protocolVersion'];
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    throw new TypeError(
+      `mobily/protocol: HelloFrame.protocolVersion must be a positive integer, got ${String(v)}`,
+    );
+  }
+  return { type: 'hello', protocolVersion: v };
+}
+
+function validateHelloAckFrame(obj: Record<string, unknown>): HelloAckFrame {
+  const v = obj['protocolVersion'];
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    throw new TypeError(
+      `mobily/protocol: HelloAckFrame.protocolVersion must be a positive integer, got ${String(v)}`,
+    );
+  }
+  return { type: 'hello-ack', protocolVersion: v };
 }

@@ -4,10 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>mobily — smoke test</title>
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
-    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <style>
       :root {
         color-scheme: dark;
@@ -22,7 +19,10 @@
         background: #000;
         color: #e6e6e6;
         font:
-          13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          13px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
           sans-serif;
       }
       #bar {
@@ -64,12 +64,75 @@
         bottom: 0;
         padding: 4px;
       }
+      #pair {
+        position: absolute;
+        top: 30px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.7em;
+        background: rgba(0, 0, 0, 0.95);
+        z-index: 10;
+      }
+      #pair label {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: #9a9a9a;
+      }
+      #pair input {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 20px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        text-align: center;
+        width: 12em;
+        padding: 0.5em 0.7em;
+        color: #e6e6e6;
+        background: #161616;
+        border: 1px solid #2a2a2a;
+        border-radius: 4px;
+      }
+      #pair input:focus {
+        outline: none;
+        border-color: #2ea043;
+      }
+      #pair button {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        padding: 0.5em 1.1em;
+        color: #fff;
+        background: #2ea043;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #pair button:disabled {
+        color: #6a6a6a;
+        background: #2a2a2a;
+        cursor: default;
+      }
     </style>
   </head>
   <body>
     <div id="bar">
       <span id="dot"></span>
       <span id="status">mobily smoke test</span>
+    </div>
+    <div id="pair">
+      <label for="code">Pairing code</label>
+      <input
+        id="code"
+        maxlength="8"
+        placeholder="ABCD2345"
+        autocapitalize="characters"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="go">Pair &amp; Connect</button>
     </div>
     <div id="term"></div>
 
@@ -117,46 +180,171 @@
       window.addEventListener('resize', () => fitAddon.fit());
 
       // ---------------------------------------------------------------------------
-      // WebSocket
+      // Crypto helpers — ECDSA P-256 via Web Crypto, matching the CLI's verify.
       // ---------------------------------------------------------------------------
-      const url = `ws://localhost:${port}`;
-      const ws = new WebSocket(url);
+
+      // Web Crypto ECDSA signs in IEEE P1363 (raw r||s); Node's createVerify
+      // expects DER (SEQUENCE { INTEGER r, INTEGER s }). Convert before sending.
+      function ecRawToDer(raw) {
+        const r = raw.subarray(0, 32);
+        const s = raw.subarray(32, 64);
+        const derInt = (b) => {
+          let i = 0;
+          while (i < b.length - 1 && b[i] === 0) i++;
+          const out = Array.from(b.subarray(i));
+          if (out[0] & 0x80) out.unshift(0);
+          return [0x02, out.length, ...out];
+        };
+        const body = [...derInt(r), ...derInt(s)];
+        return new Uint8Array([0x30, body.length, ...body]);
+      }
+
+      function bytesToB64(bytes) {
+        let s = '';
+        for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+        return btoa(s);
+      }
+
+      function spkiToPem(ab) {
+        const b64 = bytesToB64(new Uint8Array(ab));
+        return (
+          '-----BEGIN PUBLIC KEY-----\n' +
+          b64.match(/.{1,64}/g).join('\n') +
+          '\n-----END PUBLIC KEY-----\n'
+        );
+      }
+
+      async function generateDeviceKey() {
+        const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+          'sign',
+          'verify',
+        ]);
+        const spki = await crypto.subtle.exportKey('spki', pair.publicKey);
+        return { publicKey: spkiToPem(spki), privateKey: pair.privateKey };
+      }
+
+      async function signNonce(privateKey, nonce) {
+        const sig = await crypto.subtle.sign(
+          { name: 'ECDSA', hash: 'SHA-256' },
+          privateKey,
+          new TextEncoder().encode(nonce),
+        );
+        return bytesToB64(ecRawToDer(new Uint8Array(sig)));
+      }
+
+      // ---------------------------------------------------------------------------
+      // Pairing + WebSocket handshake
+      // ---------------------------------------------------------------------------
+
+      const deviceId = 'smoke-' + Math.random().toString(36).slice(2, 8);
+      const codeInput = document.getElementById('code');
+      const goButton = document.getElementById('go');
+      const pairPanel = document.getElementById('pair');
+      let ws = null;
+      let ready = false;
+
+      setState('disconnected', 'enter the pairing code shown by the CLI');
+      goButton.addEventListener('click', () => void connect());
 
       function send(frame) {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
       }
 
       function sendResize() {
-        send({ type: 'resize', cols: term.cols, rows: term.rows });
+        if (ready) send({ type: 'resize', cols: term.cols, rows: term.rows });
       }
 
-      ws.addEventListener('open', () => {
-        setState('connected', `connected — ${url}`);
-        fitAddon.fit();
-        sendResize();
-      });
-
-      ws.addEventListener('message', (ev) => {
-        let frame;
-        try {
-          frame = JSON.parse(ev.data);
-        } catch {
+      async function connect() {
+        const code = codeInput.value.trim().toUpperCase();
+        if (!code) {
+          setState('disconnected', 'enter the pairing code shown by the CLI');
           return;
         }
-        if (frame && frame.type === 'output') term.write(frame.data);
-      });
+        goButton.disabled = true;
+        setState('connecting', 'generating device key…');
 
-      ws.addEventListener('close', () => {
-        setState('disconnected', 'disconnected — reload to reattach');
-        term.write('\r\n\x1b[31m[disconnected]\x1b[0m\r\n');
-      });
+        let keys;
+        try {
+          keys = await generateDeviceKey();
+        } catch {
+          setState(
+            'disconnected',
+            'Web Crypto unavailable — open over http(s)://localhost instead of file://',
+          );
+          goButton.disabled = false;
+          return;
+        }
 
-      ws.addEventListener('error', () => {
-        setState('disconnected', `connection error — ${url}`);
-      });
+        // Pair over HTTP. `no-cors` lets the POST leave a file:// origin; the
+        // response is opaque, so we proceed and let WS auth surface failures
+        // (e.g. wrong/expired code → close 4001 "auth failed").
+        setState('connecting', 'pairing…');
+        try {
+          await fetch(`http://localhost:${port}/.well-known/mobily/pair`, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({ code, deviceId, publicKey: keys.publicKey }),
+          });
+        } catch (err) {
+          setState('disconnected', `pairing request failed — ${err.message}`);
+          goButton.disabled = false;
+          return;
+        }
 
-      // Keystrokes / paste → input frame.
-      term.onData((data) => send({ type: 'input', data }));
+        setState('connecting', 'paired — opening socket…');
+        pairPanel.style.display = 'none';
+
+        // hello → hello-ack → auth-challenge → auth-response, then PTY stream.
+        ws = new WebSocket(`ws://localhost:${port}`);
+
+        ws.addEventListener('open', () => {
+          setState('connecting', 'socket open — negotiating');
+          send({ type: 'hello', protocolVersion: 1 });
+        });
+
+        ws.addEventListener('message', (ev) => {
+          let frame;
+          try {
+            frame = JSON.parse(ev.data);
+          } catch {
+            return;
+          }
+          if (frame.type === 'output') {
+            term.write(frame.data);
+          } else if (frame.type === 'hello-ack') {
+            setState('connecting', 'hello-ack — awaiting challenge');
+          } else if (frame.type === 'auth-challenge') {
+            setState('connecting', 'challenge — signing nonce');
+            void respondToChallenge(frame.nonce, keys.privateKey);
+          }
+        });
+
+        ws.addEventListener('close', (ev) => {
+          ready = false;
+          const reason = ev.reason ? `: ${ev.reason}` : '';
+          setState('disconnected', `disconnected (code ${ev.code}${reason}) — reload to retry`);
+          term.write(`\r\n\x1b[31m[disconnected${reason}]\x1b[0m\r\n`);
+        });
+
+        ws.addEventListener('error', () => {
+          setState('disconnected', `connection error — ws://localhost:${port}`);
+        });
+      }
+
+      async function respondToChallenge(nonce, privateKey) {
+        const signature = await signNonce(privateKey, nonce);
+        send({ type: 'auth-response', deviceId, signature });
+        ready = true;
+        setState('connected', `connected — ${deviceId}`);
+        fitAddon.fit();
+        sendResize();
+        term.focus();
+      }
+
+      // Keystrokes / paste → input frame (only after auth).
+      term.onData((data) => {
+        if (ready) send({ type: 'input', data });
+      });
 
       // Terminal resize (fit, window, etc.) → resize frame.
       term.onResize(() => sendResize());
