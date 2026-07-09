@@ -36,8 +36,8 @@
 - [x] Test (vitest): `cli/tests/pty.test.ts` — spawns a shell on Windows
 
 ### WebSocket Server
-- [ ] `cli/src/ws.ts`: `ws` server on `localhost:<port>`
-- [ ] `cli/src/session.ts`: glue PTY ↔ WS; encode/decode JSON frames; hold the `PtyProcess` directly so the session survives WS disconnect (bare behavior — the `SessionBackend` abstraction + `TmuxBackend` arrive in Phase 5, when tmux's crash-survival benefit is first exercised)
+- [x] `cli/src/ws.ts`: `ws` server on `localhost:<port>`
+- [x] `cli/src/session.ts`: glue PTY ↔ WS; encode/decode JSON frames; hold the `PtyProcess` directly so the session survives WS disconnect (bare behavior — the `SessionBackend` abstraction + `TmuxBackend` arrive in Phase 5, when tmux's crash-survival benefit is first exercised)
 
 ### Browser Smoke Test
 - [ ] `cli/smoke.html`: connect to WS, render output, send keys, resize
@@ -48,7 +48,7 @@
 - [ ] SIGINT handler kills PTY gracefully
 
 ### Tests
-- [ ] Integration test: WS client → PTY round-trip
+- [x] Integration test: WS client → PTY round-trip
 
 **DoD:** type in browser → drives real shell; `vim`/`nano`/`htop` render correctly; resize propagates; close browser → reopen → session alive (PTY held by CLI process).
 
