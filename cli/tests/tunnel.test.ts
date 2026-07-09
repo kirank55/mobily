@@ -9,6 +9,7 @@
 import * as os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { LocalBackend, primaryLanIp } from '../src/tunnel/local.js';
+import { createTunnelBackend, isTunnelId } from '../src/tunnel/index.js';
 import type { TunnelBackend } from '../src/tunnel/types.js';
 
 describe('LocalBackend', () => {
@@ -78,5 +79,39 @@ describe('primaryLanIp()', () => {
       }
     }
     expect(allAddresses).toContain(ip);
+  });
+});
+
+describe('isTunnelId()', () => {
+  it('accepts "local" and "devtunnels"', () => {
+    expect(isTunnelId('local')).toBe(true);
+    expect(isTunnelId('devtunnels')).toBe(true);
+  });
+
+  it('rejects unknown values', () => {
+    expect(isTunnelId('bore')).toBe(false);
+    expect(isTunnelId('')).toBe(false);
+    expect(isTunnelId('ssh')).toBe(false);
+  });
+});
+
+describe('createTunnelBackend()', () => {
+  it("returns a LocalBackend for 'local'", async () => {
+    const backend = await createTunnelBackend('local');
+    expect(backend.id).toBe('local');
+    expect(backend.bindHost).toBe('0.0.0.0');
+  });
+
+  it("throws for 'devtunnels' when no client ID is configured", async () => {
+    // Ensure no env var is set so the default (empty) client ID is used.
+    const saved = process.env['MOBILY_DEVTUNNELS_CLIENT_ID'];
+    delete process.env['MOBILY_DEVTUNNELS_CLIENT_ID'];
+    try {
+      await expect(createTunnelBackend('devtunnels')).rejects.toThrow(
+        /not configured/i,
+      );
+    } finally {
+      if (saved !== undefined) process.env['MOBILY_DEVTUNNELS_CLIENT_ID'] = saved;
+    }
   });
 });

@@ -1,18 +1,38 @@
 import { createRequire } from 'node:module';
+import { parseArgs } from 'node:util';
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Session } from './session.js';
 import { startServer } from './ws.js';
-import { LocalBackend } from './tunnel/local.js';
+import {
+  createTunnelBackend,
+  isTunnelId,
+  type TunnelId,
+} from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
 
 export async function main(): Promise<void> {
-  const tunnel = new LocalBackend();
+  const { values } = parseArgs({
+    options: {
+      tunnel: { type: 'string', default: 'local' },
+    },
+  });
+
+  const tunnelFlag = values.tunnel;
+  if (!tunnelFlag || !isTunnelId(tunnelFlag)) {
+    console.error(
+      `Unknown --tunnel value: '${tunnelFlag}'. Use 'local' (default) or 'devtunnels'.`,
+    );
+    process.exit(1);
+  }
+  const tunnelId: TunnelId = tunnelFlag;
+
+  const tunnel = await createTunnelBackend(tunnelId);
   const session = new Session({ cols: 80, rows: 24 });
   const server = await startServer({ session, host: tunnel.bindHost });
   const connection: TunnelConnection = await tunnel.connect(server.port);
