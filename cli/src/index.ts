@@ -5,16 +5,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Session } from './session.js';
 import { startServer } from './ws.js';
+import { LocalBackend } from './tunnel/local.js';
+import type { TunnelConnection } from './tunnel/types.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
 
 export async function main(): Promise<void> {
+  const tunnel = new LocalBackend();
   const session = new Session({ cols: 80, rows: 24 });
-  const server = await startServer({ session });
+  const server = await startServer({ session, host: tunnel.bindHost });
+  const connection: TunnelConnection = await tunnel.connect(server.port);
 
   console.log(`mobily v${pkg.version}`);
-  console.log(`WebSocket:  ${server.url}`);
+  console.log(`Tunnel:     ${connection.url}`);
 
   const smokePath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -37,6 +41,7 @@ export async function main(): Promise<void> {
     try {
       session.dispose();
       await server.close();
+      await connection.disconnect();
     } catch (err) {
       console.error(err);
     } finally {
