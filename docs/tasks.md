@@ -4,6 +4,12 @@
 > until the previous phase's DoD is met. Within a phase, complete steps in order —
 > each step lists what to build and where. Only build what's listed; anything else
 > belongs in a later phase.
+>
+> **Dev/debug code is kept separate from production source in every phase.**
+> Smoke pages, debug harnesses, latency instrumentation, and similar dev-only
+> artifacts live in a `dev/` subfolder of their package (e.g. `cli/dev/`), never
+> alongside production source in `src/`. Production packages exclude `dev/` from
+> their published `files` list.
 
 ## Phase 0 — CLI Scaffold
 **Goal:** A standalone `cli/` package builds green. Nothing functional yet.
@@ -40,12 +46,12 @@
 - [x] `cli/src/session.ts`: glue PTY ↔ WS; encode/decode JSON frames; hold the `PtyProcess` directly so the session survives WS disconnect (bare behavior — the `SessionBackend` abstraction + `TmuxBackend` arrive in Phase 5, when tmux's crash-survival benefit is first exercised)
 
 ### Browser Smoke Test
-- [ ] `cli/smoke.html`: connect to WS, render output, send keys, resize
+- [x] `cli/dev/smoke.html`: connect to WS, render output, send keys, resize
 - [ ] Verify: `vim`/`nano`/`htop` render correctly
 
 ### Lifecycle
-- [ ] Clean shutdown on client disconnect (session stays alive)
-- [ ] SIGINT handler kills PTY gracefully
+- [x] Clean shutdown on client disconnect (session stays alive)
+- [x] SIGINT handler kills PTY gracefully
 
 ### Tests
 - [x] Integration test: WS client → PTY round-trip
