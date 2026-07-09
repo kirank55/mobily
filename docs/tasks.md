@@ -47,7 +47,7 @@
 
 ### Browser Smoke Test
 - [x] `cli/dev/smoke.html`: connect to WS, render output, send keys, resize
-- [ ] Verify: `vim`/`nano`/`htop` render correctly
+- [x] Verify: `vim`/`nano`/`htop` render correctly
 
 ### Lifecycle
 - [x] Clean shutdown on client disconnect (session stays alive)
