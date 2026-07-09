@@ -6,6 +6,8 @@ import {
   type AuthChallengeFrame,
   type AuthResponseFrame,
   type Frame,
+  type HelloAckFrame,
+  type HelloFrame,
   type InputFrame,
   type OutputFrame,
   type ResizeFrame,
@@ -63,6 +65,8 @@ describe('round-trip: union type narrowing', () => {
       { type: 'input', data: 'x' },
       { type: 'output', data: 'y' },
       { type: 'resize', cols: 80, rows: 24 },
+      { type: 'hello', protocolVersion: 1 },
+      { type: 'hello-ack', protocolVersion: 1 },
       { type: 'auth-challenge', nonce: 'abc123' },
       { type: 'auth-response', deviceId: 'dev1', signature: 'sig' },
     ];
@@ -70,6 +74,20 @@ describe('round-trip: union type narrowing', () => {
     for (const f of frames) {
       expect(decodeFrame(encodeFrame(f)).type).toBe(f.type);
     }
+  });
+});
+
+describe('round-trip: hello frame', () => {
+  it('preserves protocol version', () => {
+    const frame: HelloFrame = { type: 'hello', protocolVersion: PROTOCOL_VERSION };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('round-trip: hello-ack frame', () => {
+  it('preserves protocol version', () => {
+    const frame: HelloAckFrame = { type: 'hello-ack', protocolVersion: PROTOCOL_VERSION };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
   });
 });
 

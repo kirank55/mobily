@@ -11,10 +11,13 @@
  */
 
 import * as os from 'node:os';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket, type RawData } from 'ws';
+import { PROTOCOL_VERSION } from '@mobily/shared';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
+import { AuthManager } from '../src/auth.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -247,5 +250,207 @@ describe('session survives client disconnect', () => {
       expect(session.closed).toBe(false);
     },
     20000,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Handshake tests: hello → hello-ack → auth-challenge → auth-response
+// ---------------------------------------------------------------------------
+
+function generateKeyPair(): { publicKeyPem: string; privateKeyPem: string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ec', {
+    namedCurve: 'P-256',
+  });
+  return {
+    publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString('utf8'),
+    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString('utf8'),
+  };
+}
+
+function signNonce(privateKeyPem: string, nonce: string): string {
+  return sign('SHA256', Buffer.from(nonce), privateKeyPem).toString('base64');
+}
+
+/** Collect frames of a specific type. Buffers all messages to avoid races. */
+function frameBuffer(ws: WebSocket): {
+  waitFor(type: string, timeoutMs?: number): Promise<Record<string, unknown>>;
+  getNonce(): string;
+} {
+  const frames: Record<string, unknown>[] = [];
+  ws.on('message', (raw: RawData) => {
+    try {
+      frames.push(JSON.parse(toText(raw)) as Record<string, unknown>);
+    } catch {
+      // ignore non-JSON
+    }
+  });
+
+  return {
+    async waitFor(type: string, timeoutMs = 5000): Promise<Record<string, unknown>> {
+      await vi.waitFor(
+        () => {
+          expect(frames.some((f) => f['type'] === type)).toBe(true);
+        },
+        { timeout: timeoutMs, interval: 50 },
+      );
+      const frame = frames.find((f) => f['type'] === type)!;
+      return frame;
+    },
+    getNonce(): string {
+      const challenge = frames.find((f) => f['type'] === 'auth-challenge');
+      return challenge?.['nonce'] as string;
+    },
+  };
+}
+
+describe('handshake: version negotiation + auth', () => {
+  it(
+    'completes the full handshake and streams PTY output',
+    async () => {
+      const auth = new AuthManager('test-station');
+      auth.setTunnelUrl('ws://test:9999');
+      const code = auth.generatePairingCode();
+      const { publicKeyPem, privateKeyPem } = generateKeyPair();
+      auth.pair(code, 'device-1', publicKeyPem);
+
+      const session = new Session({ cols: 80, rows: 24, auth });
+      sessions.push(session);
+      const server = await startServer({ session });
+      servers.push(server);
+
+      const ws = new WebSocket(server.url);
+      await waitForOpen(ws);
+      conns.push(ws);
+
+      const fb = frameBuffer(ws);
+
+      // Step 1: send hello
+      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+
+      // Step 2: expect hello-ack + auth-challenge
+      const ack = await fb.waitFor('hello-ack');
+      expect(ack['protocolVersion']).toBe(PROTOCOL_VERSION);
+
+      const challenge = await fb.waitFor('auth-challenge');
+      const nonce = challenge['nonce'] as string;
+      expect(nonce).toBeTruthy();
+
+      // Step 3: sign and send auth-response
+      const signature = signNonce(privateKeyPem, nonce);
+      sendFrame(ws, { type: 'auth-response', deviceId: 'device-1', signature });
+
+      // Step 4: verify PTY output streams
+      sendFrame(ws, { type: 'input', data: `echo HANDSHAKE_OK${eol()}` });
+      const out = await collectOutput(ws, (b) => b.includes('HANDSHAKE_OK'));
+      expect(out).toContain('HANDSHAKE_OK');
+    },
+    20000,
+  );
+
+  it(
+    'rejects version mismatch and closes the connection',
+    async () => {
+      const auth = new AuthManager('test-station');
+      auth.setTunnelUrl('ws://test:9999');
+      const code = auth.generatePairingCode();
+      const { publicKeyPem } = generateKeyPair();
+      auth.pair(code, 'device-1', publicKeyPem);
+
+      const session = new Session({ cols: 80, rows: 24, auth });
+      sessions.push(session);
+      const server = await startServer({ session });
+      servers.push(server);
+
+      const ws = new WebSocket(server.url);
+      await waitForOpen(ws);
+      conns.push(ws);
+
+      sendFrame(ws, { type: 'hello', protocolVersion: 999 });
+
+      const out = await collectOutput(ws, (b) => b.includes('version mismatch'));
+      expect(out).toContain('version mismatch');
+
+      await waitForClose(ws);
+      expect(ws.readyState).toBe(WebSocket.CLOSED);
+    },
+    15000,
+  );
+
+  it(
+    'rejects invalid auth signature and closes the connection',
+    async () => {
+      const auth = new AuthManager('test-station');
+      auth.setTunnelUrl('ws://test:9999');
+      const code = auth.generatePairingCode();
+      const { publicKeyPem } = generateKeyPair();
+      auth.pair(code, 'device-1', publicKeyPem);
+
+      const session = new Session({ cols: 80, rows: 24, auth });
+      sessions.push(session);
+      const server = await startServer({ session });
+      servers.push(server);
+
+      const ws = new WebSocket(server.url);
+      await waitForOpen(ws);
+      conns.push(ws);
+
+      const fb = frameBuffer(ws);
+
+      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+      await fb.waitFor('hello-ack');
+      await fb.waitFor('auth-challenge');
+
+      sendFrame(ws, {
+        type: 'auth-response',
+        deviceId: 'device-1',
+        signature: Buffer.from('fake-signature').toString('base64'),
+      });
+
+      const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
+      expect(out).toContain('authentication failed');
+
+      await waitForClose(ws);
+      expect(ws.readyState).toBe(WebSocket.CLOSED);
+    },
+    15000,
+  );
+
+  it(
+    'rejects unbound device and closes the connection',
+    async () => {
+      const auth = new AuthManager('test-station');
+      auth.setTunnelUrl('ws://test:9999');
+
+      const session = new Session({ cols: 80, rows: 24, auth });
+      sessions.push(session);
+      const server = await startServer({ session });
+      servers.push(server);
+
+      const ws = new WebSocket(server.url);
+      await waitForOpen(ws);
+      conns.push(ws);
+
+      const fb = frameBuffer(ws);
+
+      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+      await fb.waitFor('hello-ack');
+      const challenge = await fb.waitFor('auth-challenge');
+      const nonce = challenge['nonce'] as string;
+
+      const { privateKeyPem } = generateKeyPair();
+      const signature = signNonce(privateKeyPem, nonce);
+      sendFrame(ws, {
+        type: 'auth-response',
+        deviceId: 'unknown-device',
+        signature,
+      });
+
+      const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
+      expect(out).toContain('authentication failed');
+
+      await waitForClose(ws);
+      expect(ws.readyState).toBe(WebSocket.CLOSED);
+    },
+    15000,
   );
 });

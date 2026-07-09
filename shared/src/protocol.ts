@@ -10,11 +10,12 @@
  *   resize  — terminal dimension change (either direction)
  *
  * Phase 2 frames (this file):
+ *   hello           — client → CLI: protocol version negotiation
+ *   hello-ack       — CLI → client: version acknowledged
  *   auth-challenge  — CLI → client: nonce for Device Key authentication
  *   auth-response   — client → CLI: signed nonce for authentication
  *
  * Later phases will add:
- *   hello / hello-ack  (Phase 2 — version negotiation)
  *   rpc / rpc-stream   (Phase 4 — Git features)
  *   alert              (Phase 5 — backgrounding)
  */
@@ -30,6 +31,8 @@ export const FRAME_TYPES = [
   'input',
   'output',
   'resize',
+  'hello',
+  'hello-ack',
   'auth-challenge',
   'auth-response',
 ] as const;
@@ -78,11 +81,27 @@ export interface AuthResponseFrame {
   signature: string;
 }
 
+/** Client → CLI: protocol version negotiation. Sent on WS connect. */
+export interface HelloFrame {
+  type: 'hello';
+  /** Client's protocol version (compared against PROTOCOL_VERSION). */
+  protocolVersion: number;
+}
+
+/** CLI → Client: protocol version acknowledged. */
+export interface HelloAckFrame {
+  type: 'hello-ack';
+  /** Server's protocol version. */
+  protocolVersion: number;
+}
+
 /** Union of all wire frames. */
 export type Frame =
   | InputFrame
   | OutputFrame
   | ResizeFrame
+  | HelloFrame
+  | HelloAckFrame
   | AuthChallengeFrame
   | AuthResponseFrame;
 
@@ -136,6 +155,10 @@ export function decodeFrame(raw: string): Frame {
       return validateAuthChallengeFrame(obj);
     case 'auth-response':
       return validateAuthResponseFrame(obj);
+    case 'hello':
+      return validateHelloFrame(obj);
+    case 'hello-ack':
+      return validateHelloAckFrame(obj);
     default:
       throw new TypeError(
         `mobily/protocol: unknown frame type "${String(obj['type'])}"`,
@@ -204,4 +227,24 @@ function validateAuthResponseFrame(obj: Record<string, unknown>): AuthResponseFr
     );
   }
   return { type: 'auth-response', deviceId: obj['deviceId'], signature: obj['signature'] };
+}
+
+function validateHelloFrame(obj: Record<string, unknown>): HelloFrame {
+  const v = obj['protocolVersion'];
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    throw new TypeError(
+      `mobily/protocol: HelloFrame.protocolVersion must be a positive integer, got ${String(v)}`,
+    );
+  }
+  return { type: 'hello', protocolVersion: v };
+}
+
+function validateHelloAckFrame(obj: Record<string, unknown>): HelloAckFrame {
+  const v = obj['protocolVersion'];
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    throw new TypeError(
+      `mobily/protocol: HelloAckFrame.protocolVersion must be a positive integer, got ${String(v)}`,
+    );
+  }
+  return { type: 'hello-ack', protocolVersion: v };
 }
