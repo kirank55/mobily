@@ -1,11 +1,13 @@
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Session } from './session.js';
 import { startServer } from './ws.js';
+import { AuthManager } from './auth.js';
 import {
   createTunnelBackend,
   isTunnelId,
@@ -32,13 +34,22 @@ export async function main(): Promise<void> {
   }
   const tunnelId: TunnelId = tunnelFlag;
 
+  const auth = new AuthManager(os.hostname());
   const tunnel = await createTunnelBackend(tunnelId);
   const session = new Session({ cols: 80, rows: 24 });
-  const server = await startServer({ session, host: tunnel.bindHost });
+  const server = await startServer({
+    session,
+    host: tunnel.bindHost,
+    httpRequestHandler: (req, res) => auth.handleHttpRequest(req, res),
+  });
   const connection: TunnelConnection = await tunnel.connect(server.port);
+  auth.setTunnelUrl(connection.url);
+
+  const pairingCode = auth.generatePairingCode();
 
   console.log(`mobily v${pkg.version}`);
-  console.log(`Tunnel:     ${connection.url}`);
+  console.log(`Tunnel:       ${connection.url}`);
+  console.log(`Pairing code: ${pairingCode}`);
 
   const smokePath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -47,9 +58,9 @@ export async function main(): Promise<void> {
     'smoke.html',
   );
   if (existsSync(smokePath)) {
-    console.log(`Smoke test: ${pathToFileURL(smokePath).href}?port=${server.port}`);
+    console.log(`Smoke test:   ${pathToFileURL(smokePath).href}?port=${server.port}`);
   } else {
-    console.log(`Smoke test: open cli/dev/smoke.html?port=${server.port}`);
+    console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
   console.log('Press Ctrl+C to exit.');
 

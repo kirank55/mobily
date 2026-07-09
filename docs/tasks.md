@@ -79,11 +79,14 @@
 - [x] Test (vitest): factory returns LocalBackend for 'local'; throws for 'devtunnels' when unconfigured; `isTunnelId` validates
 
 ### Auth & Pairing
-- [ ] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
-- [ ] HTTPS pairing endpoint at `/.well-known/mobily/pair`
-- [ ] On pairing: validate code → receive Device Key (public key) → store `{ deviceId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
-- [ ] On reconnect: send nonce challenge → verify Device Key signature → accept/reject
-- [ ] Pairing code burned after first successful bind
+- [x] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
+- [x] HTTPS pairing endpoint at `/.well-known/mobily/pair` (HTTP on local, TLS via Dev Tunnels ingress on remote)
+- [x] On pairing: validate code → receive Device Key (public key) → store `{ deviceId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
+- [x] On reconnect: send nonce challenge → verify Device Key signature → accept/reject
+- [x] Pairing code burned after first successful bind
+- [x] `shared/protocol.ts`: add `auth-challenge` / `auth-response` frame types + `PROTOCOL_VERSION`
+- [x] `cli/src/ws.ts` refactored to shared HTTP+WS server (pairing endpoint + WS on same port/tunnel)
+- [x] Test (vitest): `cli/tests/auth.test.ts` — code gen/validation, burn, challenge-response (real EC keypair)
 
 ### Pairing Code Display
 - [ ] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
