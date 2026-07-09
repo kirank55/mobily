@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Session } from './session.js';
 import { startServer } from './ws.js';
 import { AuthManager } from './auth.js';
+import { renderTerminalQr } from './qr.js';
 import {
   createTunnelBackend,
   isTunnelId,
@@ -50,10 +51,23 @@ export async function main(): Promise<void> {
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
   console.log();
+  console.log('  Scan this QR with the Mobily app to pair your device:');
+  console.log();
+  try {
+    const qr = await renderTerminalQr(pairingCode);
+    const indent = '  ';
+    console.log(qr.split('\n').map((line) => `${indent}${line}`).join('\n'));
+  } catch (err) {
+    console.error(
+      `  (QR unavailable — enter the code below) ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  console.log();
   console.log(`  Pairing code: ${pairingCode}`);
   console.log();
-  console.log('  Enter this code in the Mobily app to pair your device.');
-  console.log('  (QR code display arrives in Phase 3, when the phone scanner ships.)');
+  console.log('  Or enter this code in the Mobily app to pair your device.');
   console.log();
 
   const smokePath = path.resolve(
