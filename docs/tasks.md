@@ -26,8 +26,8 @@
 - [x] CI: GitHub Actions — typecheck + lint + build + test via turbo pipelines across `cli` + `shared`
 
 ### Shared Wire Protocol
-- [ ] `shared/protocol.ts`: frame types — `input`, `output`, `resize`
-- [ ] Unit tests (vitest): frame encode/decode round-trip + error cases
+- [x] `shared/protocol.ts`: frame types — `input`, `output`, `resize`
+- [x] Unit tests (vitest): frame encode/decode round-trip + error cases
 
 ### node-pty Validation
 - [ ] `cli/src/pty/node-pty.ts`: PTY wrapper — `spawn()`, `write()`, `onData()`, `resize()`, `kill()` (extract a `PtyBackend` interface only if a second implementation materializes)
