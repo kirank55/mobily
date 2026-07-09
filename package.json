@@ -13,6 +13,8 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "android:prebuild": "turbo run prebuild --filter=mobily-android",
+    "android:build": "turbo run build:android --filter=mobily-android",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

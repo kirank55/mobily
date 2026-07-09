@@ -11,6 +11,8 @@
     "lint": {},
     "test": {
       "dependsOn": ["^build"]
-    }
+    },
+    "prebuild": {},
+    "build:android": {}
   }
 }
