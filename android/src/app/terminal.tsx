@@ -26,7 +26,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { WsClient, type ConnectionState } from '@/client/wsClient';
+import { WsClient, type ConnectionState, type ErrorKind } from '@/client/wsClient';
 import { loadPairing, clearPairing } from '@/auth/storage';
 import { PROTOCOL_VERSION } from '@mobily/shared';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
@@ -34,6 +34,7 @@ import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
 export default function TerminalRoute() {
   const [connState, setConnState]     = useState<ConnectionState>('disconnected');
   const [detail, setDetail]           = useState('');
+  const [errorKind, setErrorKind]     = useState<ErrorKind>('generic');
   const [stationName, setStationName] = useState('Station');
   const [termReady, setTermReady]     = useState(false);
 
@@ -82,9 +83,10 @@ export default function TerminalRoute() {
           setConnState('connected');
         },
 
-        onError: (msg) => {
+        onError: (msg, kind) => {
           if (cancelledRef.current) return;
           setDetail(msg);
+          setErrorKind(kind ?? 'generic');
         },
       });
 
@@ -103,13 +105,16 @@ export default function TerminalRoute() {
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active' && clientRef.current) {
         const s = clientRef.current.currentState;
+        // Don't retry auth-rejection failures — they need re-pairing
         if (s === 'disconnected' || s === 'failed') {
-          clientRef.current.connect();
+          if (errorKind !== 'auth-rejection') {
+            clientRef.current.connect();
+          }
         }
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [errorKind]);
 
   // ── Terminal resize → send to WS ────────────────────────────────────────
   const handleTermResize = useCallback((cols: number, rows: number) => {
@@ -124,27 +129,25 @@ export default function TerminalRoute() {
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (connState === 'failed') {
-    // Classify error for friendly messages
-    const isAuthRejection    = detail.includes('not recognized') || detail.includes('auth');
-    const isVersionMismatch  = detail.includes('update') || detail.includes('version');
-    const isOffline          = detail.includes('unreachable') || detail.includes('offline') ||
-                               detail.includes('ECONNREFUSED') || detail.includes('network');
+    const isAuthRejection   = errorKind === 'auth-rejection';
+    const isVersionMismatch = errorKind === 'version-mismatch';
+    const isBiometric       = errorKind === 'biometric-cancelled';
 
     const headline = isAuthRejection
       ? 'Device not recognized'
       : isVersionMismatch
         ? 'Please update'
-        : isOffline
-          ? 'Station unreachable'
+        : isBiometric
+          ? 'Authentication cancelled'
           : 'Connection lost';
 
     const subtext = isAuthRejection
       ? 'Scan QR to re-pair your device'
       : isVersionMismatch
         ? 'Update the app or the CLI to the same version'
-        : isOffline
-          ? 'Is the CLI running on your Station?'
-          : detail;
+        : isBiometric
+          ? 'Biometric authentication was cancelled. Tap Retry to try again.'
+          : detail || 'Is the CLI running on your Station?';
 
     return (
       <SafeAreaView style={styles.container} edges={['top']}>

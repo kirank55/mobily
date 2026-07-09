@@ -110,67 +110,67 @@
 **Goal:** Live terminal session from the phone with robust connection handling.
 
 ### Android Scaffold
-- [ ] Expo SDK app shell (prebuild/dev-client, not Expo Go); add `android/` to `pnpm-workspace.yaml`
-- [ ] Install `react-native-vision-camera`
-- [ ] Verify: `pnpm android:prebuild` succeeds; dev-client builds and launches on device/emulator
+- [x] Expo SDK app shell (prebuild/dev-client, not Expo Go); add `android/` to `pnpm-workspace.yaml`
+- [x] Install `react-native-vision-camera`
+- [x] Verify: `pnpm android:prebuild` succeeds; dev-client builds and launches on device/emulator
 
 ### QR Scanner & Pairing
-- [ ] `cli/src/qr.ts`: emit terminal QR encoding the short pairing code; verify renders cleanly in Windows Terminal, iTerm, VS Code
-- [ ] `android/app/scanner/`: QR scanner via `react-native-vision-camera`
-- [ ] Extract pairing code from QR
-- [ ] HTTPS handshake with CLI pairing endpoint
-- [ ] Receive connection payload (tunnel URL, station name, protocol version)
+- [x] `cli/src/qr.ts`: emit terminal QR encoding the short pairing code; verify renders cleanly in Windows Terminal, iTerm, VS Code
+- [x] `android/app/scanner/`: QR scanner via `react-native-vision-camera`
+- [x] Extract pairing code from QR
+- [x] HTTPS handshake with CLI pairing endpoint
+- [x] Receive connection payload (tunnel URL, station name, protocol version)
 
 ### Device Key Auth
-- [ ] Install `react-native-biometrics`; rebuild dev-client
-- [ ] `android/app/auth/`: Device Key management via `react-native-biometrics`
-- [ ] On pairing: `createKeys()` → send public key to CLI
-- [ ] On reconnect: receive nonce → `createSignature({ payload: nonce })` → send signature
+- [x] Install `react-native-biometrics`; rebuild dev-client
+- [x] `android/app/auth/`: Device Key management via `react-native-biometrics`
+- [x] On pairing: `createKeys()` → send public key to CLI
+- [x] On reconnect: receive nonce → `createSignature({ payload: nonce })` → send signature
 
 ### WebSocket Client
-- [ ] `android/app/client/`: WS client with exponential backoff reconnect
-- [ ] Device Key challenge-response in WS handshake
-- [ ] `hello`/`hello-ack` version negotiation
+- [x] `android/app/client/`: WS client with exponential backoff reconnect
+- [x] Device Key challenge-response in WS handshake
+- [x] `hello`/`hello-ack` version negotiation
 
 ### Terminal WebView
-- [ ] `android/app/terminal/`: `WebView` hosting bundled `xterm.js`
-- [ ] Bridge: `postMessage`/`injectedJavaScript`
-- [ ] Phone-side output batching: accumulate WS data → flush on `requestAnimationFrame`
-- [ ] Output frames → `term.write()`
-- [ ] Input (keystrokes, paste) → WS `input` frame
-- [ ] Resize → `term.resize()` → WS `resize` frame
+- [x] `android/app/terminal/`: `WebView` hosting bundled `xterm.js`
+- [x] Bridge: `postMessage`/`injectedJavaScript`
+- [x] Phone-side output batching: accumulate WS data → flush on `requestAnimationFrame`
+- [x] Output frames → `term.write()`
+- [x] Input (keystrokes, paste) → WS `input` frame
+- [x] Resize → `term.resize()` → WS `resize` frame
 
 ### Extra Key Row
-- [ ] Termux-style key row in WebView: `Esc | Ctrl | Alt | Tab | ← | → | ↑ | ↓`
-- [ ] Ctrl/Alt as toggle buttons (arm → next keypress → auto-disarm)
-- [ ] Soft keyboard + hardware keyboard support
+- [x] Termux-style key row in WebView: `Esc | Ctrl | Alt | Tab | ← | → | ↑ | ↓`
+- [x] Ctrl/Alt as toggle buttons (arm → next keypress → auto-disarm)
+- [x] Soft keyboard + hardware keyboard support
 
 ### Latency Measurement
-- [ ] Instrument keystroke-to-echo round-trip time
-- [ ] Log P50/P95
-- [ ] Document baseline latency with Dev Tunnels
+- [x] Instrument keystroke-to-echo round-trip time
+- [x] Log P50/P95
+- [x] Document baseline latency with Dev Tunnels
 
 ### Connection State Machine
-- [ ] Connection state: `disconnected → connecting → connected → reconnecting → failed`
-- [ ] App resume triggers `reconnecting` if connection is lost (formal `foreground | background` state machine deferred to Phase 5, when the foreground service needs it)
-- [ ] `connecting`: spinner + "Connecting to {stationName}..."
-- [ ] `connected`: terminal view + green indicator
-- [ ] `reconnecting`: overlay with attempt count, exponential backoff (1s→2s→4s→max 30s)
-- [ ] `failed`: "Connection lost" + retry button + re-scan option
+- [x] Connection state: `disconnected → connecting → connected → reconnecting → failed`
+- [x] App resume triggers `reconnecting` if connection is lost (formal `foreground | background` state machine deferred to Phase 5, when the foreground service needs it)
+- [x] `connecting`: spinner + "Connecting to {stationName}..."
+- [x] `connected`: terminal view + green indicator
+- [x] `reconnecting`: overlay with attempt count, exponential backoff (1s→2s→4s→max 30s)
+- [x] `failed`: "Connection lost" + retry button + re-scan option
 
 ### Error UX
-- [ ] Auth rejection: "Device not recognized — scan QR to re-pair"
-- [ ] Station offline: "Station unreachable — is the CLI running?"
-- [ ] Network change (wifi ↔ cellular): auto-reconnect
-- [ ] Version mismatch: "Please update" message
+- [x] Auth rejection: "Device not recognized — scan QR to re-pair"
+- [x] Station offline: "Station unreachable — is the CLI running?"
+- [x] Network change (wifi ↔ cellular): auto-reconnect
+- [x] Version mismatch: "Please update" message
 
 ### Data Model
-- [ ] Persist current pairing as a single record in encrypted storage: `{ stationName, tunnelUrl, pairedAt }`
-- [ ] Device Key stored in Android Keystore (per-station keypair)
+- [x] Persist current pairing as a single record in encrypted storage: `{ stationName, tunnelUrl, pairedAt }`
+- [x] Device Key stored in Android Keystore (per-station keypair)
 
 ### Tests
-- [ ] Maestro: scan → connect → verify native UI states
-- [ ] Maestro: error states render correct messages
+- [x] Maestro: scan → connect → verify native UI states
+- [x] Maestro: error states render correct messages
 
 **DoD:** scan QR → paired → connected → type on phone → live output; reconnects after background → foreground; error states render correct messages; high-throughput output (`cat large_file`) doesn't drop frames; latency measured and documented (P50/P95).
 
