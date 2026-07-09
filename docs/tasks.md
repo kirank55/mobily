@@ -72,8 +72,11 @@
 - [x] Test (vitest): `cli/tests/tunnel.test.ts` — LocalBackend URL shape, bindHost, disconnect
 
 ### Dev Tunnels Integration
-- [ ] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
-- [ ] CLI flag: `--tunnel local|devtunnels` (default: `local`)
+- [x] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
+- [x] `cli/src/tunnel/device-code.ts`: OAuth 2.0 device-code flow against Entra ID (SDK has no built-in auth)
+- [x] `cli/src/tunnel/index.ts`: `createTunnelBackend(tunnelId)` factory + `isTunnelId()` type guard
+- [x] CLI flag: `--tunnel local|devtunnels` (default: `local`) wired in `index.ts` via `node:util.parseArgs`
+- [x] Test (vitest): factory returns LocalBackend for 'local'; throws for 'devtunnels' when unconfigured; `isTunnelId` validates
 
 ### Auth & Pairing
 - [ ] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
