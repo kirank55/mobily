@@ -30,10 +30,10 @@
 - [x] Unit tests (vitest): frame encode/decode round-trip + error cases
 
 ### node-pty Validation
-- [ ] `cli/src/pty/node-pty.ts`: PTY wrapper — `spawn()`, `write()`, `onData()`, `resize()`, `kill()` (extract a `PtyBackend` interface only if a second implementation materializes)
-- [ ] Pin `node-pty` to `1.1.0` (prebuilts available); validate build on Windows without VS Build Tools
-- [ ] CI matrix: win/mac/linux `node-pty` build
-- [ ] Test (vitest): `cli/tests/pty.test.ts` — spawns a shell on Windows
+- [x] `cli/src/pty/node-pty.ts`: PTY wrapper — `spawn()`, `write()`, `onData()`, `resize()`, `kill()` (extract a `PtyBackend` interface only if a second implementation materializes)
+- [x] Pin `node-pty` to `1.1.0` (prebuilts available); validate build on Windows without VS Build Tools
+- [x] CI matrix: win/mac/linux `node-pty` build
+- [x] Test (vitest): `cli/tests/pty.test.ts` — spawns a shell on Windows
 
 ### WebSocket Server
 - [ ] `cli/src/ws.ts`: `ws` server on `localhost:<port>`
