@@ -9,7 +9,7 @@
  */
 
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROTOCOL_VERSION } from '@mobily/shared';
 import { AuthManager } from '../src/auth.js';
 
@@ -201,5 +201,99 @@ describe('AuthManager — challenge-response', () => {
     const n1 = auth.createChallenge();
     const n2 = auth.createChallenge();
     expect(n1).not.toBe(n2);
+  });
+});
+
+describe('AuthManager — lifecycle', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('expires the pairing code after the TTL', () => {
+    vi.useFakeTimers();
+    const auth = createAuth();
+    const code = auth.generatePairingCode();
+
+    expect(auth.currentPairingCode).toBe(code);
+
+    // Advance past the 10-minute TTL.
+    vi.advanceTimersByTime(11 * 60 * 1000);
+
+    expect(auth.currentPairingCode).toBeNull();
+
+    const { publicKeyPem } = generateKeyPair();
+    const result = auth.pair(code, 'device-1', publicKeyPem);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(403);
+  });
+
+  it('replaces the old code when a new one is generated', () => {
+    const auth = createAuth();
+    const code1 = auth.generatePairingCode();
+    const code2 = auth.generatePairingCode();
+
+    expect(code1).not.toBe(code2);
+    expect(auth.currentPairingCode).toBe(code2);
+
+    const { publicKeyPem } = generateKeyPair();
+    const result = auth.pair(code1, 'device-1', publicKeyPem);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(403);
+  });
+
+  it('can pair multiple devices with separate codes', () => {
+    const auth = createAuth();
+
+    const code1 = auth.generatePairingCode();
+    const { publicKeyPem: pub1, privateKeyPem: priv1 } = generateKeyPair();
+    const r1 = auth.pair(code1, 'device-A', pub1);
+    expect(r1.ok).toBe(true);
+
+    const code2 = auth.generatePairingCode();
+    const { publicKeyPem: pub2, privateKeyPem: priv2 } = generateKeyPair();
+    const r2 = auth.pair(code2, 'device-B', pub2);
+    expect(r2.ok).toBe(true);
+
+    // Both devices can authenticate.
+    const nonce1 = auth.createChallenge();
+    expect(auth.verifyResponse('device-A', nonce1, signNonce(priv1, nonce1))).toBe(true);
+
+    const nonce2 = auth.createChallenge();
+    expect(auth.verifyResponse('device-B', nonce2, signNonce(priv2, nonce2))).toBe(true);
+  });
+
+  it('supports multiple challenge-response cycles for the same device', () => {
+    const auth = createAuth();
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    auth.pair(code, 'device-1', publicKeyPem);
+
+    // First challenge-response.
+    const n1 = auth.createChallenge();
+    expect(auth.verifyResponse('device-1', n1, signNonce(privateKeyPem, n1))).toBe(true);
+
+    // Second challenge-response (simulates reconnect).
+    const n2 = auth.createChallenge();
+    expect(auth.verifyResponse('device-1', n2, signNonce(privateKeyPem, n2))).toBe(true);
+  });
+
+  it('can re-pair after generating a new code (burned code scenario)', () => {
+    const auth = createAuth();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+
+    // First pairing — burns the code.
+    const code1 = auth.generatePairingCode();
+    auth.pair(code1, 'device-1', publicKeyPem);
+
+    // Generate a new code and re-pair the same device.
+    const code2 = auth.generatePairingCode();
+    const { publicKeyPem: pub2 } = generateKeyPair();
+    const r = auth.pair(code2, 'device-1', pub2);
+    expect(r.ok).toBe(true);
+
+    // The device can authenticate with the new key.
+    const nonce = auth.createChallenge();
+    // Note: the old key no longer works because the binding was replaced.
+    expect(auth.verifyResponse('device-1', nonce, signNonce(privateKeyPem, nonce))).toBe(false);
   });
 });
