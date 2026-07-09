@@ -6,10 +6,13 @@
 
 ## Locked decisions
 
-1. **Expo prebuild + dev-client (not Expo Go)** — `react-native-vision-camera` and
-   `react-native-biometrics` require native modules Expo Go can't load. `android/`
-   joins the pnpm workspace in this phase (incremental-monorepo decision,
-   `plan.md` line 11). Expo Go is explicitly rejected.
+1. **Expo prebuild + dev-client (not Expo Go)** — `expo-camera` (QR scanning)
+   and `react-native-biometrics` (Device Key) require native modules Expo Go
+   can't load. `android/` joins the pnpm workspace in this phase
+   (incremental-monorepo decision, `plan.md` line 11). Expo Go is explicitly
+   rejected. **QR scanner = `expo-camera`** (not `react-native-vision-camera` —
+   v5 dropped built-in barcode scanning; `expo-camera` has native QR scanning
+   via `onBarcodeScanned`).
 2. **QR encodes only the short pairing code** — tiny QR, renders in any terminal
    (`plan.md` line 57). The CLI prints the QR *and* keeps the plain-text code as a
    fallback for terminals without QR support; the smoke-test URL still prints.

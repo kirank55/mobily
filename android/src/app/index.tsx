@@ -1,12 +1,33 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+
+import { loadPairing, type PairingRecord } from '@/auth/storage';
 
 export default function HomeScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>mobily</Text>
-      <Text style={styles.hint}>Phase 3 scaffold — scanner arrives next.</Text>
-    </View>
-  );
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const record = await loadPairing();
+      if (record) {
+        router.replace('/terminal');
+      } else {
+        router.replace('/scanner');
+      }
+      setReady(true);
+    })();
+  }, []);
+
+  if (!ready) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  return <View style={styles.container} />;
 }
 
 const styles = StyleSheet.create({
@@ -14,14 +35,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  hint: {
-    fontSize: 14,
-    opacity: 0.6,
   },
 });
