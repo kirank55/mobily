@@ -98,9 +98,9 @@
 - [x] Integration tests: full handshake with valid auth, version mismatch, invalid signature, unbound device
 
 ### Tests
-- [ ] Unit tests: auth/token lifecycle (mock tunnel)
-- [ ] Integration test: pairing flow end-to-end
-- [ ] Integration test: challenge-response auth
+- [x] Unit tests: auth/token lifecycle (mock tunnel) — `cli/tests/auth.test.ts`: code expiry, replacement, multiple devices, re-pair, multiple challenge-response cycles
+- [x] Integration test: pairing flow end-to-end — `cli/tests/pairing.test.ts`: HTTP pair → WS handshake → PTY stream; HTTP error cases (wrong code, missing fields, unknown path, invalid JSON); reconnect after disconnect
+- [x] Integration test: challenge-response auth — `cli/tests/ws.test.ts`: full handshake, version mismatch, invalid signature, unbound device
 
 **DoD:** remote machine connects via tunnel URL and streams shell; unauthenticated connections refused; Device Key challenge-response works; unbound device rejected.
 
