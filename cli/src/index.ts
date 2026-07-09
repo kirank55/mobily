@@ -36,7 +36,7 @@ export async function main(): Promise<void> {
 
   const auth = new AuthManager(os.hostname());
   const tunnel = await createTunnelBackend(tunnelId);
-  const session = new Session({ cols: 80, rows: 24 });
+  const session = new Session({ cols: 80, rows: 24, auth });
   const server = await startServer({
     session,
     host: tunnel.bindHost,

@@ -169,9 +169,11 @@ export class AuthManager {
     return this.boundDevices.has(deviceId);
   }
 
-  /** Create a nonce challenge for a device. Returns null if the device is not bound. */
-  createChallenge(deviceId: string): string | null {
-    if (!this.boundDevices.has(deviceId)) return null;
+  /**
+   * Create a nonce challenge. The nonce is a cryptorandom base64 string.
+   * The device proves identity by signing this nonce in `verifyResponse`.
+   */
+  createChallenge(): string {
     return randomBytes(NONCE_LENGTH).toString('base64');
   }
 

@@ -147,7 +147,7 @@ describe('AuthManager — challenge-response', () => {
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
     auth.pair(code, 'device-1', publicKeyPem);
 
-    const nonce = auth.createChallenge('device-1')!;
+    const nonce = auth.createChallenge();
     expect(nonce).toBeTruthy();
 
     const signature = signNonce(privateKeyPem, nonce);
@@ -160,7 +160,7 @@ describe('AuthManager — challenge-response', () => {
     const { publicKeyPem } = generateKeyPair();
     auth.pair(code, 'device-1', publicKeyPem);
 
-    const nonce = auth.createChallenge('device-1')!;
+    const nonce = auth.createChallenge();
     const fakeSignature = Buffer.from('not-a-real-signature').toString('base64');
 
     expect(auth.verifyResponse('device-1', nonce, fakeSignature)).toBe(false);
@@ -172,21 +172,17 @@ describe('AuthManager — challenge-response', () => {
     const { publicKeyPem } = generateKeyPair();
     auth.pair(code, 'device-1', publicKeyPem);
 
-    const nonce = auth.createChallenge('device-1')!;
+    const nonce = auth.createChallenge();
     const { privateKeyPem: wrongKey } = generateKeyPair();
     const signature = signNonce(wrongKey, nonce);
 
     expect(auth.verifyResponse('device-1', nonce, signature)).toBe(false);
   });
 
-  it('returns null for createChallenge on an unbound device', () => {
-    const auth = createAuth();
-    expect(auth.createChallenge('unknown')).toBeNull();
-  });
-
   it('rejects verifyResponse for an unbound device', () => {
     const auth = createAuth();
-    expect(auth.verifyResponse('unknown', 'nonce', 'sig')).toBe(false);
+    const nonce = auth.createChallenge();
+    expect(auth.verifyResponse('unknown', nonce, 'sig')).toBe(false);
   });
 
   it('isDeviceBound returns true for paired devices', () => {
@@ -201,12 +197,9 @@ describe('AuthManager — challenge-response', () => {
 
   it('each challenge produces a unique nonce', () => {
     const auth = createAuth();
-    const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
-    auth.pair(code, 'device-1', publicKeyPem);
 
-    const n1 = auth.createChallenge('device-1');
-    const n2 = auth.createChallenge('device-1');
+    const n1 = auth.createChallenge();
+    const n2 = auth.createChallenge();
     expect(n1).not.toBe(n2);
   });
 });

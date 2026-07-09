@@ -3,28 +3,45 @@
  *
  * Glue between a single PTY process and the WebSocket clients attached to it.
  *
- * Phase 1 behaviour (bare): the Session holds the {@link PtyProcess} directly,
- * so the terminal survives WebSocket disconnects — a new client reattaches to
- * the same live PTY. The `SessionBackend` abstraction + `TmuxBackend` arrive in
- * Phase 5, when tmux's crash-survival benefit is first exercised.
+ * Phase 2 behaviour: when an {@link AuthManager} is provided, each inbound
+ * connection goes through a handshake before it is attached to the PTY:
  *
- * Frame encoding/decoding uses the shared wire protocol (see
- * `shared/src/protocol.ts`). Only `input` and `resize` frames are accepted from
- * clients; PTY output is broadcast to every attached client as `output` frames.
- * Scrollback is NOT replayed to a reconnecting client in Phase 1 (deferred to
- * Phase 5 alongside the ring buffer / `capture-pane` work).
+ *   1. Client sends `{ type: 'hello', protocolVersion }`.
+ *   2. CLI checks version compatibility → sends `{ type: 'hello-ack' }` or
+ *      closes with an error.
+ *   3. CLI sends `{ type: 'auth-challenge', nonce }`.
+ *   4. Client sends `{ type: 'auth-response', deviceId, signature }`.
+ *   5. CLI verifies the Device Key signature → attaches the client to the PTY
+ *      (output streaming + input forwarding) or closes with an error.
+ *
+ * When no AuthManager is provided (e.g. dev smoke testing), the handshake is
+ * skipped and the client is attached immediately (Phase 1 behaviour).
+ *
+ * The Session holds the {@link PtyProcess} directly (bare behaviour), so the
+ * terminal survives WebSocket disconnects — a new client reattaches to the
+ * same live PTY after completing the handshake. The `SessionBackend` abstraction
+ * + `TmuxBackend` arrive in Phase 5.
  */
 
 import type { RawData, WebSocket } from 'ws';
 import {
   decodeFrame,
   encodeFrame,
+  PROTOCOL_VERSION,
+  type Frame,
   type OutputFrame,
 } from '@mobily/shared';
 import { spawn, type IDisposable, type PtyProcess, type SpawnOptions } from './pty/node-pty.js';
+import type { AuthManager } from './auth.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
+
+/** Extended spawn options — includes optional auth for the handshake. */
+export interface SessionOptions extends SpawnOptions {
+  /** Auth manager for Device Key challenge-response. If omitted, no auth. */
+  auth?: AuthManager;
+}
 
 /**
  * A live terminal session: one PTY plus the WebSocket clients currently
@@ -35,21 +52,21 @@ export class Session {
   /** The PTY held by this session. Exposed for inspection / testing. */
   readonly pty: PtyProcess;
 
+  private readonly auth?: AuthManager;
   private readonly subscribers = new Set<WebSocket>();
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
 
-  constructor(opts: SpawnOptions = {}) {
-    this.pty = spawn(opts);
+  constructor(opts: SessionOptions = {}) {
+    const { auth, ...spawnOpts } = opts;
+    this.auth = auth;
+    this.pty = spawn(spawnOpts);
 
-    // PTY stdout → every attached client, as `output` frames.
     this.onDataDisposable = this.pty.onData((data) =>
       this.broadcast({ type: 'output', data }),
     );
 
-    // When the shell itself exits, close the attached clients. (This is the
-    // PTY dying, not a client leaving — a client leaving never kills the PTY.)
     this.onExitDisposable = this.pty.onExit(() => this.handleExit());
   }
 
@@ -59,23 +76,137 @@ export class Session {
   }
 
   /**
-   * Attach a WebSocket client to this session. PTY output is streamed to it and
-   * `input` / `resize` frames from it are forwarded to the PTY. When the socket
-   * closes or errors the client is detached; the PTY keeps running.
+   * Attach a WebSocket client to this session. If auth is configured, the
+   * client must complete the handshake (hello → hello-ack → auth-challenge →
+   * auth-response) before PTY output is streamed and input is accepted.
+   * When the socket closes or errors the client is detached; the PTY keeps
+   * running.
    */
   attach(ws: WebSocket): void {
+    if (this.auth) {
+      this.startHandshake(ws);
+    } else {
+      this.attachAuthenticated(ws);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Handshake: hello → hello-ack → auth-challenge → auth-response
+  // -------------------------------------------------------------------------
+
+  private startHandshake(ws: WebSocket): void {
+    const onMessage = (data: RawData): void => {
+      let frame: Frame;
+      try {
+        frame = decodeFrame(rawToUtf8(data));
+      } catch (err) {
+        this.sendTo(ws, {
+          type: 'output',
+          data: `mobily: malformed frame — ${errorText(err)}\r\n`,
+        });
+        ws.close(4000, 'malformed frame');
+        return;
+      }
+
+      if (frame.type !== 'hello') {
+        this.sendTo(ws, {
+          type: 'output',
+          data: 'mobily: expected hello frame first\r\n',
+        });
+        ws.close(4002, 'protocol error');
+        return;
+      }
+
+      ws.off('message', onMessage);
+      this.handleHello(ws, frame.protocolVersion);
+    };
+
+    ws.on('message', onMessage);
+    ws.on('close', () => ws.off('message', onMessage));
+    ws.on('error', () => ws.off('message', onMessage));
+  }
+
+  private handleHello(ws: WebSocket, clientVersion: number): void {
+    if (clientVersion !== PROTOCOL_VERSION) {
+      this.sendTo(ws, {
+        type: 'output',
+        data:
+          `mobily: protocol version mismatch ` +
+          `(client ${clientVersion}, server ${PROTOCOL_VERSION}). ` +
+          `Please update.\r\n`,
+      });
+      ws.close(4003, 'version mismatch');
+      return;
+    }
+
+    this.sendTo(ws, { type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    this.startAuthChallenge(ws);
+  }
+
+  private startAuthChallenge(ws: WebSocket): void {
+    const nonce = this.auth!.createChallenge();
+    this.sendTo(ws, { type: 'auth-challenge', nonce });
+
+    const onMessage = (data: RawData): void => {
+      let frame: Frame;
+      try {
+        frame = decodeFrame(rawToUtf8(data));
+      } catch (err) {
+        this.sendTo(ws, {
+          type: 'output',
+          data: `mobily: malformed frame — ${errorText(err)}\r\n`,
+        });
+        ws.close(4000, 'malformed frame');
+        return;
+      }
+
+      if (frame.type !== 'auth-response') {
+        this.sendTo(ws, {
+          type: 'output',
+          data: 'mobily: expected auth-response frame\r\n',
+        });
+        ws.close(4002, 'protocol error');
+        return;
+      }
+
+      ws.off('message', onMessage);
+
+      const verified = this.auth!.verifyResponse(
+        frame.deviceId,
+        nonce,
+        frame.signature,
+      );
+
+      if (!verified) {
+        this.sendTo(ws, {
+          type: 'output',
+          data: 'mobily: authentication failed — device not recognized. Scan QR to re-pair.\r\n',
+        });
+        ws.close(4001, 'auth failed');
+        return;
+      }
+
+      this.attachAuthenticated(ws);
+    };
+
+    ws.on('message', onMessage);
+    ws.on('close', () => ws.off('message', onMessage));
+    ws.on('error', () => ws.off('message', onMessage));
+  }
+
+  // -------------------------------------------------------------------------
+  // Authenticated: PTY ↔ client
+  // -------------------------------------------------------------------------
+
+  private attachAuthenticated(ws: WebSocket): void {
     this.subscribers.add(ws);
     ws.on('message', (data) => this.handleMessage(ws, data));
     ws.on('close', () => this.subscribers.delete(ws));
     ws.on('error', () => this.subscribers.delete(ws));
   }
 
-  // -------------------------------------------------------------------------
-  // Inbound: client → PTY
-  // -------------------------------------------------------------------------
-
   private handleMessage(ws: WebSocket, data: RawData): void {
-    let frame;
+    let frame: Frame;
     try {
       frame = decodeFrame(rawToUtf8(data));
     } catch (err) {
@@ -101,7 +232,11 @@ export class Session {
         }
         break;
       case 'output':
-        // `output` is CLI → client only; ignore client-sent output frames.
+        break;
+      case 'hello':
+      case 'hello-ack':
+      case 'auth-challenge':
+      case 'auth-response':
         break;
     }
   }
@@ -112,14 +247,12 @@ export class Session {
 
   private broadcast(frame: OutputFrame): void {
     const raw = encodeFrame(frame);
-    // Snapshot so a socket that errors mid-broadcast and removes itself from
-    // `subscribers` cannot cause us to skip a still-open socket.
     for (const ws of [...this.subscribers]) {
       this.sendRaw(ws, raw);
     }
   }
 
-  private sendTo(ws: WebSocket, frame: OutputFrame): void {
+  private sendTo(ws: WebSocket, frame: Frame): void {
     this.sendRaw(ws, encodeFrame(frame));
   }
 
@@ -128,7 +261,6 @@ export class Session {
     try {
       ws.send(raw);
     } catch {
-      // Socket closed between the readyState check and the send — drop it.
       this.subscribers.delete(ws);
     }
   }
@@ -173,18 +305,12 @@ export class Session {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Convert a `ws` inbound message (`RawData`) to a UTF-8 string. `ws` delivers
- * text frames as a single `Buffer`, but the type also permits `ArrayBuffer` and
- * `Buffer[]`, so all three are handled.
- */
 function rawToUtf8(data: RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
   if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
   return data.toString('utf8');
 }
 
-/** Extract a human-readable message from a thrown value. */
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }

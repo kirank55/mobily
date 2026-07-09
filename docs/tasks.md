@@ -92,9 +92,10 @@
 - [x] Print pairing code to terminal as plain text (QR rendering deferred to Phase 3, when the phone scanner arrives)
 
 ### Version Negotiation
-- [ ] `shared/protocol.ts`: add `hello` / `hello-ack` frame types
-- [ ] `hello`/`hello-ack` frame exchange on WS connect
-- [ ] Incompatible versions: send error message and close connection
+- [x] `shared/protocol.ts`: add `hello` / `hello-ack` frame types
+- [x] `hello`/`hello-ack` frame exchange on WS connect (handshake in `session.ts`: hello → hello-ack → auth-challenge → auth-response)
+- [x] Incompatible versions: send error message and close connection
+- [x] Integration tests: full handshake with valid auth, version mismatch, invalid signature, unbound device
 
 ### Tests
 - [ ] Unit tests: auth/token lifecycle (mock tunnel)
