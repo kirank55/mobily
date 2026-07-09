@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>mobily terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #1a1a1a;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    #root {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+    }
+    /* ── Key row ── */
+    #key-row {
+      display: flex;
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #333;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+    #key-row::-webkit-scrollbar { display: none; }
+    .key-btn {
+      min-width: 44px;
+      height: 36px;
+      padding: 0 10px;
+      border: none;
+      border-right: 1px solid #2a2a2a;
+      background: #1c1c1c;
+      color: #ccc;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .key-btn:active { background: #333; }
+    .key-btn.armed {
+      background: #1e3a5f;
+      color: #58a6ff;
+      border-right-color: #1e3a5f;
+    }
+    /* ── Terminal container ── */
+    #terminal-container {
+      flex: 1;
+      overflow: hidden;
+      padding: 4px;
+    }
+    #terminal-container .xterm { height: 100%; }
+    #terminal-container .xterm-screen { height: 100% !important; }
+  </style>
+</head>
+<body>
+<div id="root">
+  <!-- Key row (visible once terminal is ready) -->
+  <div id="key-row" style="display:none">
+    <button class="key-btn" data-seq="ESC">Esc</button>
+    <button class="key-btn" id="ctrl-btn" data-toggle="ctrl">Ctrl</button>
+    <button class="key-btn" id="alt-btn" data-toggle="alt">Alt</button>
+    <button class="key-btn" data-seq="TAB">Tab</button>
+    <button class="key-btn" data-seq="LEFT">&#9664;</button>
+    <button class="key-btn" data-seq="RIGHT">&#9654;</button>
+    <button class="key-btn" data-seq="UP">&#9650;</button>
+    <button class="key-btn" data-seq="DOWN">&#9660;</button>
+    <button class="key-btn" data-seq="HOME">Home</button>
+    <button class="key-btn" data-seq="END">End</button>
+    <button class="key-btn" data-seq="PGUP">PgUp</button>
+    <button class="key-btn" data-seq="PGDN">PgDn</button>
+  </div>
+  <!-- Terminal -->
+  <div id="terminal-container"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Escape sequences for special keys ────────────────────────────────────
+  var KEY_SEQUENCES = {
+    ESC:   '\x1b',
+    TAB:   '\t',
+    LEFT:  '\x1b[D',
+    RIGHT: '\x1b[C',
+    UP:    '\x1b[A',
+    DOWN:  '\x1b[B',
+    HOME:  '\x1b[H',
+    END:   '\x1b[F',
+    PGUP:  '\x1b[5~',
+    PGDN:  '\x1b[6~',
+  };
+
+  // ── Latency instrumentation ───────────────────────────────────────────────
+  var pendingLatency = {};
+  var latencySamples = [];
+
+  function recordSend(tag) {
+    pendingLatency[tag] = performance.now();
+  }
+
+  function recordEcho(data) {
+    // Tags are embedded as DCS: "\x1bP<tag>ST" ("\x1bP" = DCS, "\x1b\\" = ST)
+    var re = /\x1bP([0-9a-f]{8})\x1b\\/g;
+    var m;
+    while ((m = re.exec(data)) !== null) {
+      var tag = m[1];
+      if (pendingLatency[tag] !== undefined) {
+        var rtt = performance.now() - pendingLatency[tag];
+        latencySamples.push(rtt);
+        delete pendingLatency[tag];
+        if (latencySamples.length % 10 === 0) emitLatencyStats();
+      }
+    }
+  }
+
+  function emitLatencyStats() {
+    if (latencySamples.length === 0) return;
+    var sorted = latencySamples.slice().sort(function(a, b) { return a - b; });
+    var p50 = sorted[Math.floor(sorted.length * 0.50)];
+    var p95 = sorted[Math.floor(sorted.length * 0.95)];
+    sendToRN({ type: 'latency-stats', n: sorted.length, p50: Math.round(p50), p95: Math.round(p95) });
+  }
+
+  // ── Ctrl / Alt toggle state ───────────────────────────────────────────────
+  var ctrlArmed = false;
+  var altArmed  = false;
+
+  function setArmed(modifier, value) {
+    if (modifier === 'ctrl') {
+      ctrlArmed = value;
+      var b = document.getElementById('ctrl-btn');
+      if (b) b.classList.toggle('armed', value);
+    } else {
+      altArmed = value;
+      var a = document.getElementById('alt-btn');
+      if (a) a.classList.toggle('armed', value);
+    }
+  }
+
+  // ── rAF output batching ───────────────────────────────────────────────────
+  var outputQueue = [];
+  var rafPending  = false;
+
+  function enqueueOutput(data) {
+    recordEcho(data);
+    outputQueue.push(data);
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(flushOutput);
+    }
+  }
+
+  function flushOutput() {
+    rafPending = false;
+    if (outputQueue.length === 0) return;
+    var chunk = outputQueue.join('');
+    outputQueue = [];
+    if (term) term.write(chunk);
+  }
+
+  // ── RN postMessage bridge ─────────────────────────────────────────────────
+  function sendToRN(msg) {
+    try {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+      }
+    } catch (_) {}
+  }
+
+  // ── Terminal ──────────────────────────────────────────────────────────────
+  var term     = null;
+  var fitAddon = null;
+
+  function init() {
+    term = new Terminal({
+      allowProposedApi: true,
+      cursorBlink:      true,
+      fontSize:         14,
+      fontFamily:       "'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
+      theme: {
+        background:     '#1a1a1a',
+        foreground:     '#e6e6e6',
+        cursor:         '#e6e6e6',
+        black:          '#1a1a1a', red:           '#da3633',
+        green:          '#2ea043', yellow:        '#e3b341',
+        blue:           '#58a6ff', magenta:       '#bc8cff',
+        cyan:           '#39c5cf', white:         '#b1bac4',
+        brightBlack:    '#484f58', brightRed:     '#f85149',
+        brightGreen:    '#56d364', brightYellow:  '#e3b341',
+        brightBlue:     '#79c0ff', brightMagenta: '#d2a8ff',
+        brightCyan:     '#56d4dd', brightWhite:   '#f0f6fc',
+      },
+      scrollback:  5000,
+      convertEol:  false,
+    });
+
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+    reportSize();
+
+    document.getElementById('key-row').style.display = 'flex';
+
+    term.onData(function (data) {
+      sendToRN({ type: 'input', data: data });
+    });
+
+    var ro = new ResizeObserver(function () {
+      if (fitAddon) { fitAddon.fit(); reportSize(); }
+    });
+    ro.observe(document.getElementById('terminal-container'));
+
+    window.addEventListener('message',   handleRNMessage);
+    document.addEventListener('message', handleRNMessage);
+
+    sendToRN({ type: 'ready' });
+  }
+
+  function reportSize() {
+    if (term) sendToRN({ type: 'resize', cols: term.cols, rows: term.rows });
+  }
+
+  function handleRNMessage(event) {
+    var msg;
+    try { msg = JSON.parse(event.data); } catch (_) { return; }
+    switch (msg.type) {
+      case 'write':
+        enqueueOutput(msg.data);
+        break;
+      case 'resize':
+        if (term && msg.cols > 0 && msg.rows > 0) term.resize(msg.cols, msg.rows);
+        break;
+      case 'get-latency-stats':
+        emitLatencyStats();
+        break;
+    }
+  }
+
+  // ── Key row ───────────────────────────────────────────────────────────────
+  function setupKeyRow() {
+    document.getElementById('key-row').addEventListener('click', function (e) {
+      var btn = e.target.closest('.key-btn');
+      if (!btn) return;
+
+      var toggle = btn.dataset.toggle;
+      if (toggle) {
+        setArmed(toggle, toggle === 'ctrl' ? !ctrlArmed : !altArmed);
+        return;
+      }
+
+      var seqKey = btn.dataset.seq;
+      if (!seqKey) return;
+      var seq = KEY_SEQUENCES[seqKey] || seqKey;
+
+      if (ctrlArmed && seq.length === 1) {
+        var code = seq.charCodeAt(0);
+        // Ctrl+A=\x01 … Ctrl+Z=\x1a; Ctrl+@=\x00 etc.
+        seq = String.fromCharCode(code & 0x1f);
+        setArmed('ctrl', false);
+      }
+      if (altArmed) {
+        seq = '\x1b' + seq;
+        setArmed('alt', false);
+      }
+
+      sendToRN({ type: 'input', data: seq });
+    });
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { init(); setupKeyRow(); });
+  } else {
+    init();
+    setupKeyRow();
+  }
+})();
+</script>
+</body>
+</html>

@@ -12,7 +12,6 @@ import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { pairWithStation } from '@/auth/pairing';
-import { loadPairing } from '@/auth/storage';
 
 /** Extract the CLI base URL and port from a scanned QR payload.
  * The QR encodes only the pairing code (per plan.md), so the user must

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mobily — terminal dev harness</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #0d1117;
+      color: #e6e6e6;
+      font-family: system-ui, sans-serif;
+      height: 100%;
+    }
+    #layout {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+    #toolbar h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #58a6ff;
+      margin-right: 8px;
+    }
+    button {
+      padding: 4px 12px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:hover { background: #30363d; }
+    #stats {
+      margin-left: auto;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    #key-row {
+      display: flex;
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #333;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    #key-row::-webkit-scrollbar { display: none; }
+    .key-btn {
+      min-width: 44px;
+      height: 36px;
+      padding: 0 10px;
+      border: none;
+      border-right: 1px solid #2a2a2a;
+      background: #1c1c1c;
+      color: #ccc;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .key-btn:active { background: #333; }
+    .key-btn.armed { background: #1e3a5f; color: #58a6ff; }
+    #terminal-container { flex: 1; overflow: hidden; padding: 4px; }
+    #terminal-container .xterm { height: 100%; }
+    #terminal-container .xterm-screen { height: 100% !important; }
+  </style>
+</head>
+<body>
+<div id="layout">
+  <div id="toolbar">
+    <h1>mobily / terminal dev harness</h1>
+    <button id="btn-normal">Normal output</button>
+    <button id="btn-ansi">ANSI colours</button>
+    <button id="btn-highspeed">High-speed (cat large_file)</button>
+    <button id="btn-stop">■ Stop</button>
+    <button id="btn-clear">Clear</button>
+    <button id="btn-latency">Latency report</button>
+    <span id="stats">frames: 0 | bytes: 0</span>
+  </div>
+
+  <!-- Key row -->
+  <div id="key-row">
+    <button class="key-btn" data-seq="ESC">Esc</button>
+    <button class="key-btn" id="ctrl-btn" data-toggle="ctrl">Ctrl</button>
+    <button class="key-btn" id="alt-btn" data-toggle="alt">Alt</button>
+    <button class="key-btn" data-seq="TAB">Tab</button>
+    <button class="key-btn" data-seq="LEFT">&#9664;</button>
+    <button class="key-btn" data-seq="RIGHT">&#9654;</button>
+    <button class="key-btn" data-seq="UP">&#9650;</button>
+    <button class="key-btn" data-seq="DOWN">&#9660;</button>
+    <button class="key-btn" data-seq="HOME">Home</button>
+    <button class="key-btn" data-seq="END">End</button>
+    <button class="key-btn" data-seq="PGUP">PgUp</button>
+    <button class="key-btn" data-seq="PGDN">PgDn</button>
+  </div>
+
+  <div id="terminal-container"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Key sequences ─────────────────────────────────────────────────────────
+  var KEY_SEQUENCES = {
+    ESC: '\x1b', TAB: '\t',
+    LEFT: '\x1b[D', RIGHT: '\x1b[C', UP: '\x1b[A', DOWN: '\x1b[B',
+    HOME: '\x1b[H', END: '\x1b[F', PGUP: '\x1b[5~', PGDN: '\x1b[6~',
+  };
+
+  // ── Latency ───────────────────────────────────────────────────────────────
+  var pendingLatency = {};
+  var latencySamples = [];
+  var statsEl = document.getElementById('stats');
+  var frameCount = 0;
+  var totalBytes = 0;
+
+  function updateStats() {
+    statsEl.textContent = 'frames: ' + frameCount + ' | bytes: ' + totalBytes;
+  }
+
+  function recordSend(tag) {
+    pendingLatency[tag] = performance.now();
+  }
+
+  function recordEcho(data) {
+    var re = /\x1bP([0-9a-f]{8})\x1b\\/g;
+    var m;
+    while ((m = re.exec(data)) !== null) {
+      var tag = m[1];
+      if (pendingLatency[tag] !== undefined) {
+        latencySamples.push(performance.now() - pendingLatency[tag]);
+        delete pendingLatency[tag];
+      }
+    }
+  }
+
+  function reportLatency() {
+    if (latencySamples.length === 0) {
+      term.writeln('\r\n\x1b[33mNo latency samples yet — use High-speed mode\x1b[0m');
+      return;
+    }
+    var sorted = latencySamples.slice().sort(function(a,b){return a-b;});
+    var p50 = sorted[Math.floor(sorted.length * 0.50)];
+    var p95 = sorted[Math.floor(sorted.length * 0.95)];
+    term.writeln('\r\n\x1b[36m[latency] n=' + sorted.length +
+      ' P50=' + p50.toFixed(1) + 'ms P95=' + p95.toFixed(1) + 'ms\x1b[0m');
+  }
+
+  // ── rAF batching (mirrors the production WebView) ─────────────────────────
+  var outputQueue = [];
+  var rafPending  = false;
+
+  function enqueueOutput(data) {
+    recordEcho(data);
+    outputQueue.push(data);
+    frameCount++;
+    totalBytes += data.length;
+    updateStats();
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(function() {
+        rafPending = false;
+        if (outputQueue.length === 0) return;
+        var chunk = outputQueue.join('');
+        outputQueue = [];
+        term.write(chunk);
+      });
+    }
+  }
+
+  // ── Ctrl/Alt toggle ────────────────────────────────────────────────────────
+  var ctrlArmed = false, altArmed = false;
+  function setArmed(mod, v) {
+    if (mod === 'ctrl') {
+      ctrlArmed = v;
+      document.getElementById('ctrl-btn').classList.toggle('armed', v);
+    } else {
+      altArmed = v;
+      document.getElementById('alt-btn').classList.toggle('armed', v);
+    }
+  }
+
+  // ── Terminal ──────────────────────────────────────────────────────────────
+  var term = new Terminal({
+    cursorBlink: true,
+    fontSize: 14,
+    fontFamily: "'Cascadia Code','JetBrains Mono','Fira Code','Courier New',monospace",
+    theme: {
+      background:'#1a1a1a', foreground:'#e6e6e6',
+      black:'#1a1a1a', red:'#da3633', green:'#2ea043', yellow:'#e3b341',
+      blue:'#58a6ff', magenta:'#bc8cff', cyan:'#39c5cf', white:'#b1bac4',
+      brightBlack:'#484f58', brightRed:'#f85149', brightGreen:'#56d364',
+      brightYellow:'#e3b341', brightBlue:'#79c0ff', brightMagenta:'#d2a8ff',
+      brightCyan:'#56d4dd', brightWhite:'#f0f6fc',
+    },
+    scrollback: 5000,
+  });
+  var fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal-container'));
+  fitAddon.fit();
+
+  term.onData(function(data) {
+    // Echo local input for the harness
+    term.write(data);
+  });
+
+  new ResizeObserver(function() { fitAddon.fit(); }).observe(document.getElementById('terminal-container'));
+
+  // ── Key row ────────────────────────────────────────────────────────────────
+  document.getElementById('key-row').addEventListener('click', function(e) {
+    var btn = e.target.closest('.key-btn');
+    if (!btn) return;
+    var toggle = btn.dataset.toggle;
+    if (toggle) { setArmed(toggle, toggle === 'ctrl' ? !ctrlArmed : !altArmed); return; }
+    var seqKey = btn.dataset.seq;
+    if (!seqKey) return;
+    var seq = KEY_SEQUENCES[seqKey] || seqKey;
+    if (ctrlArmed && seq.length === 1) {
+      seq = String.fromCharCode(seq.charCodeAt(0) & 0x1f);
+      setArmed('ctrl', false);
+    }
+    if (altArmed) { seq = '\x1b' + seq; setArmed('alt', false); }
+    term.write(seq);
+  });
+
+  // ── Simulated output generators ───────────────────────────────────────────
+  var stopFlag = false;
+  var timer = null;
+
+  function stopAll() {
+    stopFlag = true;
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  // Normal text output
+  function runNormal() {
+    stopAll(); stopFlag = false;
+    var lines = [
+      '\x1b[1;32m$ \x1b[0mls -la\r\n',
+      'total 48\r\ndrwxr-xr-x  8 kiran kiran 4096 Jul  9 12:00 \x1b[1;34m.\x1b[0m\r\n',
+      'drwxr-xr-x 24 kiran kiran 4096 Jul  9 12:00 \x1b[1;34m..\x1b[0m\r\n',
+      '-rw-r--r--  1 kiran kiran  220 Jul  9 12:00 .bashrc\r\n',
+      '-rw-r--r--  1 kiran kiran 3526 Jul  9 12:00 .profile\r\n',
+      'drwxr-xr-x  4 kiran kiran 4096 Jul  9 12:00 \x1b[1;34mcode\x1b[0m\r\n',
+      '\x1b[1;32m$ \x1b[0m',
+    ];
+    var i = 0;
+    timer = setInterval(function() {
+      if (stopFlag || i >= lines.length) { clearInterval(timer); return; }
+      enqueueOutput(lines[i++]);
+    }, 80);
+  }
+
+  // ANSI colour showcase
+  function runAnsi() {
+    stopAll(); stopFlag = false;
+    var colours = '\r\nANSI colours: ';
+    for (var c = 30; c <= 37; c++) colours += '\x1b[' + c + 'm█\x1b[0m ';
+    colours += '\r\nBright:       ';
+    for (var b = 90; b <= 97; b++) colours += '\x1b[' + b + 'm█\x1b[0m ';
+    colours += '\r\n\x1b[1mBold\x1b[0m \x1b[3mItalic\x1b[0m \x1b[4mUnderline\x1b[0m \x1b[7mReverse\x1b[0m\r\n';
+    colours += '\x1b[38;5;196m256-colour red\x1b[0m  \x1b[38;2;255;165;0mTruecolour orange\x1b[0m\r\n';
+    enqueueOutput(colours);
+  }
+
+  // High-throughput: simulate `cat large_file` — lots of ANSI lines
+  function runHighSpeed() {
+    stopAll(); stopFlag = false;
+    var lineNum = 0;
+    var BATCH = 40;     // lines per tick
+    var DELAY = 16;     // ms between ticks (~60fps worst case)
+
+    // Tag to measure RTT
+    function makeTag() {
+      return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+    }
+
+    timer = setInterval(function() {
+      if (stopFlag) { clearInterval(timer); return; }
+      var chunk = '';
+      for (var i = 0; i < BATCH; i++) {
+        lineNum++;
+        var tag = makeTag();
+        // Embed a latency tag in the output (simulating echo)
+        chunk += '\x1b[' + (30 + (lineNum % 8)) + 'm' +
+          lineNum.toString().padStart(6, ' ') + '  ' +
+          'Lorem ipsum dolor sit amet — line ' + lineNum +
+          '  \x1bP' + tag + '\x1b\\' +
+          '\x1b[0m\r\n';
+        recordSend(tag);
+      }
+      enqueueOutput(chunk);
+    }, DELAY);
+  }
+
+  // ── Toolbar buttons ────────────────────────────────────────────────────────
+  document.getElementById('btn-normal').addEventListener('click', runNormal);
+  document.getElementById('btn-ansi').addEventListener('click', runAnsi);
+  document.getElementById('btn-highspeed').addEventListener('click', runHighSpeed);
+  document.getElementById('btn-stop').addEventListener('click', stopAll);
+  document.getElementById('btn-clear').addEventListener('click', function() {
+    stopAll(); term.clear(); frameCount = 0; totalBytes = 0; updateStats();
+  });
+  document.getElementById('btn-latency').addEventListener('click', reportLatency);
+
+  // Welcome
+  term.writeln('\x1b[1;34mmobily\x1b[0m terminal dev harness — branch 4');
+  term.writeln('Click a button above to simulate output. Key row is functional.\r\n');
+
+})();
+</script>
+</body>
+</html>

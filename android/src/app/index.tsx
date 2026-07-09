@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
-import { loadPairing, type PairingRecord } from '@/auth/storage';
+import { loadPairing } from '@/auth/storage';
 
 export default function HomeScreen() {
   const [ready, setReady] = useState(false);
