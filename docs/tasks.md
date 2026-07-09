@@ -61,14 +61,19 @@
 ---
 
 ## Phase 2 — Secure Tunnel & Pairing
-**Goal:** Public TLS URL with device-bound auth; QR pairing flow.
+**Goal:** Public/LAN URL with device-bound auth; QR pairing flow.
 
 ### Dev Tunnels Provisioning
-- [ ] Microsoft Dev Tunnels app registration (anonymous auth) — manual external task
+- [ ] Microsoft Dev Tunnels app registration (device-code auth via Entra ID) — manual external task; see `docs/devtunnels-provisioning.md`
+- [x] `cli/src/tunnel/types.ts`: `TunnelBackend` interface — `connect(localPort)` → `TunnelConnection { url, disconnect() }`, plus `bindHost`
+- [x] `cli/src/tunnel/local.ts`: `LocalBackend` — the default; binds WS to `0.0.0.0`, returns `ws://<lan-ip>:<port>`; zero account, no external service
+- [x] `cli/src/tunnel/config.ts`: Dev Tunnels config loader (client ID + tenant from env/baked-in default)
+- [x] Update ADR 0003 + plan.md: default→local, Dev Tunnels opt-in, correct anonymous-hosting assumption
+- [x] Test (vitest): `cli/tests/tunnel.test.ts` — LocalBackend URL shape, bindHost, disconnect
 
 ### Dev Tunnels Integration
-- [ ] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (anonymous auth) — `connect()` → URL, `disconnect()` (extract a `TunnelBackend` interface only if a second backend is built)
-- [ ] CLI flag: `--tunnel devtunnels|local` (default: `devtunnels`)
+- [ ] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
+- [ ] CLI flag: `--tunnel local|devtunnels` (default: `local`)
 
 ### Auth & Pairing
 - [ ] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
