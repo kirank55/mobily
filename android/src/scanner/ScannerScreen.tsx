@@ -12,16 +12,15 @@ import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { pairWithStation } from '@/auth/pairing';
+import { decodePairingPayload, type PairingPayload } from '@mobily/shared';
 
-/** Extract the CLI base URL and port from a scanned QR payload.
- * The QR encodes only the pairing code (per plan.md), so the user must
- * provide the Station URL. For now we default to localhost on the
- * port the CLI prints — in practice the user enters this manually or
- * it's pre-configured. */
-function parseQrPayload(data: string): { code: string; baseUrl: string } | null {
-  const code = data.trim().toUpperCase();
-  if (code.length < 6 || code.length > 8) return null;
-  return { code, baseUrl: 'http://localhost:51234' };
+/** Parse and validate the versioned, expiring Station pairing payload. */
+export function parseQrPayload(data: string): PairingPayload | null {
+  try {
+    return decodePairingPayload(data.trim());
+  } catch {
+    return null;
+  }
 }
 
 export default function ScannerScreen() {
@@ -39,7 +38,7 @@ export default function ScannerScreen() {
     setStatus('pairing');
     setErrorMsg('');
 
-    const result = await pairWithStation(parsed.baseUrl, parsed.code);
+    const result = await pairWithStation(parsed);
 
     if (result.ok && result.record) {
       router.replace('/terminal');

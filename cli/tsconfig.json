@@ -10,6 +10,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "paths": {
+      "@mobily/shared": ["../shared/src/index.ts"]
+    },
     "isolatedModules": true,
     "types": ["node"]
   },

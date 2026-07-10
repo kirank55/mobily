@@ -3,8 +3,8 @@
  *
  * Pluggable tunnel backend interface (ADR 0003). The CLI's WebSocket server
  * listens on a local port; a {@link TunnelBackend} makes that port reachable
- * from elsewhere — over the LAN (`LocalBackend`, the default) or over the
- * public internet (`DevTunnelsBackend`, opt-in).
+ * from elsewhere — over an explicitly enabled development LAN (`LocalBackend`)
+ * or the public internet (`DevTunnelsBackend`).
  *
  * The interface is deliberately small. The caller:
  *   1. Binds the WS server to `backend.bindHost`.
@@ -26,7 +26,8 @@ export interface TunnelConnection {
 
 /**
  * A strategy for making the CLI's local WebSocket server reachable.
- * Implementations: {@link LocalBackend} (default), `DevTunnelsBackend` (opt-in).
+ * Implementations: {@link LocalBackend} (development only),
+ * `DevTunnelsBackend` (secure phone transport).
  */
 export interface TunnelBackend {
   /** Backend identifier (e.g. `'local'`, `'devtunnels'`). */

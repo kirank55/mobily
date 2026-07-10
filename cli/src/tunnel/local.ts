@@ -1,7 +1,7 @@
 /**
  * cli/src/tunnel/local.ts
  *
- * The default {@link TunnelBackend}. Binds the WebSocket server to all
+ * Development-only {@link TunnelBackend}. Binds the WebSocket server to all
  * interfaces (`0.0.0.0`) and exposes it on the LAN at
  * `ws://<lan-ip>:<port>`. No account, no relay, no external service — the
  * phone and the Station must be on the same network. Device Key auth (Phase 2)
@@ -11,7 +11,7 @@
 import * as os from 'node:os';
 import type { TunnelBackend, TunnelConnection } from './types.js';
 
-/** LocalBackend — exposes the WS server on the LAN. Zero setup, no account. */
+/** LocalBackend — explicit plaintext LAN mode for isolated development only. */
 export class LocalBackend implements TunnelBackend {
   readonly id = 'local';
   readonly bindHost = '0.0.0.0';

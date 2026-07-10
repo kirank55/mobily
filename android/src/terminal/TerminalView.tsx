@@ -5,7 +5,7 @@
  * Bridges output (RN → WebView via injectJavaScript) and input/resize
  * (WebView → RN via onMessage).
  *
- * rAF batching lives inside terminal.html; we just send raw data as fast
+ * rAF batching lives inside the generated inline document; we send raw data as fast
  * as the WS client delivers it and let the WebView's requestAnimationFrame
  * loop coalesce writes at display frequency.
  */
@@ -13,6 +13,7 @@
 import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, View } from 'react-native';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
+import { XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
 
 export interface TerminalViewHandle {
   /** Write raw PTY data (ANSI/UTF-8) to the terminal. */
@@ -34,16 +35,12 @@ export interface TerminalViewProps {
   onLatencyStats?: (n: number, p50: number, p95: number) => void;
 }
 
-
-
 // Build the terminal source object.
-// We embed the terminal HTML inline so it works without a local server.
-// The HTML itself loads xterm.js from CDN.
+// We embed the terminal HTML and generated, pinned xterm assets inline so it
+// works offline without granting the WebView filesystem or network access.
 function getTerminalSource(): { uri: string } | { html: string; baseUrl: string } {
-  // In a production Expo build we can reference asset://terminal.html
-  // But the most reliable cross-environment approach is to load via a
-  // bundler-resolved asset URL. For now we use the inline html strategy.
-  // The baseUrl allows CDN link/script tags to resolve correctly.
+  // A synthetic HTTPS base gives the static document a non-file origin while
+  // CSP blocks all network access.
   return {
     html: TERMINAL_HTML_CONTENT,
     baseUrl: 'https://localhost',
@@ -55,8 +52,9 @@ export const TERMINAL_HTML_CONTENT = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-mobily-terminal'; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>mobily terminal</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <style>${XTERM_CSS}</style>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { background: #1a1a1a; width: 100%; height: 100%; overflow: hidden; }
@@ -100,9 +98,9 @@ export const TERMINAL_HTML_CONTENT = `<!DOCTYPE html>
   </div>
   <div id="tc"></div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-<script>
+<script nonce="mobily-terminal">${XTERM_JS}</script>
+<script nonce="mobily-terminal">${XTERM_FIT_JS}</script>
+<script nonce="mobily-terminal">
 (function(){
   'use strict';
   var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',HOME:'\\x1b[H',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
@@ -134,9 +132,11 @@ export const TERMINAL_HTML_CONTENT = `<!DOCTYPE html>
   }
   function sendRN(msg){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(msg));}catch(_){}}
   function handleMsg(ev){
+    if(typeof ev.data!=='string'||ev.data.length>70000)return;
     var msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
-    if(msg.type==='write')enqueue(msg.data);
-    else if(msg.type==='resize'&&term&&msg.cols>0&&msg.rows>0)term.resize(msg.cols,msg.rows);
+    if(!msg||typeof msg!=='object')return;
+    if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data);
+    else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000)term.resize(msg.cols,msg.rows);
     else if(msg.type==='get-latency-stats')emitLatStats();
   }
   function init(){
@@ -173,63 +173,114 @@ export const TERMINAL_HTML_CONTENT = `<!DOCTYPE html>
 </body>
 </html>`;
 
-const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
-  function TerminalView({ onReady, onInput, onResize, onLatencyStats }, ref) {
-    const webViewRef = useRef<WebView>(null);
+const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
+  { onReady, onInput, onResize, onLatencyStats },
+  ref,
+) {
+  const webViewRef = useRef<WebView>(null);
 
-    const postToWebView = useCallback((msg: Record<string, unknown>) => {
-      const escaped = JSON.stringify(JSON.stringify(msg));
-      const js = `(function(){try{window.dispatchEvent(new MessageEvent('message',{data:${escaped}}));}catch(e){}})();true;`;
-      webViewRef.current?.injectJavaScript(js);
-    }, []);
+  const postToWebView = useCallback((msg: Record<string, unknown>) => {
+    const escaped = JSON.stringify(JSON.stringify(msg));
+    const js = `(function(){try{window.dispatchEvent(new MessageEvent('message',{data:${escaped}}));}catch(e){}})();true;`;
+    webViewRef.current?.injectJavaScript(js);
+  }, []);
 
-    useImperativeHandle(ref, () => ({
-      write(data: string) { postToWebView({ type: 'write', data }); },
-      resize(cols: number, rows: number) { postToWebView({ type: 'resize', cols, rows }); },
-      getLatencyStats() { postToWebView({ type: 'get-latency-stats' }); },
-    }), [postToWebView]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      write(data: string) {
+        postToWebView({ type: 'write', data });
+      },
+      resize(cols: number, rows: number) {
+        postToWebView({ type: 'resize', cols, rows });
+      },
+      getLatencyStats() {
+        postToWebView({ type: 'get-latency-stats' });
+      },
+    }),
+    [postToWebView],
+  );
 
-    const handleMessage = useCallback((event: WebViewMessageEvent) => {
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      if (event.nativeEvent.data.length > 70_000) return;
       let msg: Record<string, unknown>;
-      try { msg = JSON.parse(event.nativeEvent.data) as Record<string, unknown>; }
-      catch { return; }
+      try {
+        msg = JSON.parse(event.nativeEvent.data) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
       switch (msg['type']) {
-        case 'ready':   onReady?.(); break;
-        case 'input':   onInput?.(msg['data'] as string); break;
-        case 'resize':  onResize?.(msg['cols'] as number, msg['rows'] as number); break;
+        case 'ready':
+          onReady?.();
+          break;
+        case 'input':
+          if (typeof msg['data'] === 'string' && msg['data'].length <= 32_768) {
+            onInput?.(msg['data']);
+          }
+          break;
+        case 'resize':
+          if (
+            Number.isInteger(msg['cols']) &&
+            Number.isInteger(msg['rows']) &&
+            (msg['cols'] as number) > 0 &&
+            (msg['cols'] as number) <= 1000 &&
+            (msg['rows'] as number) > 0 &&
+            (msg['rows'] as number) <= 1000
+          ) {
+            onResize?.(msg['cols'] as number, msg['rows'] as number);
+          }
+          break;
         case 'latency-stats':
-          onLatencyStats?.(msg['n'] as number, msg['p50'] as number, msg['p95'] as number);
+          if (
+            Number.isFinite(msg['n']) &&
+            Number.isFinite(msg['p50']) &&
+            Number.isFinite(msg['p95'])
+          ) {
+            onLatencyStats?.(msg['n'] as number, msg['p50'] as number, msg['p95'] as number);
+          }
           break;
       }
-    }, [onReady, onInput, onResize, onLatencyStats]);
+    },
+    [onReady, onInput, onResize, onLatencyStats],
+  );
 
-    const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;
+  const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;
 
-    return (
-      <View style={styles.container}>
-        <WebViewAny
-          ref={webViewRef}
-          source={getTerminalSource()}
-          style={styles.webview}
-          onMessage={handleMessage}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          originWhitelist={['*']}
-          scrollEnabled={false}
-          keyboardDisplayRequiresUserAction={false}
-          allowFileAccess={true}
-          allowFileAccessFromFileURLs={true}
-          allowUniversalAccessFromFileURLs={true}
-          mixedContentMode="always"
-        />
-      </View>
-    );
-  },
-);
+  return (
+    <View style={styles.container}>
+      <WebViewAny
+        ref={webViewRef}
+        source={getTerminalSource()}
+        style={styles.webview}
+        onMessage={handleMessage}
+        javaScriptEnabled={true}
+        domStorageEnabled={false}
+        originWhitelist={['https://localhost']}
+        onShouldStartLoadWithRequest={(request: { url: string }) =>
+          request.url === 'about:blank' ||
+          request.url === 'https://localhost' ||
+          request.url === 'https://localhost/' ||
+          request.url.startsWith('https://localhost/#')
+        }
+        scrollEnabled={false}
+        keyboardDisplayRequiresUserAction={false}
+        allowFileAccess={false}
+        allowFileAccessFromFileURLs={false}
+        allowUniversalAccessFromFileURLs={false}
+        mixedContentMode="never"
+        javaScriptCanOpenWindowsAutomatically={false}
+        setSupportMultipleWindows={false}
+        thirdPartyCookiesEnabled={false}
+      />
+    </View>
+  );
+});
 
 export default TerminalView;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a1a' },
-  webview:   { flex: 1, backgroundColor: 'transparent' },
+  webview: { flex: 1, backgroundColor: 'transparent' },
 });

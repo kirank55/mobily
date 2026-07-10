@@ -9,12 +9,10 @@ import { Session } from './session.js';
 import { startServer } from './ws.js';
 import { AuthManager } from './auth.js';
 import { renderTerminalQr } from './qr.js';
-import {
-  createTunnelBackend,
-  isTunnelId,
-  type TunnelId,
-} from './tunnel/index.js';
+import { createTunnelBackend, isTunnelId, type TunnelId } from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
+import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
+import { PAIRING_CODE_TTL_MS } from './auth.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -22,18 +20,29 @@ const pkg = require('../package.json') as { version: string };
 export async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      tunnel: { type: 'string', default: 'local' },
+      tunnel: { type: 'string' },
+      'allow-insecure-local': { type: 'boolean', default: false },
     },
   });
 
   const tunnelFlag = values.tunnel;
-  if (!tunnelFlag || !isTunnelId(tunnelFlag)) {
+  if (!tunnelFlag) {
     console.error(
-      `Unknown --tunnel value: '${tunnelFlag}'. Use 'local' (default) or 'devtunnels'.`,
+      "Choose a tunnel: '--tunnel devtunnels' (secure) or '--tunnel local --allow-insecure-local' (isolated development only).",
     );
     process.exit(1);
   }
+  if (!isTunnelId(tunnelFlag)) {
+    console.error(`Unknown --tunnel value: '${tunnelFlag}'. Use 'devtunnels' or 'local'.`);
+    process.exit(1);
+  }
   const tunnelId: TunnelId = tunnelFlag;
+  if (tunnelId === 'local' && !values['allow-insecure-local']) {
+    console.error(
+      "Local LAN transport is plaintext. Use '--tunnel local --allow-insecure-local' only for isolated development networks.",
+    );
+    process.exit(1);
+  }
 
   const auth = new AuthManager(os.hostname());
   const tunnel = await createTunnelBackend(tunnelId);
@@ -47,6 +56,12 @@ export async function main(): Promise<void> {
   auth.setTunnelUrl(connection.url);
 
   const pairingCode = auth.generatePairingCode();
+  const pairingPayload = encodePairingPayload({
+    endpoint: connection.url,
+    code: pairingCode,
+    expiresAt: Date.now() + PAIRING_CODE_TTL_MS,
+    protocolVersion: PROTOCOL_VERSION,
+  });
 
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
@@ -54,9 +69,14 @@ export async function main(): Promise<void> {
   console.log('  Scan this QR with the Mobily app to pair your device:');
   console.log();
   try {
-    const qr = await renderTerminalQr(pairingCode);
+    const qr = await renderTerminalQr(pairingPayload);
     const indent = '  ';
-    console.log(qr.split('\n').map((line) => `${indent}${line}`).join('\n'));
+    console.log(
+      qr
+        .split('\n')
+        .map((line) => `${indent}${line}`)
+        .join('\n'),
+    );
   } catch (err) {
     console.error(
       `  (QR unavailable — enter the code below) ${

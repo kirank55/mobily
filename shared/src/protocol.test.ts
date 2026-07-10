@@ -3,6 +3,8 @@ import {
   decodeFrame,
   encodeFrame,
   PROTOCOL_VERSION,
+  WS_CLOSE_CODES,
+  type AuthOkFrame,
   type AuthChallengeFrame,
   type AuthResponseFrame,
   type Frame,
@@ -69,6 +71,7 @@ describe('round-trip: union type narrowing', () => {
       { type: 'hello-ack', protocolVersion: 1 },
       { type: 'auth-challenge', nonce: 'abc123' },
       { type: 'auth-response', deviceId: 'dev1', signature: 'sig' },
+      { type: 'auth-ok' },
     ];
 
     for (const f of frames) {
@@ -109,6 +112,22 @@ describe('round-trip: auth-response frame', () => {
       signature: 'MEUCIQD...base64sig...',
     };
     expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('round-trip: auth-ok frame', () => {
+  it('acknowledges successful Device Key authentication', () => {
+    const frame: AuthOkFrame = { type: 'auth-ok' };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
+describe('WS_CLOSE_CODES', () => {
+  it('keeps permanent failure codes stable across clients', () => {
+    expect(WS_CLOSE_CODES.AUTH_REJECTED).toBe(4001);
+    expect(WS_CLOSE_CODES.PROTOCOL_ERROR).toBe(4002);
+    expect(WS_CLOSE_CODES.VERSION_MISMATCH).toBe(4003);
+    expect(WS_CLOSE_CODES.HANDSHAKE_TIMEOUT).toBe(4008);
   });
 });
 
@@ -209,27 +228,19 @@ describe('decodeFrame errors: malformed output frame', () => {
 
 describe('decodeFrame errors: malformed resize frame', () => {
   it('throws TypeError when cols is zero', () => {
-    expect(() =>
-      decodeFrame('{"type":"resize","cols":0,"rows":24}'),
-    ).toThrow(TypeError);
+    expect(() => decodeFrame('{"type":"resize","cols":0,"rows":24}')).toThrow(TypeError);
   });
 
   it('throws TypeError when rows is negative', () => {
-    expect(() =>
-      decodeFrame('{"type":"resize","cols":80,"rows":-1}'),
-    ).toThrow(TypeError);
+    expect(() => decodeFrame('{"type":"resize","cols":80,"rows":-1}')).toThrow(TypeError);
   });
 
   it('throws TypeError when cols is a float', () => {
-    expect(() =>
-      decodeFrame('{"type":"resize","cols":80.5,"rows":24}'),
-    ).toThrow(TypeError);
+    expect(() => decodeFrame('{"type":"resize","cols":80.5,"rows":24}')).toThrow(TypeError);
   });
 
   it('throws TypeError when cols is a string', () => {
-    expect(() =>
-      decodeFrame('{"type":"resize","cols":"80","rows":24}'),
-    ).toThrow(TypeError);
+    expect(() => decodeFrame('{"type":"resize","cols":"80","rows":24}')).toThrow(TypeError);
   });
 
   it('throws TypeError when rows is missing', () => {

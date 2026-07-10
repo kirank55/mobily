@@ -5,15 +5,16 @@
  * Sends the pairing code + Device Key public key, receives the connection payload.
  */
 
-import { createDeviceKey, generateDeviceId } from './deviceKey';
+import {
+  createPairingProofPayload,
+  isSecureWebSocketUrl,
+  PROTOCOL_VERSION,
+  webSocketToPairingUrl,
+  type PairingPayload,
+  type PairingResponse,
+} from '@mobily/shared';
+import { createDeviceKey, generateDeviceId, signNonce } from './deviceKey';
 import { savePairing, type PairingRecord } from './storage';
-
-/** Response from the CLI pairing endpoint. */
-export interface PairingResponse {
-  tunnelUrl: string;
-  stationName: string;
-  protocolVersion: number;
-}
 
 /** Result of a pairing attempt. */
 export interface PairResult {
@@ -29,7 +30,18 @@ export interface PairResult {
  * @param baseUrl The CLI's base URL (e.g. http://192.168.1.100:51234)
  * @param code The short pairing code scanned from the QR
  */
-export async function pairWithStation(baseUrl: string, code: string): Promise<PairResult> {
+export async function pairWithStation(
+  pairing: PairingPayload,
+  options: { allowInsecureTransport?: boolean } = {},
+): Promise<PairResult> {
+  if (pairing.protocolVersion !== PROTOCOL_VERSION) {
+    return { ok: false, error: 'Please update the app or CLI before pairing.' };
+  }
+  const insecureDevelopmentOverride = __DEV__ && options.allowInsecureTransport === true;
+  if (!isSecureWebSocketUrl(pairing.endpoint) && !insecureDevelopmentOverride) {
+    return { ok: false, error: 'Refusing insecure Station transport.' };
+  }
+
   const deviceId = generateDeviceId();
 
   let publicKey: string;
@@ -40,12 +52,28 @@ export async function pairWithStation(baseUrl: string, code: string): Promise<Pa
     return { ok: false, error: 'Failed to create Device Key. Is biometrics set up?' };
   }
 
+  const proofPayload = createPairingProofPayload(
+    pairing.code,
+    deviceId,
+    publicKey,
+    pairing.endpoint,
+  );
+  let proof: string | null;
+  try {
+    proof = await signNonce(proofPayload, 'Confirm pairing with this Station');
+  } catch {
+    return { ok: false, error: 'Failed to prove Device Key ownership.' };
+  }
+  if (!proof) {
+    return { ok: false, error: 'Pairing confirmation was cancelled.' };
+  }
+
   let resp: Response;
   try {
-    resp = await fetch(`${baseUrl}/.well-known/mobily/pair`, {
+    resp = await fetch(webSocketToPairingUrl(pairing.endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, deviceId, publicKey }),
+      body: JSON.stringify({ code: pairing.code, deviceId, publicKey, proof }),
     });
   } catch (err) {
     return {
@@ -65,7 +93,23 @@ export async function pairWithStation(baseUrl: string, code: string): Promise<Pa
     return { ok: false, error };
   }
 
-  const payload = (await resp.json()) as PairingResponse;
+  let payload: PairingResponse;
+  try {
+    payload = (await resp.json()) as PairingResponse;
+  } catch {
+    return { ok: false, error: 'Station returned an invalid pairing response.' };
+  }
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    typeof payload.stationName !== 'string' ||
+    payload.stationName.length === 0 ||
+    payload.stationName.length > 255 ||
+    payload.tunnelUrl !== pairing.endpoint ||
+    payload.protocolVersion !== PROTOCOL_VERSION
+  ) {
+    return { ok: false, error: 'Station returned an invalid pairing response.' };
+  }
 
   const record: PairingRecord = {
     stationName: payload.stationName,

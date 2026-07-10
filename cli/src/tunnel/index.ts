@@ -2,7 +2,7 @@
  * cli/src/tunnel/index.ts
  *
  * Factory that maps the `--tunnel` CLI flag to a {@link TunnelBackend}
- * instance. `local` (the default) needs no setup; `devtunnels` runs the
+ * instance. `local` is an explicit plaintext development mode; `devtunnels` runs the
  * device-code auth flow before constructing {@link DevTunnelsBackend}.
  */
 
@@ -25,7 +25,7 @@ export function isTunnelId(value: string): value is TunnelId {
 /**
  * Create a {@link TunnelBackend} for the given tunnel id.
  *
- * - `'local'` (default): {@link LocalBackend} — LAN, zero setup.
+ * - `'local'`: {@link LocalBackend} — plaintext LAN development mode.
  * - `'devtunnels'`: runs the device-code auth flow, then returns a
  *   {@link DevTunnelsBackend}. Requires a configured client ID.
  */

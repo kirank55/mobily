@@ -8,17 +8,19 @@ A free and open-source mobile remote-control for terminal-based development envi
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
 - **Session persistence** — terminal sessions survive disconnects via `tmux` (or bare PTY fallback)
 - **Git GUI** — stage, diff, and commit from your phone without touching the terminal
-- **Pluggable tunneling** — Dev Tunnels (default), Bore, Cloudflare, SSH, or local network
-- **No cloud dependencies** — everything runs locally; no accounts, no relay servers required
+- **Pluggable tunneling** — Dev Tunnels for secure phone access, plus an explicit local development mode
+- **No Mobily-operated cloud** — secure remote access currently uses Microsoft Dev Tunnels and requires operator authentication
 
 ## Quick Start
 
 ```bash
-# On your workstation
-npx mobily
-
-# Scan the QR code with the Mobily Android app
+# Secure remote access (requires Dev Tunnels provisioning)
+npx mobily --tunnel devtunnels
 ```
+
+For an isolated development LAN, plaintext local transport is available only
+with `--tunnel local --allow-insecure-local`. The Android app intentionally
+refuses that mode; use the browser smoke harness for local protocol development.
 
 ## Architecture
 

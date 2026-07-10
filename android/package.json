@@ -5,6 +5,8 @@
   "private": true,
   "dependencies": {
     "@mobily/shared": "workspace:*",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
     "expo": "~57.0.4",
     "expo-camera": "~57.0.1",
     "expo-constants": "~57.0.3",
@@ -34,6 +36,12 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "generate:terminal-assets": "node scripts/generate-terminal-assets.mjs",
+    "prestart": "pnpm generate:terminal-assets",
+    "preandroid": "pnpm generate:terminal-assets",
+    "preios": "pnpm generate:terminal-assets",
+    "preweb": "pnpm generate:terminal-assets",
+    "preprebuild": "pnpm generate:terminal-assets",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

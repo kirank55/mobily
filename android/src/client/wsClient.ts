@@ -15,21 +15,20 @@
  */
 
 import { signNonce } from '@/auth/deviceKey';
+import {
+  decodeFrame,
+  encodeFrame,
+  isSecureWebSocketUrl,
+  WS_CLOSE_CODES,
+  type Frame,
+} from '@mobily/shared';
 
 export type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'failed';
+  'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 
 /** Structured error types for UX-specific messaging. */
 export type ErrorKind =
-  | 'auth-rejection'
-  | 'version-mismatch'
-  | 'station-offline'
-  | 'biometric-cancelled'
-  | 'generic';
+  'auth-rejection' | 'version-mismatch' | 'station-offline' | 'biometric-cancelled' | 'generic';
 
 export interface WsClientOptions {
   url: string;
@@ -45,14 +44,19 @@ export interface WsClientOptions {
   onError?: (message: string, kind?: ErrorKind) => void;
   /** Max reconnect attempts before failing. */
   maxRetries?: number;
+  /** Permit ws:// only in explicitly configured development builds. */
+  allowInsecureTransport?: boolean;
 }
 
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30000;
-
-/** WS close codes emitted by the CLI. */
-const CLOSE_CODE_AUTH_REJECTED  = 4001;
-const CLOSE_CODE_VERSION_MISMATCH = 4002;
+type HandshakeState =
+  | 'idle'
+  | 'awaiting-hello-ack'
+  | 'awaiting-challenge'
+  | 'signing-challenge'
+  | 'awaiting-auth-ok'
+  | 'ready';
 
 export class WsClient {
   private ws: WebSocket | null = null;
@@ -61,7 +65,10 @@ export class WsClient {
   private backoff = INITIAL_BACKOFF_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private deliberatelyClosed = false;
+  private reconnectSuppressed = false;
   private ready = false;
+  private socketGeneration = 0;
+  private handshakeState: HandshakeState = 'idle';
   /** Set to true when auth is permanently rejected (re-pair required). */
   private authRejected = false;
 
@@ -78,15 +85,29 @@ export class WsClient {
   /** Open the connection and start the handshake. */
   connect(): void {
     this.deliberatelyClosed = false;
+    this.reconnectSuppressed = false;
     this.authRejected = false;
     this.retries = 0;
     this.backoff = INITIAL_BACKOFF_MS;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const insecureDevelopmentOverride = __DEV__ && this.opts.allowInsecureTransport === true;
+    if (!isSecureWebSocketUrl(this.opts.url) && !insecureDevelopmentOverride) {
+      this.emitError('Refusing insecure Station transport', 'generic');
+      this.setState('failed', 'insecure transport');
+      return;
+    }
     this.openSocket();
   }
 
   /** Close the connection permanently. */
   disconnect(): void {
     this.deliberatelyClosed = true;
+    this.socketGeneration++;
+    this.handshakeState = 'idle';
+    this.ready = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -100,12 +121,12 @@ export class WsClient {
 
   /** Send an input frame (keystrokes / paste). Only after handshake. */
   sendInput(data: string): void {
-    this.send({ type: 'input', data });
+    if (this.ready) this.send({ type: 'input', data });
   }
 
   /** Send a resize frame. */
   sendResize(cols: number, rows: number): void {
-    this.send({ type: 'resize', cols, rows });
+    if (this.ready) this.send({ type: 'resize', cols, rows });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -114,10 +135,12 @@ export class WsClient {
 
   private openSocket(): void {
     this.ready = false;
+    this.reconnectSuppressed = false;
     this.setState(this.retries > 0 ? 'reconnecting' : 'connecting');
 
+    let socket: WebSocket;
     try {
-      this.ws = new WebSocket(this.opts.url);
+      socket = new WebSocket(this.opts.url);
     } catch (err) {
       this.emitError(
         `Station unreachable — ${err instanceof Error ? err.message : 'network error'}`,
@@ -126,37 +149,48 @@ export class WsClient {
       this.scheduleReconnect();
       return;
     }
+    const generation = ++this.socketGeneration;
+    this.ws = socket;
+    this.handshakeState = 'awaiting-hello-ack';
 
-    this.ws.onopen = () => {
-      this.send({ type: 'hello', protocolVersion: this.opts.protocolVersion });
+    socket.onopen = () => {
+      if (!this.isCurrentSocket(socket, generation)) return;
+      this.sendOn(socket, { type: 'hello', protocolVersion: this.opts.protocolVersion });
     };
 
-    this.ws.onmessage = (ev: MessageEvent) => {
-      let frame: Record<string, unknown>;
+    socket.onmessage = (ev: MessageEvent) => {
+      if (!this.isCurrentSocket(socket, generation)) return;
+      let frame: Frame;
       try {
-        frame = JSON.parse(ev.data as string);
+        if (typeof ev.data !== 'string') throw new TypeError('non-text frame');
+        frame = decodeFrame(ev.data);
       } catch {
+        socket.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
         return;
       }
-      void this.handleFrame(frame);
+      void this.handleFrame(frame, socket, generation);
     };
 
-    this.ws.onclose = (ev: CloseEvent) => {
+    socket.onclose = (ev: CloseEvent) => {
+      if (!this.isCurrentSocket(socket, generation)) return;
+      this.ws = null;
       this.ready = false;
+      this.handshakeState = 'idle';
       if (this.deliberatelyClosed) {
         this.setState('disconnected');
         return;
       }
+      if (this.reconnectSuppressed) return;
 
       // Classify the close code for UX-specific messages
-      if (ev.code === CLOSE_CODE_AUTH_REJECTED) {
+      if (ev.code === WS_CLOSE_CODES.AUTH_REJECTED) {
         this.authRejected = true;
         this.emitError('Device not recognized — scan QR to re-pair', 'auth-rejection');
         this.setState('failed', 'auth-rejection');
         return;
       }
 
-      if (ev.code === CLOSE_CODE_VERSION_MISMATCH) {
+      if (ev.code === WS_CLOSE_CODES.VERSION_MISMATCH) {
         this.emitError('Please update the app or the CLI to the same version', 'version-mismatch');
         this.setState('failed', 'version-mismatch');
         return;
@@ -164,74 +198,94 @@ export class WsClient {
 
       // Transient disconnection — retry
       const reason = ev.reason ? `: ${ev.reason}` : '';
-      this.emitError(
-        `Station unreachable${reason} — is the CLI running?`,
-        'station-offline',
-      );
+      this.emitError(`Station unreachable${reason} — is the CLI running?`, 'station-offline');
       this.scheduleReconnect();
     };
 
-    this.ws.onerror = () => {
+    socket.onerror = () => {
       // The onclose handler fires right after onerror; no additional action needed here.
       // Avoid double-emitting by not calling onError here.
     };
   }
 
-  private async handleFrame(frame: Record<string, unknown>): Promise<void> {
-    const type = frame['type'] as string;
+  private async handleFrame(frame: Frame, socket: WebSocket, generation: number): Promise<void> {
+    if (!this.isCurrentSocket(socket, generation)) return;
 
-    switch (type) {
-      case 'hello-ack':
-        // Server acknowledged version — waiting for auth challenge
-        break;
-
-      case 'auth-challenge': {
-        const nonce = frame['nonce'] as string;
-        const signature = await signNonce(nonce);
-        if (signature === null) {
-          this.emitError('Biometric authentication cancelled', 'biometric-cancelled');
-          this.ws?.close(1008, 'auth cancelled');
-          this.setState('failed', 'biometric-cancelled');
+    switch (frame.type) {
+      case 'hello-ack': {
+        if (
+          this.handshakeState !== 'awaiting-hello-ack' ||
+          frame.protocolVersion !== this.opts.protocolVersion
+        ) {
+          socket.close(
+            frame.protocolVersion === this.opts.protocolVersion
+              ? WS_CLOSE_CODES.PROTOCOL_ERROR
+              : WS_CLOSE_CODES.VERSION_MISMATCH,
+            'invalid hello acknowledgement',
+          );
           return;
         }
-        this.send({ type: 'auth-response', deviceId: this.opts.deviceId, signature });
+        this.handshakeState = 'awaiting-challenge';
+        break;
+      }
+
+      case 'auth-challenge': {
+        if (this.handshakeState !== 'awaiting-challenge') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected auth challenge');
+          return;
+        }
+        this.handshakeState = 'signing-challenge';
+        let signature: string | null;
+        try {
+          signature = await signNonce(frame.nonce);
+        } catch {
+          signature = null;
+        }
+        if (
+          !this.isCurrentSocket(socket, generation) ||
+          this.handshakeState !== 'signing-challenge'
+        ) {
+          return;
+        }
+        if (signature === null) {
+          this.reconnectSuppressed = true;
+          this.emitError('Biometric authentication cancelled', 'biometric-cancelled');
+          this.setState('failed', 'biometric-cancelled');
+          socket.close(1008, 'auth cancelled');
+          return;
+        }
+        this.sendOn(socket, {
+          type: 'auth-response',
+          deviceId: this.opts.deviceId,
+          signature,
+        });
+        this.handshakeState = 'awaiting-auth-ok';
         break;
       }
 
       case 'output':
-        this.opts.onOutput?.(frame['data'] as string);
+        this.opts.onOutput?.(frame.data);
         break;
 
-      case 'error': {
-        const msg = (frame['message'] as string | undefined) ?? 'Server error';
-        const code = frame['code'] as string | undefined;
-
-        // Classify server-sent error frames
-        if (code === 'AUTH_REJECTED' || msg.toLowerCase().includes('not recognized')) {
-          this.authRejected = true;
-          this.emitError('Device not recognized — scan QR to re-pair', 'auth-rejection');
-          this.setState('failed', 'auth-rejection');
-        } else if (code === 'VERSION_MISMATCH' || msg.toLowerCase().includes('version')) {
-          this.emitError('Please update the app or the CLI', 'version-mismatch');
-          this.setState('failed', 'version-mismatch');
-        } else {
-          this.emitError(msg, 'generic');
+      case 'auth-ok':
+        if (this.handshakeState !== 'awaiting-auth-ok') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected auth acknowledgement');
+          return;
         }
+        this.handshakeState = 'ready';
+        this.ready = true;
+        this.retries = 0;
+        this.backoff = INITIAL_BACKOFF_MS;
+        this.setState('connected');
+        this.opts.onReady?.();
         break;
-      }
 
-      default:
-        // Unknown frame — ignore
+      case 'hello':
+      case 'auth-response':
+      case 'input':
+      case 'resize':
+        socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
         break;
-    }
-
-    // First output frame means we're fully connected and streaming
-    if (type === 'output' && !this.ready) {
-      this.ready = true;
-      this.retries = 0;
-      this.backoff = INITIAL_BACKOFF_MS;
-      this.setState('connected');
-      this.opts.onReady?.();
     }
   }
 
@@ -256,10 +310,16 @@ export class WsClient {
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
   }
 
-  private send(frame: Record<string, unknown>): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(frame));
-    }
+  private send(frame: Frame): void {
+    if (this.ws) this.sendOn(this.ws, frame);
+  }
+
+  private sendOn(socket: WebSocket, frame: Frame): void {
+    if (socket.readyState === WebSocket.OPEN) socket.send(encodeFrame(frame));
+  }
+
+  private isCurrentSocket(socket: WebSocket, generation: number): boolean {
+    return this.ws === socket && this.socketGeneration === generation;
   }
 
   private setState(state: ConnectionState, detail?: string): void {
