@@ -78,17 +78,17 @@
 - [ ] Microsoft Dev Tunnels app registration (device-code auth via Entra ID) — manual external task; see `docs/devtunnels-provisioning.md`
 - [x] `cli/src/tunnel/types.ts`: `TunnelBackend` interface — `connect(localPort)` → `TunnelConnection { url, disconnect() }`, plus `bindHost`
 - [x] `cli/src/tunnel/local.ts`: `LocalBackend` — initial LAN backend; now restricted to explicit development use by Phase 3.1
-- [x] `cli/src/tunnel/config.ts`: Dev Tunnels config loader (client ID + tenant from env/baked-in default)
+- [x] Dev Tunnels helper resolver with PATH and platform-specific install-location discovery
 - [x] Update ADR 0003 + plan.md: default→local, Dev Tunnels opt-in, correct anonymous-hosting assumption
 - [x] Test (vitest): `cli/tests/tunnel.test.ts` — LocalBackend URL shape, bindHost, disconnect
 
 ### Dev Tunnels Integration
 
-- [x] `cli/src/tunnel/devtunnels.ts`: Dev Tunnels client (embedded `@microsoft/dev-tunnels` SDKs + device-code `TokenCredential`) — create tunnel, add port `--allow-anonymous`, host → `wss://` URL, `disconnect()` tears down
-- [x] `cli/src/tunnel/device-code.ts`: OAuth 2.0 device-code flow against Entra ID (SDK has no built-in auth)
+- [x] `cli/src/tunnel/devtunnels.ts`: guide official helper installation/login, host a temporary `--allow-anonymous` tunnel, return its `wss://` URL, and stop the helper on disconnect
+- [x] GitHub or Microsoft device-code login through the official `devtunnel` helper; cached users skip login
 - [x] `cli/src/tunnel/index.ts`: `createTunnelBackend(tunnelId)` factory + `isTunnelId()` type guard
 - [x] CLI flag: `--tunnel local|devtunnels` wired in `index.ts` via `node:util.parseArgs`; Phase 3.1 removed the implicit local default
-- [x] Test (vitest): factory returns LocalBackend for 'local'; throws for 'devtunnels' when unconfigured; `isTunnelId` validates
+- [x] Test (vitest): local backend behavior plus guided Dev Tunnels install, login, hosting, retry, and shutdown
 
 ### Auth & Pairing
 

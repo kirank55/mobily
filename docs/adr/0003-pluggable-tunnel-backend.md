@@ -22,8 +22,10 @@ tunnel (the tunnel is opened with `--allow-anonymous`), and mobily gates that
 connection with its own Device Key challenge-response auth. The phone never
 needs a Microsoft account.
 
-The operator authenticates once via a device-code flow using a maintainer-
-registered Entra ID app (client ID baked into the CLI). See
+The operator authenticates once through Microsoft's official `devtunnel`
+helper, choosing GitHub or Microsoft device-code login. The helper owns secure
+credential caching; Mobily owns the guided first-run experience and temporary
+tunnel lifecycle. See
 [`docs/devtunnels-provisioning.md`](../devtunnels-provisioning.md).
 
 ## Why the interface exists

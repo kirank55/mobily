@@ -14,9 +14,13 @@ A free and open-source mobile remote-control for terminal-based development envi
 ## Quick Start
 
 ```bash
-# Secure remote access (requires Dev Tunnels provisioning)
+# Secure remote access (guides first-time install and login)
 npx mobily --tunnel devtunnels
 ```
+
+On first use, Mobily guides installation of Microsoft's official `devtunnel`
+helper and offers GitHub or Microsoft device-code login. Credentials are cached
+by the helper for later runs.
 
 For an isolated development LAN, plaintext local transport is available only
 with `--tunnel local --allow-insecure-local`. The Android app intentionally

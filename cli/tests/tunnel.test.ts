@@ -102,16 +102,4 @@ describe('createTunnelBackend()', () => {
     expect(backend.bindHost).toBe('0.0.0.0');
   });
 
-  it("throws for 'devtunnels' when no client ID is configured", async () => {
-    // Ensure no env var is set so the default (empty) client ID is used.
-    const saved = process.env['MOBILY_DEVTUNNELS_CLIENT_ID'];
-    delete process.env['MOBILY_DEVTUNNELS_CLIENT_ID'];
-    try {
-      await expect(createTunnelBackend('devtunnels')).rejects.toThrow(
-        /not configured/i,
-      );
-    } finally {
-      if (saved !== undefined) process.env['MOBILY_DEVTUNNELS_CLIENT_ID'] = saved;
-    }
-  });
 });

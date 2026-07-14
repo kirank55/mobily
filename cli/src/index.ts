@@ -13,6 +13,11 @@ import { createTunnelBackend, isTunnelId, type TunnelId } from './tunnel/index.j
 import type { TunnelConnection } from './tunnel/types.js';
 import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { PAIRING_CODE_TTL_MS } from './auth.js';
+import { formatCliError, UserFacingError } from './errors.js';
+import {
+  isDevTunnelsProvider,
+  type DevTunnelsProvider,
+} from './tunnel/devtunnels.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -22,6 +27,8 @@ export async function main(): Promise<void> {
     options: {
       tunnel: { type: 'string' },
       'allow-insecure-local': { type: 'boolean', default: false },
+      'devtunnels-provider': { type: 'string' },
+      verbose: { type: 'boolean', default: false },
     },
   });
 
@@ -37,6 +44,19 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
   const tunnelId: TunnelId = tunnelFlag;
+  const providerFlag = values['devtunnels-provider'];
+  let devtunnelsProvider: DevTunnelsProvider | undefined;
+  if (providerFlag !== undefined) {
+    if (!isDevTunnelsProvider(providerFlag)) {
+      throw new UserFacingError(
+        `Unknown Dev Tunnels provider: '${providerFlag}'. Use 'github' or 'microsoft'.`,
+      );
+    }
+    if (tunnelId !== 'devtunnels') {
+      throw new UserFacingError('--devtunnels-provider can only be used with --tunnel devtunnels.');
+    }
+    devtunnelsProvider = providerFlag;
+  }
   if (tunnelId === 'local' && !values['allow-insecure-local']) {
     console.error(
       "Local LAN transport is plaintext. Use '--tunnel local --allow-insecure-local' only for isolated development networks.",
@@ -45,7 +65,10 @@ export async function main(): Promise<void> {
   }
 
   const auth = new AuthManager(os.hostname());
-  const tunnel = await createTunnelBackend(tunnelId);
+  const tunnel = await createTunnelBackend(tunnelId, {
+    devtunnelsProvider,
+    verbose: values.verbose,
+  });
   const session = new Session({ cols: 80, rows: 24, auth });
   const server = await startServer({
     session,
@@ -122,7 +145,8 @@ export async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
-  console.error(err);
+const verbose = process.argv.includes('--verbose');
+main().catch((err: unknown) => {
+  console.error(formatCliError(err, verbose));
   process.exit(1);
 });

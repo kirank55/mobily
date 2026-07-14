@@ -1,7 +1,7 @@
 # mobily — Plan
 
 ## Locked Decisions
-- **Tunneling:** Pluggable `TunnelBackend` interface — `LocalBackend` (LAN, zero setup) as default; Dev Tunnels (opt-in, device-code auth) as the remote path; alternatives (Bore, Cloudflare, SSH) via `--tunnel` flag
+- **Tunneling:** Pluggable `TunnelBackend` interface with explicit selection — `LocalBackend` for isolated LAN development; Dev Tunnels as the secure remote path; alternatives (Bore, Cloudflare, SSH) via `--tunnel`
 - **App platform:** Android, React Native (Expo + prebuild workflow), target latest API (36+), with fallbacks for older versions
 - **Terminal renderer:** `xterm.js` inside a React Native `WebView`, with Termux-style extra key row (Esc, Ctrl, Alt, Tab, arrows) implemented in the WebView layer
 - **Lock-screen surface:** Foreground-service notification (all API 26+ devices)
@@ -39,15 +39,15 @@
 
 ### Phase 2 — Secure Tunnel & Pairing
 **Goal:** Public/LAN URL with device-bound auth; QR pairing flow.
-- **Default tunnel: Local (LAN)** — `LocalBackend` binds WS to `0.0.0.0`, returns `ws://<lan-ip>:<port>`. Zero account, no external service. Device Key still gates access.
-- **Dev Tunnels: opt-in remote** (`--tunnel devtunnels`) — operator authenticates once via device-code flow using a maintainer-registered Entra ID app (client ID baked into CLI). Tunnel opened with `--allow-anonymous`; phone connects without an MS account and proves identity via Device Key.
-  - Microsoft Dev Tunnels app registration — manual external task; see `docs/devtunnels-provisioning.md`.
+- **Explicit local tunnel (LAN development)** — `LocalBackend` binds WS to `0.0.0.0` and returns `ws://<lan-ip>:<port>` only with the insecure-development override.
+- **Dev Tunnels: opt-in remote** (`--tunnel devtunnels`) — Mobily guides installation of Microsoft's official `devtunnel` helper and offers GitHub or Microsoft device-code login. The helper caches credentials. The tunnel is opened with `--allow-anonymous`; the phone proves identity with its Device Key.
+  - First-run helper installation and account login — see `docs/devtunnels-provisioning.md`.
   - **Note:** Dev Tunnels cannot be hosted anonymously — only connecting to a tunnel can be anonymous. This corrects the original ADR 0003 assumption.
 - `cli/src/tunnel/`: `TunnelBackend` interface — `connect(localPort)` → `TunnelConnection { url, disconnect() }`, plus `bindHost`
-  - `LocalBackend`: the default — LAN, zero setup
-  - `DevTunnelsBackend`: opt-in remote — embedded `@microsoft/dev-tunnels` SDKs + device-code auth
+  - `LocalBackend`: explicit isolated-LAN development mode
+  - `DevTunnelsBackend`: opt-in remote — orchestrates the official `devtunnel` helper and its cached login
   - Document how to add alternative backends (Bore, Cloudflare, SSH)
-  - CLI flag: `--tunnel local|devtunnels` (default: `local`)
+  - CLI flag: `--tunnel local|devtunnels` (required; no implicit default)
 - `cli/src/auth.ts`:
   - Generate short pairing code (6-8 alphanumeric chars, cryptorandom)
   - Expose HTTPS pairing endpoint at `/.well-known/mobily/pair`

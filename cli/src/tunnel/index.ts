@@ -3,13 +3,12 @@
  *
  * Factory that maps the `--tunnel` CLI flag to a {@link TunnelBackend}
  * instance. `local` is an explicit plaintext development mode; `devtunnels` runs the
- * device-code auth flow before constructing {@link DevTunnelsBackend}.
+ * official helper discovery and cached-login flow before constructing
+ * {@link DevTunnelsBackend}.
  */
 
 import { LocalBackend } from './local.js';
-import { DevTunnelsBackend } from './devtunnels.js';
-import { loadDevTunnelsConfig, isDevTunnelsConfigured } from './config.js';
-import { authenticate } from './device-code.js';
+import { prepareDevTunnelsBackend, type DevTunnelsProvider } from './devtunnels.js';
 import type { TunnelBackend } from './types.js';
 
 export type { TunnelBackend, TunnelConnection } from './types.js';
@@ -26,24 +25,27 @@ export function isTunnelId(value: string): value is TunnelId {
  * Create a {@link TunnelBackend} for the given tunnel id.
  *
  * - `'local'`: {@link LocalBackend} — plaintext LAN development mode.
- * - `'devtunnels'`: runs the device-code auth flow, then returns a
- *   {@link DevTunnelsBackend}. Requires a configured client ID.
+ * - `'devtunnels'`: discovers Microsoft's helper, guides login when needed,
+ *   then returns a {@link DevTunnelsBackend}.
  */
-export async function createTunnelBackend(tunnel: TunnelId): Promise<TunnelBackend> {
+export interface TunnelBackendOptions {
+  readonly devtunnelsProvider?: DevTunnelsProvider;
+  readonly verbose?: boolean;
+}
+
+export async function createTunnelBackend(
+  tunnel: TunnelId,
+  options: TunnelBackendOptions = {},
+): Promise<TunnelBackend> {
   switch (tunnel) {
     case 'local':
       return new LocalBackend();
 
     case 'devtunnels': {
-      const config = loadDevTunnelsConfig();
-      if (!isDevTunnelsConfigured(config)) {
-        throw new Error(
-          'Dev Tunnels is not configured. Set MOBILY_DEVTUNNELS_CLIENT_ID or ' +
-            'see docs/devtunnels-provisioning.md.',
-        );
-      }
-      const auth = await authenticate(config.clientId, config.tenantId);
-      return new DevTunnelsBackend(auth.token);
+      return prepareDevTunnelsBackend({
+        provider: options.devtunnelsProvider,
+        verbose: options.verbose,
+      });
     }
 
     default: {
