@@ -1,2 +1,2 @@
-export * from './protocol.js';
-export * from './pairing.js';
+export * from './protocol.ts';
+export * from './pairing.ts';
