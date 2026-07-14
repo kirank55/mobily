@@ -6,10 +6,12 @@ A free and open-source mobile remote-control for terminal-based development envi
 
 - **Live terminal** — full `xterm.js` terminal on your phone with special key support (Ctrl, Alt, Esc, arrows)
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
-- **Session persistence** — terminal sessions survive disconnects via `tmux` (or bare PTY fallback)
-- **Git GUI** — stage, diff, and commit from your phone without touching the terminal
-- **Pluggable tunneling** — Dev Tunnels for secure phone access, plus an explicit local development mode
+- **Reconnectable session** — the current bare PTY survives phone/network disconnects while the CLI remains running
+- **Pluggable tunneling** — Dev Tunnels for remote access, plus pinned TLS directly on your LAN
 - **No Mobily-operated cloud** — secure remote access currently uses Microsoft Dev Tunnels and requires operator authentication
+
+Planned features, including shared workstation/tmux sessions and the native Git
+GUI, are tracked in the roadmap and are not part of the current release.
 
 ## Quick Start
 
@@ -22,9 +24,16 @@ On first use, Mobily guides installation of Microsoft's official `devtunnel`
 helper and offers GitHub or Microsoft device-code login. Credentials are cached
 by the helper for later runs.
 
-For an isolated development LAN, plaintext local transport is available only
-with `--tunnel local --allow-insecure-local`. The Android app intentionally
-refuses that mode; use the browser smoke harness for local protocol development.
+Device Key bindings are persisted on the Station in `~/.mobily/device-bindings.json`.
+Use `npx mobily --list-bindings` to inspect them and
+`npx mobily --revoke-binding <binding-id>` to revoke one.
+
+For account-free use on the same Wi-Fi network, run `npx mobily --tunnel local`.
+Mobily creates a long-lived self-signed Station certificate, stores it with
+restrictive permissions in `~/.mobily/local-tls.json`, and puts its SHA-256 pin
+in the QR. Android verifies that pin for both pairing HTTPS and terminal WSS.
+Plaintext remains available only for browser protocol development with
+`--tunnel local --allow-insecure-local`; the Android production flow refuses it.
 
 ## Architecture
 

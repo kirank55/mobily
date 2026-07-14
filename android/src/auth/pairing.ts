@@ -13,8 +13,9 @@ import {
   type PairingPayload,
   type PairingResponse,
 } from '@mobily/shared';
-import { createDeviceKey, generateDeviceId, signNonce } from './deviceKey';
+import { createDeviceKey, generateDeviceBindingId, signNonce } from './deviceKey';
 import { savePairing, type PairingRecord } from './storage';
+import { pinnedJsonRequest } from '@/client/pinnedTransport';
 
 /** Result of a pairing attempt. */
 export interface PairResult {
@@ -42,11 +43,11 @@ export async function pairWithStation(
     return { ok: false, error: 'Refusing insecure Station transport.' };
   }
 
-  const deviceId = generateDeviceId();
+  const deviceBindingId = generateDeviceBindingId();
 
   let publicKey: string;
   try {
-    const keyResult = await createDeviceKey(deviceId);
+    const keyResult = await createDeviceKey(deviceBindingId);
     publicKey = keyResult.publicKey;
   } catch {
     return { ok: false, error: 'Failed to create Device Key. Is biometrics set up?' };
@@ -54,9 +55,10 @@ export async function pairWithStation(
 
   const proofPayload = createPairingProofPayload(
     pairing.code,
-    deviceId,
+    deviceBindingId,
     publicKey,
     pairing.endpoint,
+    pairing.certificatePin,
   );
   let proof: string | null;
   try {
@@ -68,13 +70,20 @@ export async function pairWithStation(
     return { ok: false, error: 'Pairing confirmation was cancelled.' };
   }
 
-  let resp: Response;
+  let resp: { ok: boolean; status: number; json(): Promise<unknown> };
   try {
-    resp = await fetch(webSocketToPairingUrl(pairing.endpoint), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: pairing.code, deviceId, publicKey, proof }),
-    });
+    const body = { code: pairing.code, deviceId: deviceBindingId, publicKey, proof };
+    resp = pairing.certificatePin
+      ? await pinnedJsonRequest(
+          webSocketToPairingUrl(pairing.endpoint),
+          pairing.certificatePin,
+          body,
+        )
+      : await fetch(webSocketToPairingUrl(pairing.endpoint), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
   } catch (err) {
     return {
       ok: false,
@@ -114,8 +123,9 @@ export async function pairWithStation(
   const record: PairingRecord = {
     stationName: payload.stationName,
     tunnelUrl: payload.tunnelUrl,
-    deviceId,
+    deviceBindingId,
     pairedAt: Date.now(),
+    certificatePin: pairing.certificatePin,
   };
 
   await savePairing(record);

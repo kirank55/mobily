@@ -25,6 +25,7 @@
     "@mobily/shared": "workspace:*",
     "node-pty": "1.1.0",
     "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

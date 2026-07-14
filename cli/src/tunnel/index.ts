@@ -2,7 +2,8 @@
  * cli/src/tunnel/index.ts
  *
  * Factory that maps the `--tunnel` CLI flag to a {@link TunnelBackend}
- * instance. `local` is an explicit plaintext development mode; `devtunnels` runs the
+ * instance. `local` uses pinned TLS unless the insecure development override is set;
+ * `devtunnels` runs the
  * official helper discovery and cached-login flow before constructing
  * {@link DevTunnelsBackend}.
  */
@@ -10,6 +11,7 @@
 import { LocalBackend } from './local.js';
 import { prepareDevTunnelsBackend, type DevTunnelsProvider } from './devtunnels.js';
 import type { TunnelBackend } from './types.js';
+import { loadOrCreateLocalTlsIdentity } from '../localTls.js';
 
 export type { TunnelBackend, TunnelConnection } from './types.js';
 
@@ -24,13 +26,14 @@ export function isTunnelId(value: string): value is TunnelId {
 /**
  * Create a {@link TunnelBackend} for the given tunnel id.
  *
- * - `'local'`: {@link LocalBackend} — plaintext LAN development mode.
+ * - `'local'`: {@link LocalBackend} — pinned TLS over the local LAN.
  * - `'devtunnels'`: discovers Microsoft's helper, guides login when needed,
  *   then returns a {@link DevTunnelsBackend}.
  */
 export interface TunnelBackendOptions {
   readonly devtunnelsProvider?: DevTunnelsProvider;
   readonly verbose?: boolean;
+  readonly allowInsecureLocal?: boolean;
 }
 
 export async function createTunnelBackend(
@@ -39,7 +42,9 @@ export async function createTunnelBackend(
 ): Promise<TunnelBackend> {
   switch (tunnel) {
     case 'local':
-      return new LocalBackend();
+      return new LocalBackend(
+        options.allowInsecureLocal ? undefined : await loadOrCreateLocalTlsIdentity(),
+      );
 
     case 'devtunnels': {
       return prepareDevTunnelsBackend({

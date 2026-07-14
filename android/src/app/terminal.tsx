@@ -32,14 +32,17 @@ import { PROTOCOL_VERSION } from '@mobily/shared';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
 
 export default function TerminalRoute() {
-  const [connState, setConnState]     = useState<ConnectionState>('disconnected');
-  const [detail, setDetail]           = useState('');
-  const [errorKind, setErrorKind]     = useState<ErrorKind>('generic');
+  const [connState, setConnState] = useState<ConnectionState>('disconnected');
+  const [detail, setDetail] = useState('');
+  const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
   const [stationName, setStationName] = useState('Station');
-  const [termReady, setTermReady]     = useState(false);
+  const [termReady, setTermReady] = useState(false);
+  const [latencyStats, setLatencyStats] = useState<{ n: number; p50: number; p95: number } | null>(
+    null,
+  );
 
-  const clientRef   = useRef<WsClient | null>(null);
-  const termRef     = useRef<TerminalViewHandle | null>(null);
+  const clientRef = useRef<WsClient | null>(null);
+  const termRef = useRef<TerminalViewHandle | null>(null);
   const cancelledRef = useRef(false);
 
   const handleReScan = useCallback(() => {
@@ -63,8 +66,9 @@ export default function TerminalRoute() {
       setStationName(record.stationName);
 
       const client = new WsClient({
-        url:             record.tunnelUrl,
-        deviceId:        record.deviceId,
+        url: record.tunnelUrl,
+        deviceBindingId: record.deviceBindingId,
+        certificatePin: record.certificatePin,
         protocolVersion: PROTOCOL_VERSION,
 
         onStateChange: (state, d) => {
@@ -73,9 +77,9 @@ export default function TerminalRoute() {
           setDetail(d ?? '');
         },
 
-        onOutput: (data) => {
+        onOutput: (data, latencyTags) => {
           if (cancelledRef.current) return;
-          termRef.current?.write(data);
+          termRef.current?.write(data, latencyTags);
         },
 
         onReady: () => {
@@ -122,16 +126,16 @@ export default function TerminalRoute() {
   }, []);
 
   // ── Terminal input → send to WS ─────────────────────────────────────────
-  const handleTermInput = useCallback((data: string) => {
-    clientRef.current?.sendInput(data);
+  const handleTermInput = useCallback((data: string, latencyTag: string) => {
+    clientRef.current?.sendInput(data, latencyTag);
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (connState === 'failed') {
-    const isAuthRejection   = errorKind === 'auth-rejection';
+    const isAuthRejection = errorKind === 'auth-rejection';
     const isVersionMismatch = errorKind === 'version-mismatch';
-    const isBiometric       = errorKind === 'biometric-cancelled';
+    const isBiometric = errorKind === 'biometric-cancelled';
 
     const headline = isAuthRejection
       ? 'Device not recognized'
@@ -196,6 +200,11 @@ export default function TerminalRoute() {
               ? `Reconnecting… ${detail}`
               : `Connecting to ${stationName}…`}
         </Text>
+        {latencyStats && (
+          <Text style={styles.latencyText} accessibilityLabel="Terminal latency">
+            P50 {latencyStats.p50}ms · P95 {latencyStats.p95}ms
+          </Text>
+        )}
       </View>
 
       {/* Terminal WebView (always mounted; overlay shown on top when not connected) */}
@@ -207,6 +216,7 @@ export default function TerminalRoute() {
           onResize={handleTermResize}
           onLatencyStats={(n, p50, p95) => {
             console.log(`[mobily latency] n=${n} P50=${p50}ms P95=${p95}ms`);
+            setLatencyStats({ n, p50, p95 });
           }}
         />
         {/* Connecting / Reconnecting overlay */}
@@ -258,6 +268,10 @@ const styles = StyleSheet.create({
     color: '#8b949e',
     fontSize: 13,
     flex: 1,
+  },
+  latencyText: {
+    color: '#6e7681',
+    fontSize: 11,
   },
   terminalWrapper: {
     flex: 1,

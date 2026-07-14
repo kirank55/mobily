@@ -8,12 +8,14 @@
  */
 
 import ReactNativeBiometrics from 'react-native-biometrics';
+import { randomUUID } from 'expo-crypto';
+import { parseDeviceBindingId, type DeviceBindingId } from '@mobily/shared';
 
 const rnBiometrics = new ReactNativeBiometrics();
 
 /** Result of creating a Device Key. */
 export interface DeviceKeyResult {
-  deviceId: string;
+  deviceBindingId: DeviceBindingId;
   publicKey: string;
 }
 
@@ -22,9 +24,9 @@ export interface DeviceKeyResult {
  * Shows a biometric prompt for key creation.
  * Returns the PEM public key and a stable device ID.
  */
-export async function createDeviceKey(deviceId: string): Promise<DeviceKeyResult> {
+export async function createDeviceKey(deviceBindingId: DeviceBindingId): Promise<DeviceKeyResult> {
   const { publicKey } = await rnBiometrics.createKeys();
-  return { deviceId, publicKey };
+  return { deviceBindingId, publicKey };
 }
 
 /**
@@ -62,7 +64,9 @@ export async function isBiometricsAvailable(): Promise<boolean> {
   return available;
 }
 
-/** Generate a stable random device ID. */
-export function generateDeviceId(): string {
-  return 'android-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+/** Generate a cryptographically random identifier for a Station binding. */
+export function generateDeviceBindingId(): DeviceBindingId {
+  const value = parseDeviceBindingId(`binding_${randomUUID().replaceAll('-', '')}`);
+  if (!value) throw new Error('Failed to generate Device Binding ID');
+  return value;
 }

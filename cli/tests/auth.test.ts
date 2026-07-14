@@ -12,6 +12,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPairingProofPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { AuthManager } from '../src/auth.js';
+import { MemoryBindingRepository } from '../src/bindings.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +86,22 @@ describe('AuthManager — pairing code', () => {
   it('returns null for currentPairingCode before generatePairingCode()', () => {
     const auth = createAuth();
     expect(auth.currentPairingCode).toBeNull();
+  });
+});
+
+describe('AuthManager — binding administration', () => {
+  it('loads bindings from its repository and revokes them explicitly', () => {
+    const repository = new MemoryBindingRepository();
+    const auth = new AuthManager(STATION, repository);
+    auth.setTunnelUrl(TUNNEL_URL);
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
+
+    const restarted = new AuthManager(STATION, repository);
+    expect(restarted.listBindings()).toHaveLength(1);
+    expect(restarted.revokeBinding('device-1')).toBe(true);
+    expect(restarted.isDeviceBound('device-1')).toBe(false);
   });
 });
 

@@ -59,6 +59,7 @@ export class Session {
   private readonly auth?: AuthManager;
   private readonly handshakeTimeoutMs: number;
   private readonly subscribers = new Set<WebSocket>();
+  private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
@@ -213,9 +214,14 @@ export class Session {
 
   private attachAuthenticated(ws: WebSocket): void {
     this.subscribers.add(ws);
+    this.pendingLatencyTags.set(ws, []);
     ws.on('message', (data) => this.handleMessage(ws, data));
-    ws.on('close', () => this.subscribers.delete(ws));
-    ws.on('error', () => this.subscribers.delete(ws));
+    const detach = (): void => {
+      this.subscribers.delete(ws);
+      this.pendingLatencyTags.delete(ws);
+    };
+    ws.on('close', detach);
+    ws.on('error', detach);
   }
 
   private handleMessage(ws: WebSocket, data: RawData): void {
@@ -233,6 +239,13 @@ export class Session {
 
     switch (frame.type) {
       case 'input':
+        if (frame.latencyTag) {
+          const tags = this.pendingLatencyTags.get(ws);
+          if (tags) {
+            tags.push(frame.latencyTag);
+            if (tags.length > 256) tags.splice(0, tags.length - 256);
+          }
+        }
         this.pty.write(frame.data);
         break;
       case 'resize':
@@ -261,9 +274,9 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private broadcast(frame: OutputFrame): void {
-    const raw = encodeFrame(frame);
     for (const ws of [...this.subscribers]) {
-      this.sendRaw(ws, raw);
+      const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
+      this.sendRaw(ws, encodeFrame(latencyTags?.length ? { ...frame, latencyTags } : frame));
     }
   }
 
@@ -313,6 +326,7 @@ export class Session {
       }
     }
     this.subscribers.clear();
+    this.pendingLatencyTags.clear();
     try {
       this.pty.kill();
     } catch {

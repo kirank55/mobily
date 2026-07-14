@@ -1,7 +1,8 @@
 # mobily — Plan
 
 ## Locked Decisions
-- **Tunneling:** Pluggable `TunnelBackend` interface with explicit selection — `LocalBackend` for isolated LAN development; Dev Tunnels as the secure remote path; alternatives (Bore, Cloudflare, SSH) via `--tunnel`
+
+- **Tunneling:** Pluggable `TunnelBackend` interface with explicit selection — pinned-TLS `LocalBackend` for account-free LAN use; Dev Tunnels as the secure remote path; alternatives (Bore, Cloudflare, SSH) via `--tunnel`
 - **App platform:** Android, React Native (Expo + prebuild workflow), target latest API (36+), with fallbacks for older versions
 - **Terminal renderer:** `xterm.js` inside a React Native `WebView`, with Termux-style extra key row (Esc, Ctrl, Alt, Tab, arrows) implemented in the WebView layer
 - **Lock-screen surface:** Foreground-service notification (all API 26+ devices)
@@ -16,14 +17,18 @@
 ## Phases
 
 ### Phase 0 — CLI Scaffold
+
 **Goal:** A standalone `cli/` package builds green. Nothing functional yet.
+
 - `cli/`: TypeScript, eslint, prettier, tsup, `bin` entry for `npx mobily`; stub `main()` that prints version only
 - MIT `LICENSE` at repo root
 - **DoD:** `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` (in `cli/`) all succeed
 - **Note:** No monorepo tooling, no `shared/`, no `android/`, no `node-pty` yet — each arrives in the phase that first needs it.
 
 ### Phase 1 — Proof of Concept CLI (PTY + WebSocket)
+
 **Goal:** Local terminal streaming on the CLI with session persistence, validated from a browser.
+
 - **Monorepo setup:** `pnpm-workspace.yaml` (`cli`, `shared`), `turbo.json`, point CI at turbo pipelines. (This is when the repo becomes a monorepo — `shared/` is first needed here.)
 - `shared/protocol.ts`: frame types — `input`, `output`, `resize`, `eof` (version-negotiation `hello`/`hello-ack` frames are deferred to Phase 2). Scaffold vitest + unit tests for encode/decode.
 - **`PtyBackend` interface:** define `spawn()`, `write()`, `onData()`, `resize()`, `kill()` — implement `NodePtyBackend` using `node-pty`. This abstraction protects against `node-pty` breakage on Node.js upgrades.
@@ -38,20 +43,22 @@
 - **Risks:** `node-pty` native module — resolved in this phase via `PtyBackend` abstraction + prebuilt binary pin.
 
 ### Phase 2 — Secure Tunnel & Pairing
+
 **Goal:** Public/LAN URL with device-bound auth; QR pairing flow.
-- **Explicit local tunnel (LAN development)** — `LocalBackend` binds WS to `0.0.0.0` and returns `ws://<lan-ip>:<port>` only with the insecure-development override.
+
+- **Explicit local tunnel (LAN)** — `LocalBackend` binds WSS to `0.0.0.0`, persists a self-signed Station identity, and carries its SPKI pin in the pairing QR. The plaintext form requires the insecure-development override.
 - **Dev Tunnels: opt-in remote** (`--tunnel devtunnels`) — Mobily guides installation of Microsoft's official `devtunnel` helper and offers GitHub or Microsoft device-code login. The helper caches credentials. The tunnel is opened with `--allow-anonymous`; the phone proves identity with its Device Key.
   - First-run helper installation and account login — see `docs/devtunnels-provisioning.md`.
   - **Note:** Dev Tunnels cannot be hosted anonymously — only connecting to a tunnel can be anonymous. This corrects the original ADR 0003 assumption.
 - `cli/src/tunnel/`: `TunnelBackend` interface — `connect(localPort)` → `TunnelConnection { url, disconnect() }`, plus `bindHost`
-  - `LocalBackend`: explicit isolated-LAN development mode
+  - `LocalBackend`: account-free pinned-TLS LAN mode; optional plaintext browser-development override
   - `DevTunnelsBackend`: opt-in remote — orchestrates the official `devtunnel` helper and its cached login
   - Document how to add alternative backends (Bore, Cloudflare, SSH)
   - CLI flag: `--tunnel local|devtunnels` (required; no implicit default)
 - `cli/src/auth.ts`:
   - Generate short pairing code (6-8 alphanumeric chars, cryptorandom)
   - Expose HTTPS pairing endpoint at `/.well-known/mobily/pair`
-  - On pairing request: validate pairing code, receive Device Key (public key from Android Keystore), store `{ deviceId, publicKey, stationName, pairedAt }`, return `{ tunnelUrl, stationName, protocolVersion }`
+  - On pairing request: validate pairing code, receive Device Key (public key from Android Keystore), store `{ deviceBindingId, publicKey, stationName, pairedAt }`, return `{ tunnelUrl, stationName, protocolVersion }`
   - On reconnect: send nonce challenge → verify Device Key signature → accept or reject
   - Pairing code burned after first successful bind
 - `cli/src/qr.ts`: emit terminal QR encoding only the short pairing code (tiny QR, renders in any terminal)
@@ -62,7 +69,9 @@
 - **Note:** Latency instrumentation is deferred to Phase 3 — Phase 2's test client is `wscat`/`curl`, which can't measure keystroke-to-echo cleanly.
 
 ### Phase 3 — Basic Android App
+
 **Goal:** Live terminal session from the phone with robust connection handling.
+
 - **Android scaffold:** Expo SDK app shell (prebuild/dev-client, not Expo Go — needs native modules for `react-native-biometrics` and camera); add `android/` to `pnpm-workspace.yaml`; install `react-native-biometrics`, `react-native-vision-camera`. (This is when `android/` joins the monorepo.)
 - `android/app/scanner`: QR scanner via `react-native-vision-camera` → extract pairing code → HTTPS handshake with CLI pairing endpoint
 - `android/app/auth`: Device Key management via `react-native-biometrics`:
@@ -81,18 +90,22 @@
 - Device Key stored in Android Keystore (per-station keypair)
 
 #### Connection State Machine
+
 Two independent state machines:
 
 **Connection state:** `disconnected → connecting → connected → reconnecting → failed`
+
 - `connecting`: show spinner + "Connecting to {stationName}..."
 - `connected`: terminal view, subtle green indicator
 - `reconnecting`: show overlay "Reconnecting..." with attempt count; exponential backoff (1s, 2s, 4s, max 30s)
 - `failed`: after N retries, show "Connection lost" with manual retry button + option to re-scan QR
 
 **App lifecycle state:** `foreground | background`
+
 - On `background → foreground`: if connection is `connected`, resume terminal; if `disconnected`, transition connection to `reconnecting`; reattach the session held by the CLI
 
 **Error UX** (function of both states):
+
 - Auth rejection: "Device not recognized — scan QR to re-pair"
 - Station offline / tunnel down: "Station unreachable — is the CLI running?"
 - Network change (wifi ↔ cellular): auto-reconnect transparently
@@ -102,7 +115,9 @@ Two independent state machines:
 - **Risks:** xterm-in-WebView perf — mitigated by phone-side batching; profile and tune batch interval in this phase
 
 ### Phase 4 — Structured Git Features
+
 **Goal:** Native Git GUI without reading raw terminal.
+
 - `shared/protocol.ts`: extend with `rpc` request/response frames and `rpc-stream` chunked response frames (`{ type, id, chunk, done }`) — added here, the first phase that needs structured RPC.
 - `cli/src/git/`: JSON-RPC handlers:
   - `simple-git` for: `status`, `log`, `branch`, `stage`, `unstage`, `commit`
@@ -114,7 +129,9 @@ Two independent state machines:
 - **Risks:** large diff rendering in RN — virtualize the list, cap payload size; `simple-git` error edge cases — add error boundaries
 
 ### Phase 5 — Polish & Backgrounding
+
 **Goal:** Native-feeling persistence + background alerts.
+
 - **SessionBackend abstraction:** introduce the `SessionBackend` interface with two implementations (this is when a second behavior — tmux crash survival — is first needed):
   - `BareBackend`: extract the Phase 1 inline bare behavior (PTY held by CLI process) behind the interface.
   - `TmuxBackend`: wrap PTY in a named `tmux` session so the session survives CLI crashes — on reconnect, reattach; on first connect, create the session.
@@ -137,32 +154,36 @@ Two independent state machines:
 - **Risks:** Foreground service battery impact — minimize wake-locks; rely on WS keep-alive pings rather than polling
 
 ## Multi-Machine Support
+
 - Pairing model supports multiple stations: each QR scan creates a named station entry in encrypted storage with its own Device Key
 - `android/app/hosts/`: host list screen — station name, last connected, status indicator (online/offline)
 - Switch between stations without re-scanning (Device Keys persist per station)
 - **Phase 3:** data model stores a single pairing record (only one station is paired at a time in that phase's flow). **Phase 4:** generalize storage to a list and add the host-list UI.
 
 ## Latency Budget
+
 - **Target:** < 100ms keystroke-to-echo round-trip (for "local terminal" feel)
 - **Breakdown:** phone input → WS frame (~5ms) → Tunnel relay (~50-150ms) → CLI PTY echo → WS frame → phone render (~5ms)
 - **Measurement:** instrumented in Phase 3 (needs the interactive Android client), log P50/P95, tune batching in the same phase
 - **Future optimization:** local echo (optimistic keystroke display à la Mosh) — deferred until real latency is measured; only add if P95 exceeds target
 
 ## Testing Strategy
-| Layer | Tool | Phase |
-|---|---|---|
-| Protocol types (encode/decode) | vitest unit tests | 1 |
-| WS + PTY pipeline | vitest integration tests (spawn real PTY, assert frames) | 1 |
-| Auth / Device Key lifecycle | vitest unit tests (mock tunnel) | 2 |
-| Android native UI flows (scan, connect, errors, host list) | Maestro | 3+ |
-| Git RPC handlers | vitest unit tests (mock git repo) | 4 |
-| Reconnect / error recovery | vitest integration tests + Maestro flows | 3–5 |
+
+| Layer                                                      | Tool                                                     | Phase |
+| ---------------------------------------------------------- | -------------------------------------------------------- | ----- |
+| Protocol types (encode/decode)                             | vitest unit tests                                        | 1     |
+| WS + PTY pipeline                                          | vitest integration tests (spawn real PTY, assert frames) | 1     |
+| Auth / Device Key lifecycle                                | vitest unit tests (mock tunnel)                          | 2     |
+| Android native UI flows (scan, connect, errors, host list) | Maestro                                                  | 3+    |
+| Git RPC handlers                                           | vitest unit tests (mock git repo)                        | 4     |
+| Reconnect / error recovery                                 | vitest integration tests + Maestro flows                 | 3–5   |
 
 > **Note:** Maestro cannot interact with xterm.js inside the WebView. Terminal rendering correctness is trusted to xterm.js (battle-tested). If WebView-specific testing is later needed, add Playwright tests for the standalone xterm bundle.
 
 ## Cross-Cutting Risks / Notes
+
 - **node-pty native binaries:** `PtyBackend` abstraction protects against breakage; validated in Phase 1 (not Phase 0); CI matrix for win/mac/linux in Phase 1
-- **Dev Tunnels rate/quotas:** confirm anonymous-connect tier covers dev use; `TunnelBackend` interface allows switching to alternatives. Dev Tunnels is opt-in (`--tunnel devtunnels`); `LocalBackend` (LAN) is the zero-friction default
+- **Dev Tunnels rate/quotas:** confirm anonymous-connect tier covers dev use; `TunnelBackend` interface allows switching to alternatives. Dev Tunnels is selected with `--tunnel devtunnels`; account-free LAN use is selected with `--tunnel local`
 - **xterm.js ↔ RN bridge throughput:** phone-side `requestAnimationFrame` batching from Phase 3 onwards; profile batch interval
 - **Foreground service as default lock-screen surface:** ensures compatibility with API 26+; no Live Updates dependency
 - **Security:** Device Key auth model — keypair generated in Android Keystore (hardware-backed, non-extractable); CLI verifies via challenge-response on every reconnect; no session tokens; pairing code is one-time

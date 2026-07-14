@@ -14,10 +14,8 @@ import type { TunnelConnection } from './tunnel/types.js';
 import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { PAIRING_CODE_TTL_MS } from './auth.js';
 import { formatCliError, UserFacingError } from './errors.js';
-import {
-  isDevTunnelsProvider,
-  type DevTunnelsProvider,
-} from './tunnel/devtunnels.js';
+import { defaultBindingFile, FileBindingRepository } from './bindings.js';
+import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -29,13 +27,37 @@ export async function main(): Promise<void> {
       'allow-insecure-local': { type: 'boolean', default: false },
       'devtunnels-provider': { type: 'string' },
       verbose: { type: 'boolean', default: false },
+      'list-bindings': { type: 'boolean', default: false },
+      'revoke-binding': { type: 'string' },
     },
   });
+
+  const bindingRepository = new FileBindingRepository(defaultBindingFile());
+  if (values['list-bindings']) {
+    const bindings = bindingRepository.list();
+    if (bindings.length === 0) {
+      console.log('No Device Key bindings are stored on this Station.');
+    } else {
+      for (const binding of bindings) {
+        console.log(
+          `${binding.deviceBindingId}\t${binding.stationName}\t${binding.pairedAt.toISOString()}`,
+        );
+      }
+    }
+    return;
+  }
+  if (values['revoke-binding']) {
+    if (!bindingRepository.revoke(values['revoke-binding'])) {
+      throw new UserFacingError(`No Device Key binding found: ${values['revoke-binding']}`);
+    }
+    console.log(`Revoked Device Key binding: ${values['revoke-binding']}`);
+    return;
+  }
 
   const tunnelFlag = values.tunnel;
   if (!tunnelFlag) {
     console.error(
-      "Choose a tunnel: '--tunnel devtunnels' (secure) or '--tunnel local --allow-insecure-local' (isolated development only).",
+      "Choose a tunnel: '--tunnel devtunnels' (hosted relay) or '--tunnel local' (pinned TLS on your LAN).",
     );
     process.exit(1);
   }
@@ -57,26 +79,21 @@ export async function main(): Promise<void> {
     }
     devtunnelsProvider = providerFlag;
   }
-  if (tunnelId === 'local' && !values['allow-insecure-local']) {
-    console.error(
-      "Local LAN transport is plaintext. Use '--tunnel local --allow-insecure-local' only for isolated development networks.",
-    );
-    process.exit(1);
-  }
-
-  const auth = new AuthManager(os.hostname());
+  const auth = new AuthManager(os.hostname(), bindingRepository);
   const tunnel = await createTunnelBackend(tunnelId, {
     devtunnelsProvider,
     verbose: values.verbose,
+    allowInsecureLocal: values['allow-insecure-local'],
   });
   const session = new Session({ cols: 80, rows: 24, auth });
   const server = await startServer({
     session,
     host: tunnel.bindHost,
     httpRequestHandler: (req, res) => auth.handleHttpRequest(req, res),
+    tls: tunnel.serverTls,
   });
   const connection: TunnelConnection = await tunnel.connect(server.port);
-  auth.setTunnelUrl(connection.url);
+  auth.setTunnelUrl(connection.url, connection.certificatePin);
 
   const pairingCode = auth.generatePairingCode();
   const pairingPayload = encodePairingPayload({
@@ -84,6 +101,7 @@ export async function main(): Promise<void> {
     code: pairingCode,
     expiresAt: Date.now() + PAIRING_CODE_TTL_MS,
     protocolVersion: PROTOCOL_VERSION,
+    certificatePin: connection.certificatePin,
   });
 
   console.log(`mobily v${pkg.version}`);
@@ -119,9 +137,11 @@ export async function main(): Promise<void> {
     'dev',
     'smoke.html',
   );
-  if (existsSync(smokePath)) {
-    console.log(`Smoke test:   ${pathToFileURL(smokePath).href}?port=${server.port}`);
-  } else {
+  if (existsSync(smokePath) && !tunnel.serverTls) {
+    console.log(
+      `Smoke test:   ${pathToFileURL(smokePath).href}?port=${server.port}&endpoint=${encodeURIComponent(connection.url)}`,
+    );
+  } else if (!tunnel.serverTls) {
     console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
   console.log('Press Ctrl+C to exit.');

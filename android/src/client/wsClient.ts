@@ -22,6 +22,7 @@ import {
   WS_CLOSE_CODES,
   type Frame,
 } from '@mobily/shared';
+import { PinnedWebSocket } from './pinnedTransport';
 
 export type ConnectionState =
   'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
@@ -32,12 +33,12 @@ export type ErrorKind =
 
 export interface WsClientOptions {
   url: string;
-  deviceId: string;
+  deviceBindingId: string;
   protocolVersion: number;
   /** Callback for state changes. */
   onStateChange?: (state: ConnectionState, detail?: string) => void;
   /** Callback for output frames (PTY data). */
-  onOutput?: (data: string) => void;
+  onOutput?: (data: string, latencyTags?: readonly string[]) => void;
   /** Callback when the handshake completes (ready to send input). */
   onReady?: () => void;
   /** Callback for structured errors. */
@@ -46,6 +47,18 @@ export interface WsClientOptions {
   maxRetries?: number;
   /** Permit ws:// only in explicitly configured development builds. */
   allowInsecureTransport?: boolean;
+  /** SHA-256 SPKI pin for a self-signed local Station. */
+  certificatePin?: string;
+}
+
+interface SocketLike {
+  readonly readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: ((event: { code: number; reason: string }) => void) | null;
+  onerror: (() => void) | null;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
 }
 
 const INITIAL_BACKOFF_MS = 1000;
@@ -59,7 +72,7 @@ type HandshakeState =
   | 'ready';
 
 export class WsClient {
-  private ws: WebSocket | null = null;
+  private ws: SocketLike | null = null;
   private state: ConnectionState = 'disconnected';
   private retries = 0;
   private backoff = INITIAL_BACKOFF_MS;
@@ -120,8 +133,8 @@ export class WsClient {
   }
 
   /** Send an input frame (keystrokes / paste). Only after handshake. */
-  sendInput(data: string): void {
-    if (this.ready) this.send({ type: 'input', data });
+  sendInput(data: string, latencyTag?: string): void {
+    if (this.ready) this.send({ type: 'input', data, latencyTag });
   }
 
   /** Send a resize frame. */
@@ -138,9 +151,11 @@ export class WsClient {
     this.reconnectSuppressed = false;
     this.setState(this.retries > 0 ? 'reconnecting' : 'connecting');
 
-    let socket: WebSocket;
+    let socket: SocketLike;
     try {
-      socket = new WebSocket(this.opts.url);
+      socket = this.opts.certificatePin
+        ? new PinnedWebSocket(this.opts.url, this.opts.certificatePin)
+        : (new WebSocket(this.opts.url) as unknown as SocketLike);
     } catch (err) {
       this.emitError(
         `Station unreachable — ${err instanceof Error ? err.message : 'network error'}`,
@@ -158,7 +173,7 @@ export class WsClient {
       this.sendOn(socket, { type: 'hello', protocolVersion: this.opts.protocolVersion });
     };
 
-    socket.onmessage = (ev: MessageEvent) => {
+    socket.onmessage = (ev: { data: unknown }) => {
       if (!this.isCurrentSocket(socket, generation)) return;
       let frame: Frame;
       try {
@@ -171,7 +186,7 @@ export class WsClient {
       void this.handleFrame(frame, socket, generation);
     };
 
-    socket.onclose = (ev: CloseEvent) => {
+    socket.onclose = (ev: { code: number; reason: string }) => {
       if (!this.isCurrentSocket(socket, generation)) return;
       this.ws = null;
       this.ready = false;
@@ -208,7 +223,7 @@ export class WsClient {
     };
   }
 
-  private async handleFrame(frame: Frame, socket: WebSocket, generation: number): Promise<void> {
+  private async handleFrame(frame: Frame, socket: SocketLike, generation: number): Promise<void> {
     if (!this.isCurrentSocket(socket, generation)) return;
 
     switch (frame.type) {
@@ -256,7 +271,7 @@ export class WsClient {
         }
         this.sendOn(socket, {
           type: 'auth-response',
-          deviceId: this.opts.deviceId,
+          deviceId: this.opts.deviceBindingId,
           signature,
         });
         this.handshakeState = 'awaiting-auth-ok';
@@ -264,7 +279,7 @@ export class WsClient {
       }
 
       case 'output':
-        this.opts.onOutput?.(frame.data);
+        this.opts.onOutput?.(frame.data, frame.latencyTags);
         break;
 
       case 'auth-ok':
@@ -314,11 +329,11 @@ export class WsClient {
     if (this.ws) this.sendOn(this.ws, frame);
   }
 
-  private sendOn(socket: WebSocket, frame: Frame): void {
-    if (socket.readyState === WebSocket.OPEN) socket.send(encodeFrame(frame));
+  private sendOn(socket: SocketLike, frame: Frame): void {
+    if (socket.readyState === 1) socket.send(encodeFrame(frame));
   }
 
-  private isCurrentSocket(socket: WebSocket, generation: number): boolean {
+  private isCurrentSocket(socket: SocketLike, generation: number): boolean {
     return this.ws === socket && this.socketGeneration === generation;
   }
 

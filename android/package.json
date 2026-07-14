@@ -10,6 +10,7 @@
     "expo": "~57.0.4",
     "expo-camera": "~57.0.1",
     "expo-constants": "~57.0.3",
+    "expo-crypto": "~57.0.0",
     "expo-dev-client": "~57.0.5",
     "expo-device": "~57.0.0",
     "expo-font": "~57.0.0",
@@ -34,7 +35,8 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "eslint-config-expo": "~57.0.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^2.1.9"
   },
   "scripts": {
     "generate:terminal-assets": "node scripts/generate-terminal-assets.mjs",
@@ -49,6 +51,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
+    "test": "vitest run",
     "prebuild": "expo prebuild --platform android",
     "build:android": "expo run:android"
   }

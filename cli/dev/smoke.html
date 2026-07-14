@@ -146,6 +146,7 @@
       // ---------------------------------------------------------------------------
       const params = new URLSearchParams(location.search);
       const port = params.get('port');
+      const stationEndpoint = params.get('endpoint');
 
       const statusEl = document.getElementById('status');
       const dotEl = document.getElementById('dot');
@@ -236,7 +237,11 @@
       // Pairing + WebSocket handshake
       // ---------------------------------------------------------------------------
 
-      const deviceId = 'smoke-' + Math.random().toString(36).slice(2, 8);
+      const bindingBytes = new Uint8Array(18);
+      crypto.getRandomValues(bindingBytes);
+      const deviceId =
+        'binding_' +
+        bytesToB64(bindingBytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       const codeInput = document.getElementById('code');
       const goButton = document.getElementById('go');
       const pairPanel = document.getElementById('pair');
@@ -256,7 +261,7 @@
 
       async function connect() {
         const code = codeInput.value.trim().toUpperCase();
-        if (!code) {
+        if (!code || !stationEndpoint) {
           setState('disconnected', 'enter the pairing code shown by the CLI');
           return;
         }
@@ -280,10 +285,19 @@
         // (e.g. wrong/expired code → close 4001 "auth failed").
         setState('connecting', 'pairing…');
         try {
+          const proofPayload = [
+            'mobily-pair-v2',
+            stationEndpoint,
+            '',
+            code,
+            deviceId,
+            keys.publicKey,
+          ].join('\n');
+          const proof = await signNonce(keys.privateKey, proofPayload);
           await fetch(`http://localhost:${port}/.well-known/mobily/pair`, {
             method: 'POST',
             mode: 'no-cors',
-            body: JSON.stringify({ code, deviceId, publicKey: keys.publicKey }),
+            body: JSON.stringify({ code, deviceId, publicKey: keys.publicKey, proof }),
           });
         } catch (err) {
           setState('disconnected', `pairing request failed — ${err.message}`);
@@ -316,6 +330,12 @@
           } else if (frame.type === 'auth-challenge') {
             setState('connecting', 'challenge — signing nonce');
             void respondToChallenge(frame.nonce, keys.privateKey);
+          } else if (frame.type === 'auth-ok') {
+            ready = true;
+            setState('connected', `connected — ${deviceId}`);
+            fitAddon.fit();
+            sendResize();
+            term.focus();
           }
         });
 
@@ -334,11 +354,7 @@
       async function respondToChallenge(nonce, privateKey) {
         const signature = await signNonce(privateKey, nonce);
         send({ type: 'auth-response', deviceId, signature });
-        ready = true;
-        setState('connected', `connected — ${deviceId}`);
-        fitAddon.fit();
-        sendResize();
-        term.focus();
+        setState('connecting', 'proof sent — awaiting acknowledgement');
       }
 
       // Keystrokes / paste → input frame (only after auth).

@@ -6,19 +6,21 @@
  * **Pairing flow:**
  *   1. CLI generates a short pairing code (cryptorandom, 8 chars).
  *   2. Phone scans the QR / enters the code and POSTs to
- *      `/.well-known/mobily/pair` with `{ code, deviceId, publicKey, proof }`.
+ *      `/.well-known/mobily/pair` with `{ code, deviceId, publicKey, proof }`,
+ *      where the legacy wire field `deviceId` carries a Device Binding ID.
  *   3. CLI validates the code, key, and endpoint-bound proof-of-possession, then stores the binding
- *      `{ deviceId, publicKey, stationName, pairedAt }`, burns the code, and
+ *      `{ deviceBindingId, publicKey, stationName, pairedAt }`, burns the code, and
  *      returns `{ tunnelUrl, stationName, protocolVersion }`.
  *
  * **Reconnect flow (challenge-response):**
  *   1. CLI sends an `auth-challenge` frame with a random nonce.
  *   2. Phone signs the nonce with its Device Key private key (Android Keystore).
- *   3. Phone sends an `auth-response` frame with `{ deviceId, signature }`.
+ *   3. Phone sends an `auth-response` frame with `{ deviceId, signature }`;
+ *      `deviceId` is retained on the wire for protocol compatibility.
  *   4. CLI verifies the signature against the stored public key.
  *
  * The pairing code is single-use — burned after the first successful bind.
- * Device bindings are in-memory for Phase 2; persistence is a future enhancement.
+ * Device bindings are persisted by the repository selected by the CLI.
  */
 
 import {
@@ -29,19 +31,24 @@ import {
   type KeyObject,
 } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createPairingProofPayload, PROTOCOL_VERSION, type PairingResponse } from '@mobily/shared';
+import {
+  createPairingProofPayload,
+  PROTOCOL_VERSION,
+  type DeviceBindingId,
+  type PairingResponse,
+} from '@mobily/shared';
+import {
+  MemoryBindingRepository,
+  type BindingRepository,
+  type StoredDeviceBinding,
+} from './bindings.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /** A device that has been paired with this Station. */
-export interface DeviceBinding {
-  readonly deviceId: string;
-  readonly publicKey: string;
-  readonly stationName: string;
-  readonly pairedAt: Date;
-}
+export type DeviceBinding = StoredDeviceBinding;
 
 /** Result of a pairing attempt. */
 interface PairResult {
@@ -80,15 +87,18 @@ export class AuthManager {
   private codeExpiresAt: Date | null = null;
   private codeBurned = false;
 
-  private readonly boundDevices = new Map<string, DeviceBinding>();
-
   private tunnelUrl: string | null = null;
+  private certificatePin: string | undefined;
 
-  constructor(private readonly stationName: string) {}
+  constructor(
+    private readonly stationName: string,
+    private readonly bindings: BindingRepository = new MemoryBindingRepository(),
+  ) {}
 
   /** Set the tunnel URL (after the tunnel connects). Required before pairing. */
-  setTunnelUrl(url: string): void {
+  setTunnelUrl(url: string, certificatePin?: string): void {
     this.tunnelUrl = url;
+    this.certificatePin = certificatePin;
   }
 
   // -------------------------------------------------------------------------
@@ -123,12 +133,12 @@ export class AuthManager {
    * Validate a pairing request and bind the device if the code is valid.
    * Called by the HTTP handler for `POST /.well-known/mobily/pair`.
    */
-  pair(code: string, deviceId: string, publicKey: string, proof: string): PairResult {
+  pair(code: string, deviceBindingId: string, publicKey: string, proof: string): PairResult {
     if (!this.tunnelUrl) {
       return { ok: false, status: 503, body: { error: 'Tunnel is not ready.' } };
     }
 
-    if (!code || !deviceId || !publicKey || !proof) {
+    if (!code || !deviceBindingId || !publicKey || !proof) {
       return {
         ok: false,
         status: 400,
@@ -145,8 +155,8 @@ export class AuthManager {
     }
 
     if (
-      deviceId.length > MAX_DEVICE_ID_LENGTH ||
-      !DEVICE_ID_PATTERN.test(deviceId) ||
+      deviceBindingId.length > MAX_DEVICE_ID_LENGTH ||
+      !DEVICE_ID_PATTERN.test(deviceBindingId) ||
       publicKey.length > MAX_PUBLIC_KEY_LENGTH ||
       proof.length > MAX_SIGNATURE_LENGTH
     ) {
@@ -158,18 +168,29 @@ export class AuthManager {
       return { ok: false, status: 400, body: { error: 'Unsupported Device Key.' } };
     }
 
-    const proofPayload = createPairingProofPayload(code, deviceId, publicKey, this.tunnelUrl);
+    const proofPayload = createPairingProofPayload(
+      code,
+      deviceBindingId,
+      publicKey,
+      this.tunnelUrl,
+      this.certificatePin,
+    );
     if (!verifySignature(parsedKey, proofPayload, proof)) {
       return { ok: false, status: 403, body: { error: 'Invalid pairing proof.' } };
     }
 
-    // Bind the device and burn the code.
-    this.boundDevices.set(deviceId, {
-      deviceId,
-      publicKey: parsedKey.export({ type: 'spki', format: 'pem' }).toString(),
-      stationName: this.stationName,
-      pairedAt: new Date(),
-    });
+    // Bind the device before burning the code. A persistence failure leaves the
+    // single-use code available for a retry and never returns a false success.
+    try {
+      this.bindings.save({
+        deviceBindingId: deviceBindingId as DeviceBindingId,
+        publicKey: parsedKey.export({ type: 'spki', format: 'pem' }).toString(),
+        stationName: this.stationName,
+        pairedAt: new Date(),
+      });
+    } catch {
+      return { ok: false, status: 500, body: { error: 'Could not store Device Key binding.' } };
+    }
     this.codeBurned = true;
 
     return {
@@ -188,8 +209,18 @@ export class AuthManager {
   // -------------------------------------------------------------------------
 
   /** Is a device with the given ID bound? */
-  isDeviceBound(deviceId: string): boolean {
-    return this.boundDevices.has(deviceId);
+  isDeviceBound(deviceBindingId: string): boolean {
+    return this.bindings.get(deviceBindingId) !== undefined;
+  }
+
+  /** Return every Device Key binding known to this Station. */
+  listBindings(): DeviceBinding[] {
+    return this.bindings.list();
+  }
+
+  /** Revoke one Device Key binding. */
+  revokeBinding(deviceBindingId: string): boolean {
+    return this.bindings.revoke(deviceBindingId);
   }
 
   /**
@@ -204,8 +235,8 @@ export class AuthManager {
    * Verify a challenge response: the signature must be the device's
    * private-key signature of the nonce, verifiable with the stored public key.
    */
-  verifyResponse(deviceId: string, nonce: string, signature: string): boolean {
-    const binding = this.boundDevices.get(deviceId);
+  verifyResponse(deviceBindingId: string, nonce: string, signature: string): boolean {
+    const binding = this.bindings.get(deviceBindingId);
     if (!binding) return false;
 
     try {

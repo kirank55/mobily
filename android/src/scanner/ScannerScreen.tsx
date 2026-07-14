@@ -12,16 +12,7 @@ import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { pairWithStation } from '@/auth/pairing';
-import { decodePairingPayload, type PairingPayload } from '@mobily/shared';
-
-/** Parse and validate the versioned, expiring Station pairing payload. */
-export function parseQrPayload(data: string): PairingPayload | null {
-  try {
-    return decodePairingPayload(data.trim());
-  } catch {
-    return null;
-  }
-}
+import { parseQrPayload } from './parseQrPayload';
 
 export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();

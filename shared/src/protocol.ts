@@ -57,6 +57,8 @@ export interface InputFrame {
   type: 'input';
   /** UTF-8 encoded text to write to the PTY. */
   data: string;
+  /** Optional client-generated identifier for keystroke-to-output latency measurement. */
+  latencyTag?: string;
 }
 
 /** CLI → Client: raw PTY output (may contain ANSI escape sequences). */
@@ -64,6 +66,8 @@ export interface OutputFrame {
   type: 'output';
   /** UTF-8 encoded text from the PTY. */
   data: string;
+  /** Input identifiers whose first following PTY output is this frame. */
+  latencyTags?: string[];
 }
 
 /** Either direction: terminal window dimensions changed. */
@@ -192,7 +196,13 @@ function validateInputFrame(obj: Record<string, unknown>): InputFrame {
       `mobily/protocol: InputFrame.data must be a string, got ${typeof obj['data']}`,
     );
   }
-  return { type: 'input', data: obj['data'] };
+  const latencyTag = obj['latencyTag'];
+  if (latencyTag !== undefined && !isLatencyTag(latencyTag)) {
+    throw new TypeError('mobily/protocol: InputFrame.latencyTag must be a bounded identifier');
+  }
+  return latencyTag === undefined
+    ? { type: 'input', data: obj['data'] }
+    : { type: 'input', data: obj['data'], latencyTag };
 }
 
 function validateOutputFrame(obj: Record<string, unknown>): OutputFrame {
@@ -201,7 +211,25 @@ function validateOutputFrame(obj: Record<string, unknown>): OutputFrame {
       `mobily/protocol: OutputFrame.data must be a string, got ${typeof obj['data']}`,
     );
   }
-  return { type: 'output', data: obj['data'] };
+  const latencyTags = obj['latencyTags'];
+  if (
+    latencyTags !== undefined &&
+    (!Array.isArray(latencyTags) ||
+      latencyTags.length === 0 ||
+      latencyTags.length > 256 ||
+      !latencyTags.every(isLatencyTag))
+  ) {
+    throw new TypeError(
+      'mobily/protocol: OutputFrame.latencyTags must be a bounded identifier list',
+    );
+  }
+  return latencyTags === undefined
+    ? { type: 'output', data: obj['data'] }
+    : { type: 'output', data: obj['data'], latencyTags };
+}
+
+function isLatencyTag(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value);
 }
 
 function validateResizeFrame(obj: Record<string, unknown>): ResizeFrame {

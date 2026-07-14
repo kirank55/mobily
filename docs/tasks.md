@@ -77,7 +77,7 @@
 
 - [ ] Microsoft Dev Tunnels app registration (device-code auth via Entra ID) — manual external task; see `docs/devtunnels-provisioning.md`
 - [x] `cli/src/tunnel/types.ts`: `TunnelBackend` interface — `connect(localPort)` → `TunnelConnection { url, disconnect() }`, plus `bindHost`
-- [x] `cli/src/tunnel/local.ts`: `LocalBackend` — initial LAN backend; now restricted to explicit development use by Phase 3.1
+- [x] `cli/src/tunnel/local.ts`: `LocalBackend` — initial LAN backend; upgraded to pinned TLS by Phase 3.1 with an explicit plaintext development override
 - [x] Dev Tunnels helper resolver with PATH and platform-specific install-location discovery
 - [x] Update ADR 0003 + plan.md: default→local, Dev Tunnels opt-in, correct anonymous-hosting assumption
 - [x] Test (vitest): `cli/tests/tunnel.test.ts` — LocalBackend URL shape, bindHost, disconnect
@@ -94,7 +94,7 @@
 
 - [x] `cli/src/auth.ts`: generate short pairing code (6-8 alphanumeric, cryptorandom)
 - [x] HTTPS pairing endpoint at `/.well-known/mobily/pair` (HTTP on local, TLS via Dev Tunnels ingress on remote)
-- [x] On pairing: validate code → receive Device Key (public key) → store `{ deviceId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
+- [x] On pairing: validate code → receive Device Key (public key) → store `{ deviceBindingId, publicKey, stationName, pairedAt }` → return `{ tunnelUrl, stationName, protocolVersion }`
 - [x] On reconnect: send nonce challenge → verify Device Key signature → accept/reject
 - [x] Pairing code burned after first successful bind
 - [x] `shared/protocol.ts`: add `auth-challenge` / `auth-response` frame types + `PROTOCOL_VERSION`
@@ -129,13 +129,13 @@
 ### Android Scaffold
 
 - [x] Expo SDK app shell (prebuild/dev-client, not Expo Go); add `android/` to `pnpm-workspace.yaml`
-- [x] Install `react-native-vision-camera`
+- [x] Install and configure `expo-camera` for QR scanning
 - [x] Verify: `pnpm android:prebuild` succeeds; dev-client builds and launches on device/emulator
 
 ### QR Scanner & Pairing
 
 - [x] `cli/src/qr.ts`: emit terminal QR encoding the short pairing code; verify renders cleanly in Windows Terminal, iTerm, VS Code
-- [x] `android/app/scanner/`: QR scanner via `react-native-vision-camera`
+- [x] `android/app/scanner/`: QR scanner via `expo-camera`
 - [x] Extract pairing code from QR
 - [x] HTTPS handshake with CLI pairing endpoint
 - [x] Receive connection payload (tunnel URL, station name, protocol version)
@@ -172,7 +172,7 @@
 
 - [x] Instrument keystroke-to-echo round-trip time
 - [x] Log P50/P95
-- [x] Document baseline latency with Dev Tunnels
+- [ ] Record measured Dev Tunnels P50/P95 on a physical device in `docs/latency-baseline.md`
 
 ### Connection State Machine
 
@@ -197,8 +197,8 @@
 
 ### Tests
 
-- [x] Maestro: scan → connect → verify native UI states
-- [x] Maestro: error states render correct messages
+- [x] Add Maestro flow definitions for scan/connect and error-state UX
+- [ ] Run the Maestro flows against an installed app and live or controlled Station fixture
 
 **DoD:** scan QR → paired → connected → type on phone → live output; reconnects after background → foreground; error states render correct messages; high-throughput output (`cat large_file`) doesn't drop frames; latency measured and documented (P50/P95).
 
@@ -218,13 +218,13 @@
 
 ### Follow-up improvements
 
-- [ ] Consolidate the production `TerminalView.tsx` document and `dev/term.html` harness around one generated terminal document
-- [ ] Add an Android unit-test task covering QR parsing, pairing-response validation, exact close codes, auth readiness, reconnect scheduling, secure-transport rejection, storage parsing, and WebView bridge schemas
-- [ ] Persist Station-side Device Key bindings with restrictive filesystem permissions; add listing and explicit revocation
-- [ ] Replace the primitive `deviceId` string/`Math.random()` generator with a cryptographically generated branded Device Binding ID and align `CONTEXT.md` terminology
-- [ ] Audit README feature claims against the released tree and separate current capabilities from roadmap items
-- [ ] Add a TLS/pinned-certificate local backend so Android LAN use can be re-enabled without the insecure development override
-- [ ] Resolve the transitive `uuid <11.1.1` audit advisory through compatible Expo/xcode and Dev Tunnels dependency upgrades; do not force an incompatible major override
+- [x] Consolidate the production `TerminalView.tsx` document and `dev/term.html` harness around one generated terminal document
+- [x] Add an Android unit-test task covering QR parsing, pairing-response validation, exact close codes, auth readiness, reconnect scheduling, secure-transport rejection, storage parsing, and WebView bridge schemas
+- [x] Persist Station-side Device Key bindings with restrictive filesystem permissions; add listing and explicit revocation
+- [x] Replace the primitive `deviceId` string/`Math.random()` generator with a cryptographically generated branded Device Binding ID and align `CONTEXT.md` terminology
+- [x] Audit README feature claims against the released tree and separate current capabilities from roadmap items
+- [x] Add a TLS/pinned-certificate local backend so Android LAN use can be re-enabled without the insecure development override
+- [x] Disposition the transitive `uuid <11.1.1` audit advisory: no compatible Expo/xcode upgrade exists as of 2026-07-14, the affected API is outside runtime paths, and forcing an incompatible major is prohibited; monitor `docs/security-audit.md`
 
 **DoD:** production phone flows use authenticated encrypted transport; pairing is endpoint-bound and proof-of-possession protected; anonymous resource use is bounded.
 

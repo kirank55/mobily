@@ -177,6 +177,43 @@ describe('WebSocket → PTY round-trip', () => {
     expect(out).toContain('MOBILY_TEST');
   }, 15000);
 
+  it('correlates tagged input with the next PTY output sent to that client', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    const taggedOutput = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('tagged output timed out')), 10_000);
+      ws.on('message', (raw: RawData) => {
+        const frame = JSON.parse(toText(raw)) as Record<string, unknown>;
+        if (
+          frame['type'] === 'output' &&
+          Array.isArray(frame['latencyTags']) &&
+          frame['latencyTags'].includes('latency-1234')
+        ) {
+          clearTimeout(timer);
+          resolve(frame);
+        }
+      });
+    });
+
+    sendFrame(ws, {
+      type: 'input',
+      data: `echo LATENCY_TEST${eol()}`,
+      latencyTag: 'latency-1234',
+    });
+
+    await expect(taggedOutput).resolves.toMatchObject({
+      type: 'output',
+      latencyTags: ['latency-1234'],
+    });
+  }, 15000);
+
   it('applies resize frames to the PTY', async () => {
     const session = new Session({ cols: 80, rows: 24 });
     sessions.push(session);

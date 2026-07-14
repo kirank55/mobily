@@ -1,13 +1,26 @@
 const PAIRING_SCHEME = 'mobily:';
 const PAIRING_HOST = 'pair';
-const PAIRING_PAYLOAD_VERSION = 1;
+const PAIRING_PAYLOAD_VERSION = 2;
 const PAIRING_CODE_PATTERN = /^[A-HJ-KM-NP-Z2-9]{8}$/;
+const DEVICE_BINDING_ID_PATTERN = /^binding_[A-Za-z0-9_-]{22,64}$/;
+const CERTIFICATE_PIN_PATTERN = /^sha256\/[A-Za-z0-9+/]{43}=$/;
+
+declare const deviceBindingIdBrand: unique symbol;
+export type DeviceBindingId = string & { readonly [deviceBindingIdBrand]: true };
+
+export function parseDeviceBindingId(value: unknown): DeviceBindingId | null {
+  return typeof value === 'string' && DEVICE_BINDING_ID_PATTERN.test(value)
+    ? (value as DeviceBindingId)
+    : null;
+}
 
 export interface PairingPayload {
   readonly endpoint: string;
   readonly code: string;
   readonly expiresAt: number;
   readonly protocolVersion: number;
+  /** Dynamic SPKI pin used only for the self-signed local Station endpoint. */
+  readonly certificatePin?: string;
 }
 
 /** Successful response from the Station pairing endpoint. */
@@ -29,6 +42,10 @@ export function encodePairingPayload(payload: PairingPayload): string {
   url.searchParams.set('code', payload.code);
   url.searchParams.set('expires', String(payload.expiresAt));
   url.searchParams.set('protocol', String(payload.protocolVersion));
+  if (payload.certificatePin !== undefined) {
+    validateCertificatePin(payload.certificatePin);
+    url.searchParams.set('pin', payload.certificatePin);
+  }
   return url.toString();
 }
 
@@ -51,16 +68,20 @@ export function decodePairingPayload(raw: string, now = Date.now()): PairingPayl
   const code = url.searchParams.get('code') ?? '';
   const expiresAt = Number(url.searchParams.get('expires'));
   const protocolVersion = Number(url.searchParams.get('protocol'));
+  const certificatePin = url.searchParams.get('pin') ?? undefined;
 
   validateEndpoint(endpoint);
   validateCode(code);
   validatePositiveInteger(expiresAt, 'expiresAt');
   validatePositiveInteger(protocolVersion, 'protocolVersion');
+  if (certificatePin !== undefined) validateCertificatePin(certificatePin);
   if (expiresAt <= now) {
     throw new TypeError('mobily/pairing: pairing QR expired');
   }
 
-  return { endpoint, code, expiresAt, protocolVersion };
+  return certificatePin === undefined
+    ? { endpoint, code, expiresAt, protocolVersion }
+    : { endpoint, code, expiresAt, protocolVersion, certificatePin };
 }
 
 export function createPairingProofPayload(
@@ -68,8 +89,9 @@ export function createPairingProofPayload(
   deviceId: string,
   publicKey: string,
   endpoint: string,
+  certificatePin?: string,
 ): string {
-  return ['mobily-pair-v1', endpoint, code, deviceId, publicKey].join('\n');
+  return ['mobily-pair-v2', endpoint, certificatePin ?? '', code, deviceId, publicKey].join('\n');
 }
 
 export function webSocketToPairingUrl(endpoint: string): string {
@@ -122,5 +144,11 @@ function validateCode(code: string): void {
 function validatePositiveInteger(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`mobily/pairing: ${name} must be a positive integer`);
+  }
+}
+
+function validateCertificatePin(value: string): void {
+  if (!CERTIFICATE_PIN_PATTERN.test(value)) {
+    throw new TypeError('mobily/pairing: invalid certificate pin');
   }
 }

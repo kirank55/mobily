@@ -1,60 +1,69 @@
 # Latency Baseline — Phase 3
 
-Keystroke-to-echo RTT for the mobily Android app.
-Measured by tagging `input` frames with a nonce and detecting the echo in `output`.
+Keystroke-to-output round-trip time for the Mobily Android app. Each input
+frame carries a client-generated correlation tag; the CLI returns pending tags
+with the first following PTY output frame.
 
 ## Methodology
 
-1. User presses a key in the terminal WebView.
-2. The WebView sends `{ type: "input", data: "...", tag: "<nonce>" }` via `postMessage`.
-3. The WS client forwards it to the CLI as `{ type: "input", data: "..." }`.
-4. The CLI writes it to the PTY; the PTY echoes it back.
-5. The CLI sends `{ type: "output", data: "..." }` (containing the echo) to the client.
-6. The WS client calls `TerminalView.write(data)`.
-7. The WebView receives the output, detects the nonce in the DCS tag, computes RTT.
+1. The user presses a key in the terminal WebView.
+2. The WebView records the start time and sends
+   `{ type: "input", data: "...", latencyTag: "<id>" }` through the React Native bridge.
+3. The WebSocket client forwards the tagged input frame to the CLI.
+4. The CLI writes the data to the PTY.
+5. The CLI attaches pending correlation tags to the first following
+   `{ type: "output", data: "...", latencyTags: [...] }` frame for that client.
+6. The WebSocket client calls `TerminalView.write(data, latencyTags)`.
+7. The WebView computes RTT for every returned tag, then renders the output on
+   the next `requestAnimationFrame`.
+8. Every 20 samples, the app logs and displays rolling P50/P95 values in the
+   terminal status bar.
 
-The rAF batching step (7→8) adds a display-rate-adaptive delay (≤16ms at 60Hz, ≤11ms at 90Hz, ≤8ms at 120Hz).
+The animation-frame batching adds a display-rate-adaptive delay: at most about
+16 ms at 60 Hz, 11 ms at 90 Hz, or 8 ms at 120 Hz.
 
-## Measured Baseline
+## Measurement Status
 
-> [!NOTE]
-> These numbers are representative targets based on network conditions.
-> On-device measurement requires a physical Android device + running CLI.
-> Run `android/dev/latency.html` in a browser to measure the rAF component in isolation.
-> The full end-to-end RTT is logged to console when `TerminalView.getLatencyStats()` is called.
+> [!IMPORTANT]
+> A real on-device baseline has not been recorded yet. The values below are
+> acceptance targets, not measurements. Phase 3 is not complete until measured
+> Dev Tunnels P50/P95 values are recorded from a physical Android device.
 
-### Local Tunnel (`--tunnel local`, LAN)
+### Local transport reference
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| P50    | ≤ 30ms | Same-machine or LAN |
-| P95    | ≤ 60ms | Includes rAF coalescing |
-| rAF overhead | ≤ 16ms | At 60Hz; ≤8ms at 120Hz |
+| Metric |  Target | Measured | Notes                             |
+| ------ | ------: | -------: | --------------------------------- |
+| P50    | ≤ 30 ms |  Pending | Pinned-TLS `--tunnel local`       |
+| P95    | ≤ 60 ms |  Pending | Measure on the same Wi-Fi network |
 
 ### Dev Tunnels (`--tunnel devtunnels`, internet relay)
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| P50    | ≤ 80ms  | Typical cloud relay latency |
-| P95    | ≤ 200ms | Spikes due to relay routing |
-| rAF overhead | ≤ 16ms | Same as LAN (local only) |
+| Metric |   Target | Measured | Notes                         |
+| ------ | -------: | -------: | ----------------------------- |
+| P50    |  ≤ 80 ms |  Pending | Typical cloud relay latency   |
+| P95    | ≤ 200 ms |  Pending | Relay-routing spikes expected |
 
-## rAF Batching — Throughput Test
+## Throughput Harness
 
-- **Test**: `cat large_file` — 10,000 lines × 80 bytes = 800KB output at full PTY speed
-- **Result**: No dropped frames observed in `android/dev/term.html` harness at 60Hz
-- **rAF batch size**: Adaptive — flushes all queued chunks per animation frame
+- Test workload: 10,000 lines × 80 bytes, approximately 800 KB of terminal output.
+- Harness: `android/dev/term.html`, generated from the production terminal document.
+- Expected result: no dropped output while the WebView flushes all queued chunks
+  once per animation frame.
+- This harness verifies rendering and batching in isolation; it does not replace
+  the on-device end-to-end measurement.
 
-## How to Measure On-Device
+## Recording the On-Device Baseline
 
-1. Build and launch the dev client on an Android device.
-2. Pair and connect to a running CLI.
-3. In the terminal, type rapidly (or paste a large block of text).
-4. Call `TerminalView.getLatencyStats()` from the terminal screen — stats are logged to Metro.
-5. Alternatively, watch the Metro console for `[mobily latency]` log lines.
+1. Build and launch the development client on an Android device.
+2. Pair with a running CLI.
+3. Connect with `--tunnel devtunnels`.
+4. Enter at least 20 keystrokes that produce terminal output; 100 or more
+   samples are preferred.
+5. Read P50/P95 from the terminal status bar or the `[mobily latency]` Metro log.
+6. Replace `Pending` in the relevant table and record the device model, network
+   type, date, and sample count below it.
 
-## How to Measure rAF Overhead in Browser
+## Browser-Only Batching Check
 
-Open `android/dev/latency.html` and click **▶ Start measurement**.
-The harness simulates 30 keystrokes/sec and measures the rAF coalescing delay in isolation.
-After 100+ samples, P50 and P95 are displayed in the stats panel.
+Open `android/dev/latency.html` and start the measurement. This measures only
+animation-frame scheduling overhead and cannot supply the end-to-end baseline.

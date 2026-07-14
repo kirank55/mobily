@@ -3,7 +3,7 @@
  *
  * Pluggable tunnel backend interface (ADR 0003). The CLI's WebSocket server
  * listens on a local port; a {@link TunnelBackend} makes that port reachable
- * from elsewhere — over an explicitly enabled development LAN (`LocalBackend`)
+ * from elsewhere — over a certificate-pinned LAN (`LocalBackend`)
  * or the public internet (`DevTunnelsBackend`).
  *
  * The interface is deliberately small. The caller:
@@ -20,13 +20,15 @@ export interface TunnelConnection {
    * e.g. `ws://192.168.1.5:4321` (local) or `wss://<id>.devtunnels.ms` (remote).
    */
   readonly url: string;
+  /** Dynamic SHA-256 SPKI pin for a self-signed local Station certificate. */
+  readonly certificatePin?: string;
   /** Tear down the tunnel. Safe to call multiple times. */
   disconnect(): Promise<void>;
 }
 
 /**
  * A strategy for making the CLI's local WebSocket server reachable.
- * Implementations: {@link LocalBackend} (development only),
+ * Implementations: {@link LocalBackend} (secure LAN),
  * `DevTunnelsBackend` (secure phone transport).
  */
 export interface TunnelBackend {
@@ -38,6 +40,12 @@ export interface TunnelBackend {
    * (tunnel forwards to localhost).
    */
   readonly bindHost: string;
+  /** TLS identity used directly by a local Station server. */
+  readonly serverTls?: {
+    readonly key: string;
+    readonly cert: string;
+    readonly certificatePin: string;
+  };
   /**
    * Establish the tunnel, forwarding remote traffic to `localPort`. Resolves
    * with a {@link TunnelConnection} once the tunnel is up.

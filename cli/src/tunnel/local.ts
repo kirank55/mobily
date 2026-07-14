@@ -1,26 +1,30 @@
 /**
  * cli/src/tunnel/local.ts
  *
- * Development-only {@link TunnelBackend}. Binds the WebSocket server to all
+ * LAN {@link TunnelBackend}. Binds the Station server to all
  * interfaces (`0.0.0.0`) and exposes it on the LAN at
- * `ws://<lan-ip>:<port>`. No account, no relay, no external service — the
+ * `wss://<lan-ip>:<port>` by default. No account, relay, or external service — the
  * phone and the Station must be on the same network. Device Key auth (Phase 2)
  * still gates access.
  */
 
 import * as os from 'node:os';
 import type { TunnelBackend, TunnelConnection } from './types.js';
+import type { LocalTlsIdentity } from '../localTls.js';
 
-/** LocalBackend — explicit plaintext LAN mode for isolated development only. */
+/** LocalBackend — pinned TLS on LAN, or explicit plaintext development mode. */
 export class LocalBackend implements TunnelBackend {
   readonly id = 'local';
   readonly bindHost = '0.0.0.0';
+
+  constructor(readonly serverTls?: LocalTlsIdentity) {}
 
   connect(localPort: number): Promise<TunnelConnection> {
     const ip = primaryLanIp();
     const host = ip ?? 'localhost';
     return Promise.resolve({
-      url: `ws://${host}:${localPort}`,
+      url: `${this.serverTls ? 'wss' : 'ws'}://${host}:${localPort}`,
+      certificatePin: this.serverTls?.certificatePin,
       disconnect: () => Promise.resolve(),
     });
   }

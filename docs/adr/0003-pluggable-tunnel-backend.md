@@ -2,16 +2,18 @@
 
 The tunneling layer is behind a `TunnelBackend` interface rather than hard-wired
 to a single provider. There is no implicit tunnel default. Microsoft Dev
-Tunnels is the supported secure phone transport; `LocalBackend` remains an
-explicit development escape hatch for the browser smoke harness.
+Tunnels is the supported secure remote transport. `LocalBackend` provides an
+account-free secure phone path on the same LAN.
 
-## Development-only: LocalBackend (LAN)
+## Secure local transport: LocalBackend (LAN)
 
-`LocalBackend` binds the WebSocket server to `0.0.0.0` and exposes it at
-`ws://<lan-ip>:<port>`. It requires both `--tunnel local` and
-`--allow-insecure-local`. Device Key auth does not encrypt terminal traffic, so
-the production Android client refuses this mode. It is reserved for
-isolated-network browser development.
+`LocalBackend` binds the Station to `0.0.0.0` and exposes it at
+`wss://<lan-ip>:<port>`. The Station creates and persists a self-signed TLS
+identity in `~/.mobily/local-tls.json`; its SHA-256 SPKI pin is carried in the
+endpoint-bound pairing QR. A small native Android OkHttp transport verifies the
+dynamic pin for pairing HTTPS and terminal WSS, so neither a public CA nor an
+account is required. `--allow-insecure-local` explicitly downgrades this to
+plaintext for the browser smoke harness only; production Android rejects it.
 
 ## Secure phone transport: DevTunnelsBackend
 
@@ -32,7 +34,8 @@ tunnel lifecycle. See
 
 Driven by FOSS goals: an open-source project shouldn't force users onto a single
 proprietary service. The interface is small (`connect(localPort)` →
-`TunnelConnection { url, disconnect() }`, plus `bindHost`), so adding backends
+`TunnelConnection { url, certificatePin?, disconnect() }`, plus `bindHost` and
+an optional server TLS identity), so adding backends
 for Bore, Cloudflare Tunnels, SSH reverse tunnels, or other providers is
 incremental.
 
@@ -42,7 +45,8 @@ incremental.
   assumed Dev Tunnels could be hosted anonymously for zero-setup `npx mobily`.
   Microsoft's docs confirm this is not possible: hosting always requires
   authentication. Corrected first to LocalBackend as the default, then to
-  explicit tunnel selection after the plaintext transport review.
+  explicit tunnel selection after the plaintext transport review. Phase 3.1
+  subsequently made the local default encrypted and certificate-pinned.
 - **Dev Tunnels with MSA auth (hard-wired, default)** — stable URLs, but forces
   a Microsoft account on every operator and locks the project to one provider.
   Rejected for the same FOSS reasons; kept as an opt-in backend.

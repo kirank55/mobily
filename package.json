@@ -23,6 +23,9 @@
     "turbo": "^2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "node-pty"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "node-pty"
+    ]
   }
 }

@@ -17,6 +17,7 @@ import {
   type Server as HttpServer,
   type ServerResponse,
 } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { WebSocketServer } from 'ws';
 import type { Session } from './session.js';
 
@@ -33,6 +34,8 @@ export interface ServerOptions {
   maxPayloadBytes?: number;
   /** Maximum simultaneously connected WebSockets. @default 32 */
   maxConnections?: number;
+  /** Serve HTTPS/WSS with this identity. Omit for tunnel-terminated TLS. */
+  tls?: { readonly key: string; readonly cert: string };
 }
 
 export interface Server {
@@ -59,13 +62,16 @@ export function startServer(options: ServerOptions): Promise<Server> {
   const host = options.host ?? 'localhost';
   const port = options.port ?? 0;
 
-  const httpServer = createServer((req, res) => {
+  const requestListener = (req: IncomingMessage, res: ServerResponse): void => {
     if (options.httpRequestHandler) {
       options.httpRequestHandler(req, res);
     } else {
       res.writeHead(404).end();
     }
-  });
+  };
+  const httpServer = options.tls
+    ? createHttpsServer({ key: options.tls.key, cert: options.tls.cert }, requestListener)
+    : createServer(requestListener);
 
   httpServer.headersTimeout = 10_000;
   httpServer.requestTimeout = 10_000;
@@ -96,7 +102,7 @@ export function startServer(options: ServerOptions): Promise<Server> {
       resolve({
         host,
         port: boundPort,
-        url: `ws://${host}:${boundPort}`,
+        url: `${options.tls ? 'wss' : 'ws'}://${host}:${boundPort}`,
         close: () => closeServer(httpServer, wss),
       });
     });

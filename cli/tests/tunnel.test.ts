@@ -28,6 +28,17 @@ describe('LocalBackend', () => {
     expect(conn.url).toMatch(/^ws:\/\/[^:]+:12345$/);
   });
 
+  it('returns WSS and its certificate pin when a TLS identity is configured', async () => {
+    const secure = new LocalBackend({
+      key: 'key',
+      cert: 'cert',
+      certificatePin: 'sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    });
+    const connection = await secure.connect(12345);
+    expect(connection.url).toMatch(/^wss:\/\/[^:]+:12345$/);
+    expect(connection.certificatePin).toBe(secure.serverTls?.certificatePin);
+  });
+
   it('connect() URL uses a real LAN IPv4 address or localhost fallback', async () => {
     const conn = await backend.connect(8080);
     const ip = primaryLanIp();
@@ -97,9 +108,8 @@ describe('isTunnelId()', () => {
 
 describe('createTunnelBackend()', () => {
   it("returns a LocalBackend for 'local'", async () => {
-    const backend = await createTunnelBackend('local');
+    const backend = await createTunnelBackend('local', { allowInsecureLocal: true });
     expect(backend.id).toBe('local');
     expect(backend.bindHost).toBe('0.0.0.0');
   });
-
 });
