@@ -117,16 +117,23 @@ Two independent state machines:
 **Goal:** Native-feeling persistence + background alerts.
 - **SessionBackend abstraction:** introduce the `SessionBackend` interface with two implementations (this is when a second behavior — tmux crash survival — is first needed):
   - `BareBackend`: extract the Phase 1 inline bare behavior (PTY held by CLI process) behind the interface.
-  - `TmuxBackend`: wrap PTY in `tmux` so the session survives CLI crashes — on reconnect, reattach; on first connect, create named session.
+  - `TmuxBackend`: wrap PTY in a named `tmux` session so the session survives CLI crashes — on reconnect, reattach; on first connect, create the session.
   - Auto-detect: use `TmuxBackend` if `tmux` is on `$PATH`, otherwise fall back to `BareBackend`.
   - Refactor `session.ts` to use `SessionBackend` instead of holding `PtyProcess` directly.
+- **Shared Android + workstation terminal:** make the tmux session the common terminal boundary instead of creating an Android-only shell.
+  - Attach Mobily's PTY to the named tmux session for Android input/output streaming.
+  - Print the exact workstation command (for example, `tmux attach -t mobily-<session>`) so the user can attach a local terminal to the same session.
+  - Both attached clients receive the same output and may enter commands; commands entered on Android must be visible on the workstation and vice versa.
+  - Define session naming/selection, whether an existing Mobily session is reused, detach versus terminate behavior, and cleanup of stale sessions.
+  - Define shared-window resize behavior so Android resizing does not make the workstation terminal unusable.
+  - When tmux is unavailable, clearly explain that `BareBackend` supports Android access and reconnect persistence only while the CLI lives, but cannot mirror the session into an existing workstation terminal.
 - `cli/src/mux/`: enhance both backends with scrollback replay on reconnect:
   - `TmuxBackend`: replay last N lines via `tmux capture-pane`
   - `BareBackend`: replay from in-process ring buffer
 - **WebSocket-based alerts:** add an `alert` frame type to `shared/protocol.ts`; when the CLI detects an agent prompt or idle-timeout (via PTY output heuristics), send an `{ type: "alert", message }` frame over the existing WebSocket. The foreground service updates the ongoing notification with the alert content. No FCM, no push service dependency.
 - **Foreground service:** `android/app/foreground.ts` — keeps WS alive in background; ongoing notification showing connection status + last terminal line + agent alerts
 - Reconnect strategy on app resume: re-auth (Device Key challenge-response), reattach session, replay scrollback
-- **DoD:** agent prompts for a token → notification shows the prompt → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+
+- **DoD:** commands and output are visible in the same named terminal on Android and an attached workstation terminal; input from either client drives that shared session; agent prompts for a token → notification shows the prompt → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+
 - **Risks:** Foreground service battery impact — minimize wake-locks; rely on WS keep-alive pings rather than polling
 
 ## Multi-Machine Support

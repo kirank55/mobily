@@ -283,6 +283,15 @@
 - [ ] Auto-detect: use `TmuxBackend` if `tmux` on `$PATH`, else `BareBackend`
 - [ ] Refactor `session.ts` to use `SessionBackend` instead of holding `PtyProcess` directly
 
+### Shared Android + Workstation Terminal
+
+- [ ] Attach Mobily's PTY to the named tmux session used by Android instead of creating an Android-only shell
+- [ ] Print an exact workstation attach command such as `tmux attach -t mobily-<session>`
+- [ ] Stream the same output to Android and the attached workstation terminal; accept input from either client
+- [ ] Define session naming/selection, reuse, detach/terminate behavior, and stale-session cleanup
+- [ ] Define shared-window resize behavior for differently sized Android and workstation clients
+- [ ] Explain the `BareBackend` limitation when tmux is unavailable: no simultaneous workstation attachment
+
 ### Scrollback Replay
 
 - [ ] `TmuxBackend`: replay last N lines via `tmux capture-pane` on reconnect
@@ -311,4 +320,4 @@
 - [ ] Maestro: background → foreground → reconnected
 - [ ] Maestro: notification shows alert content
 
-**DoD:** agent prompt → notification → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+.
+**DoD:** Android and an attached workstation terminal display and control the same named session; commands entered on either client are visible on both; agent prompt → notification → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+.
