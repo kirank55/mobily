@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { IDisposable, PtyProcess, SpawnOptions } from '../src/pty/node-pty.js';
+import type { IDisposable, PtyProcess } from '../src/pty/node-pty.js';
 import { BareBackend } from '../src/mux/bare.js';
 import {
   createSessionBackend,
@@ -61,7 +61,7 @@ function runtime(overrides: Partial<SessionRuntime> = {}): {
     pty,
     commands,
     value: {
-      spawnPty: vi.fn((_options: SpawnOptions) => pty),
+      spawnPty: vi.fn(() => pty),
       execFile: vi.fn((file: string, args: string[]) => {
         commands.push({ file, args });
         if (args[0] === 'capture-pane') return 'captured-one\ncaptured-two\n';

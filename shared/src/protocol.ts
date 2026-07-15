@@ -15,13 +15,15 @@
  *   auth-challenge  — CLI → client: nonce for Device Key authentication
  *   auth-response   — client → CLI: signed nonce for authentication
  *
- * Later phases will add:
- *   rpc / rpc-stream   (Phase 4 — Git features)
- *   alert              (Phase 5 — backgrounding)
+ * Phase 4 frames:
+ *   rpc / rpc-stream   — structured Git features
+ *
+ * Phase 5 frames:
+ *   alert              — background notification content
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Stable application-specific WebSocket close codes shared by both peers. */
 export const WS_CLOSE_CODES = {
@@ -47,6 +49,7 @@ export const FRAME_TYPES = [
   'auth-ok',
   'rpc',
   'rpc-stream',
+  'alert',
 ] as const;
 export type FrameType = (typeof FRAME_TYPES)[number];
 
@@ -151,6 +154,12 @@ export interface RpcStreamFrame {
   error?: RpcError;
 }
 
+/** CLI to client: bounded plain-text terminal prompt or idle alert. */
+export interface AlertFrame {
+  type: 'alert';
+  message: string;
+}
+
 /** Union of all wire frames. */
 export type Frame =
   | InputFrame
@@ -163,7 +172,8 @@ export type Frame =
   | AuthOkFrame
   | RpcRequestFrame
   | RpcResponseFrame
-  | RpcStreamFrame;
+  | RpcStreamFrame
+  | AlertFrame;
 
 // ---------------------------------------------------------------------------
 // Encode
@@ -225,6 +235,8 @@ export function decodeFrame(raw: string): Frame {
       return validateRpcFrame(obj);
     case 'rpc-stream':
       return validateRpcStreamFrame(obj);
+    case 'alert':
+      return validateAlertFrame(obj);
     default:
       throw new TypeError(`mobily/protocol: unknown frame type "${String(obj['type'])}"`);
   }
@@ -416,6 +428,14 @@ function validateRpcStreamFrame(obj: Record<string, unknown>): RpcStreamFrame {
     ...(nextCursor === undefined ? {} : { nextCursor: nextCursor as string }),
     ...(error === undefined ? {} : { error: validateRpcError(error) }),
   };
+}
+
+function validateAlertFrame(obj: Record<string, unknown>): AlertFrame {
+  const message = obj['message'];
+  if (typeof message !== 'string' || message.length === 0 || message.length > 512) {
+    throw new TypeError('mobily/protocol: AlertFrame.message must be a non-empty bounded string');
+  }
+  return { type: 'alert', message };
 }
 
 function validateRpcId(value: unknown): string {

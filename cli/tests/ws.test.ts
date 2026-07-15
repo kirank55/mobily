@@ -20,7 +20,7 @@ import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
 import type { SessionBackend } from '../src/mux/types.js';
-import type { ExitEvent, IDisposable } from '../src/pty/node-pty.js';
+import type { IDisposable } from '../src/pty/node-pty.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;
@@ -28,6 +28,9 @@ class RecordingBackend implements SessionBackend {
   readonly attachCommand = null;
   readonly writes: string[] = [];
   readonly resizes: Array<[number, number]> = [];
+  readonly dataListeners = new Set<(data: string) => void>();
+
+  constructor(private readonly replay = '') {}
 
   write(data: string): void {
     this.writes.push(data);
@@ -35,16 +38,20 @@ class RecordingBackend implements SessionBackend {
   resize(cols: number, rows: number): void {
     this.resizes.push([cols, rows]);
   }
-  onData(_listener: (data: string) => void): IDisposable {
-    return { dispose() {} };
+  onData(listener: (data: string) => void): IDisposable {
+    this.dataListeners.add(listener);
+    return { dispose: () => this.dataListeners.delete(listener) };
   }
-  onExit(_listener: (event: ExitEvent) => void): IDisposable {
+  onExit(): IDisposable {
     return { dispose() {} };
   }
   readScrollback(): string {
-    return '';
+    return this.replay;
   }
   dispose(): void {}
+  emit(data: string): void {
+    for (const listener of this.dataListeners) listener(data);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +385,70 @@ function frameBuffer(ws: WebSocket): {
 }
 
 describe('handshake: version negotiation + auth', () => {
+  it('replays backend scrollback after authentication before live output', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://test:9999');
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
+    const backend = new RecordingBackend('previous command\r\nprevious output\r\n');
+    const session = new Session({ backend, auth });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    const received: Record<string, unknown>[] = [];
+    ws.on('message', (raw: RawData) => {
+      received.push(JSON.parse(toText(raw)) as Record<string, unknown>);
+    });
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    await vi.waitFor(() => expect(received.some((frame) => frame['type'] === 'auth-challenge')).toBe(true));
+    const nonce = received.find((frame) => frame['type'] === 'auth-challenge')!['nonce'] as string;
+    sendFrame(ws, {
+      type: 'auth-response',
+      deviceId: 'device-1',
+      signature: signNonce(privateKeyPem, nonce),
+    });
+    await vi.waitFor(() =>
+      expect(received.some((frame) => frame['type'] === 'output')).toBe(true),
+    );
+    backend.emit('live output\r\n');
+    await vi.waitFor(() =>
+      expect(received.filter((frame) => frame['type'] === 'output')).toHaveLength(2),
+    );
+
+    const terminalFrames = received.filter((frame) => frame['type'] === 'output');
+    expect(terminalFrames.map((frame) => frame['data'])).toEqual([
+      'previous command\r\nprevious output\r\n',
+      'live output\r\n',
+    ]);
+  });
+
+  it('broadcasts detected terminal prompts as alert frames', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+    const alerts: Record<string, unknown>[] = [];
+    ws.on('message', (raw: RawData) => {
+      const frame = JSON.parse(toText(raw)) as Record<string, unknown>;
+      if (frame['type'] === 'alert') alerts.push(frame);
+    });
+
+    backend.emit('\x1b[33mApprove deployment?\x1b[0m\r\n');
+
+    await vi.waitFor(() => expect(alerts).toEqual([
+      { type: 'alert', message: 'Approve deployment?' },
+    ]));
+  });
+
   it('completes the full handshake and streams PTY output', async () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');

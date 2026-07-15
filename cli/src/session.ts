@@ -28,6 +28,7 @@ import {
   GIT_RPC_METHODS,
   PROTOCOL_VERSION,
   WS_CLOSE_CODES,
+  type AlertFrame,
   type Frame,
   type OutputFrame,
 } from '@mobily/shared';
@@ -36,6 +37,7 @@ import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpc/router.js';
 import { BareBackend } from './mux/bare.js';
 import type { SessionBackend } from './mux/types.js';
+import { TerminalAlertDetector, type AlertDetector } from './alerts/detector.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
@@ -63,6 +65,7 @@ export interface SessionOptions extends SpawnOptions {
  */
 export class Session {
   private readonly backend: SessionBackend;
+  private readonly alertDetector: AlertDetector;
   private readonly auth?: AuthManager;
   private readonly rpc?: Pick<RpcRouter, 'handle'>;
   private readonly handshakeTimeoutMs: number;
@@ -88,10 +91,14 @@ export class Session {
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
     this.backend = backend ?? new BareBackend(spawnOpts);
-
-    this.onDataDisposable = this.backend.onData((data) =>
-      this.broadcast({ type: 'output', data }),
+    this.alertDetector = new TerminalAlertDetector((message) =>
+      this.broadcast({ type: 'alert', message }),
     );
+
+    this.onDataDisposable = this.backend.onData((data) => {
+      this.broadcast({ type: 'output', data });
+      this.alertDetector.push(data);
+    });
 
     this.onExitDisposable = this.backend.onExit(() => this.handleExit());
   }
@@ -234,6 +241,8 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private attachAuthenticated(ws: WebSocket): void {
+    const replay = this.backend.readScrollback();
+    if (replay.length > 0) this.sendTo(ws, { type: 'output', data: replay });
     this.subscribers.add(ws);
     this.pendingLatencyTags.set(ws, []);
     this.activeRpcRequests.set(ws, new Map());
@@ -289,6 +298,9 @@ export class Session {
       case 'rpc-stream':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected RPC stream');
         break;
+      case 'alert':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected alert frame');
+        break;
       case 'output':
         break;
       case 'hello':
@@ -339,10 +351,14 @@ export class Session {
   // Outbound: PTY → clients
   // -------------------------------------------------------------------------
 
-  private broadcast(frame: OutputFrame): void {
+  private broadcast(frame: OutputFrame | AlertFrame): void {
     for (const ws of [...this.subscribers]) {
-      const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
-      this.sendRaw(ws, encodeFrame(latencyTags?.length ? { ...frame, latencyTags } : frame));
+      if (frame.type === 'output') {
+        const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
+        this.sendRaw(ws, encodeFrame(latencyTags?.length ? { ...frame, latencyTags } : frame));
+      } else {
+        this.sendRaw(ws, encodeFrame(frame));
+      }
     }
   }
 
@@ -384,6 +400,7 @@ export class Session {
     this.exited = true;
     this.onDataDisposable.dispose();
     this.onExitDisposable.dispose();
+    this.alertDetector.dispose();
     for (const ws of this.subscribers) {
       try {
         ws.close(1001, 'session disposed');

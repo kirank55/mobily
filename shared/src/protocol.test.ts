@@ -7,6 +7,7 @@ import {
   type AuthOkFrame,
   type AuthChallengeFrame,
   type AuthResponseFrame,
+  type AlertFrame,
   type Frame,
   type HelloAckFrame,
   type HelloFrame,
@@ -139,6 +140,13 @@ describe('round-trip: auth-ok frame', () => {
   });
 });
 
+describe('round-trip: alert frame', () => {
+  it('preserves a bounded terminal alert', () => {
+    const frame: AlertFrame = { type: 'alert', message: 'Approve the agent tool call?' };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
 describe('round-trip: rpc frames', () => {
   it('preserves an RPC request with nested JSON parameters', () => {
     const frame: RpcRequestFrame = {
@@ -189,6 +197,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
+    expect(PROTOCOL_VERSION).toBe(3);
   });
 });
 
@@ -264,6 +273,16 @@ describe('decodeFrame errors: malformed rpc frames', () => {
     '{"type":"rpc","id":"rpc-1","result":{},"error":{"code":"X","message":"x"}}',
     '{"type":"rpc-stream","id":"rpc-1","chunk":42,"done":false}',
     '{"type":"rpc-stream","id":"rpc-1","chunk":"x","done":false,"nextCursor":"no"}',
+  ])('rejects %s', (raw) => {
+    expect(() => decodeFrame(raw)).toThrow(TypeError);
+  });
+});
+
+describe('decodeFrame errors: malformed alert frames', () => {
+  it.each([
+    '{"type":"alert","message":""}',
+    '{"type":"alert","message":42}',
+    JSON.stringify({ type: 'alert', message: 'x'.repeat(513) }),
   ])('rejects %s', (raw) => {
     expect(() => decodeFrame(raw)).toThrow(TypeError);
   });
