@@ -17,10 +17,8 @@
  * When no AuthManager is provided (e.g. dev smoke testing), the handshake is
  * skipped and the client is attached immediately (Phase 1 behaviour).
  *
- * The Session holds the {@link PtyProcess} directly (bare behaviour), so the
- * terminal survives WebSocket disconnects — a new client reattaches to the
- * same live PTY after completing the handshake. The `SessionBackend` abstraction
- * + `TmuxBackend` arrive in Phase 5.
+ * Terminal process behavior is provided by a SessionBackend. A new WebSocket
+ * client reattaches to the same backend after completing the handshake.
  */
 
 import type { RawData, WebSocket } from 'ws';
@@ -33,9 +31,11 @@ import {
   type Frame,
   type OutputFrame,
 } from '@mobily/shared';
-import { spawn, type IDisposable, type PtyProcess, type SpawnOptions } from './pty/node-pty.js';
+import type { IDisposable, SpawnOptions } from './pty/node-pty.js';
 import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpc/router.js';
+import { BareBackend } from './mux/bare.js';
+import type { SessionBackend } from './mux/types.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
@@ -44,6 +44,8 @@ const DEFAULT_MAX_ACTIVE_RPC_REQUESTS = 4;
 
 /** Extended spawn options — includes optional auth for the handshake. */
 export interface SessionOptions extends SpawnOptions {
+  /** Terminal backend. Defaults to the bare PTY adapter. */
+  backend?: SessionBackend;
   /** Auth manager for Device Key challenge-response. If omitted, no auth. */
   auth?: AuthManager;
   /** Maximum time allowed for hello + Device Key authentication. @default 10000 */
@@ -55,14 +57,12 @@ export interface SessionOptions extends SpawnOptions {
 }
 
 /**
- * A live terminal session: one PTY plus the WebSocket clients currently
+ * A live terminal session: one backend plus the WebSocket clients currently
  * streaming its output. Create one, attach clients as they connect, and call
  * {@link Session.dispose} to tear it down.
  */
 export class Session {
-  /** The PTY held by this session. Exposed for inspection / testing. */
-  readonly pty: PtyProcess;
-
+  private readonly backend: SessionBackend;
   private readonly auth?: AuthManager;
   private readonly rpc?: Pick<RpcRouter, 'handle'>;
   private readonly handshakeTimeoutMs: number;
@@ -78,6 +78,7 @@ export class Session {
     const {
       auth,
       rpc,
+      backend,
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
       ...spawnOpts
@@ -86,11 +87,13 @@ export class Session {
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
-    this.pty = spawn(spawnOpts);
+    this.backend = backend ?? new BareBackend(spawnOpts);
 
-    this.onDataDisposable = this.pty.onData((data) => this.broadcast({ type: 'output', data }));
+    this.onDataDisposable = this.backend.onData((data) =>
+      this.broadcast({ type: 'output', data }),
+    );
 
-    this.onExitDisposable = this.pty.onExit(() => this.handleExit());
+    this.onExitDisposable = this.backend.onExit(() => this.handleExit());
   }
 
   /** Whether the underlying PTY has exited. */
@@ -267,11 +270,11 @@ export class Session {
             if (tags.length > 256) tags.splice(0, tags.length - 256);
           }
         }
-        this.pty.write(frame.data);
+        this.backend.write(frame.data);
         break;
       case 'resize':
         try {
-          this.pty.resize(frame.cols, frame.rows);
+          this.backend.resize(frame.cols, frame.rows);
         } catch (err) {
           this.sendTo(ws, {
             type: 'output',
@@ -376,7 +379,7 @@ export class Session {
     }
   }
 
-  /** Tear down: stop listening, close clients, and kill the PTY. */
+  /** Tear down: stop listening, close clients, and dispose the backend. */
   dispose(): void {
     this.exited = true;
     this.onDataDisposable.dispose();
@@ -395,7 +398,7 @@ export class Session {
     }
     this.activeRpcRequests.clear();
     try {
-      this.pty.kill();
+      this.backend.dispose();
     } catch {
       // Already dead — ignore.
     }

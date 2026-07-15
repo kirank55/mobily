@@ -19,6 +19,33 @@ import { createPairingProofPayload, PROTOCOL_VERSION, WS_CLOSE_CODES } from '@mo
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
+import type { SessionBackend } from '../src/mux/types.js';
+import type { ExitEvent, IDisposable } from '../src/pty/node-pty.js';
+
+class RecordingBackend implements SessionBackend {
+  readonly kind = 'bare' as const;
+  readonly sessionName = null;
+  readonly attachCommand = null;
+  readonly writes: string[] = [];
+  readonly resizes: Array<[number, number]> = [];
+
+  write(data: string): void {
+    this.writes.push(data);
+  }
+  resize(cols: number, rows: number): void {
+    this.resizes.push([cols, rows]);
+  }
+  onData(_listener: (data: string) => void): IDisposable {
+    return { dispose() {} };
+  }
+  onExit(_listener: (event: ExitEvent) => void): IDisposable {
+    return { dispose() {} };
+  }
+  readScrollback(): string {
+    return '';
+  }
+  dispose(): void {}
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -215,7 +242,8 @@ describe('WebSocket → PTY round-trip', () => {
   }, 15000);
 
   it('applies resize frames to the PTY', async () => {
-    const session = new Session({ cols: 80, rows: 24 });
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
     sessions.push(session);
     const server = await startServer({ session });
     servers.push(server);
@@ -228,8 +256,7 @@ describe('WebSocket → PTY round-trip', () => {
 
     await vi.waitFor(
       () => {
-        expect(session.pty.raw.cols).toBe(120);
-        expect(session.pty.raw.rows).toBe(36);
+        expect(backend.resizes).toContainEqual([120, 36]);
       },
       { timeout: 5000, interval: 50 },
     );

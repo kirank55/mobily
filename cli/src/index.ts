@@ -18,6 +18,11 @@ import { defaultBindingFile, FileBindingRepository } from './bindings.js';
 import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
 import { GitService } from './git/service.js';
 import { RpcRouter } from './rpc/router.js';
+import {
+  createSessionBackend,
+  killTmuxSession,
+  validateSessionName,
+} from './mux/factory.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -31,8 +36,20 @@ export async function main(): Promise<void> {
       verbose: { type: 'boolean', default: false },
       'list-bindings': { type: 'boolean', default: false },
       'revoke-binding': { type: 'string' },
+      session: { type: 'string' },
+      'kill-session': { type: 'string' },
     },
   });
+
+  if (values['kill-session']) {
+    const name = validateSessionName(values['kill-session']);
+    killTmuxSession(name);
+    console.log(`Terminated tmux session: ${name}`);
+    return;
+  }
+  const requestedSessionName = values.session
+    ? validateSessionName(values.session)
+    : undefined;
 
   const bindingRepository = new FileBindingRepository(defaultBindingFile());
   if (values['list-bindings']) {
@@ -88,10 +105,14 @@ export async function main(): Promise<void> {
     allowInsecureLocal: values['allow-insecure-local'],
   });
   const cwd = process.cwd();
-  const session = new Session({
+  const sessionBackend = createSessionBackend({
     cols: 80,
     rows: 24,
     cwd,
+    sessionName: requestedSessionName,
+  });
+  const session = new Session({
+    backend: sessionBackend,
     auth,
     rpc: new RpcRouter(new GitService(cwd)),
   });
@@ -115,6 +136,14 @@ export async function main(): Promise<void> {
 
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
+  console.log(
+    `Session:      ${sessionBackend.kind}${sessionBackend.sessionName ? ` (${sessionBackend.sessionName})` : ''}`,
+  );
+  if (sessionBackend.attachCommand) {
+    console.log(`Workstation:  ${sessionBackend.attachCommand}`);
+  } else {
+    console.log('Workstation:  unavailable in bare mode; the session ends when the CLI exits');
+  }
   console.log();
   console.log('  Scan this QR with the Mobily app to pair your device:');
   console.log();
