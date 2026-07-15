@@ -1,5 +1,9 @@
 # Phase 2 — Secure Tunnel & Pairing: Implementation Plan
 
+> Historical plan. Dev Tunnels authentication was later replaced by guided
+> orchestration of Microsoft's official `devtunnel` helper. See
+> [`devtunnels-provisioning.md`](devtunnels-provisioning.md) for the current flow.
+
 > Stacked-branch implementation of Phase 2 (`docs/tasks.md` lines 63–93).
 > Each branch is based on the previous one; each gets a PR.
 > Generated from a planning conversation and locked decisions.

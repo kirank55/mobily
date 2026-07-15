@@ -11,7 +11,13 @@
  * Both share the same port so the tunnel forwards them transparently.
  */
 
-import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as HttpServer,
+  type ServerResponse,
+} from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { WebSocketServer } from 'ws';
 import type { Session } from './session.js';
 
@@ -24,6 +30,12 @@ export interface ServerOptions {
   session: Session;
   /** Handler for non-WebSocket HTTP requests (e.g. pairing endpoint). */
   httpRequestHandler?: (req: IncomingMessage, res: ServerResponse) => void;
+  /** Maximum inbound WebSocket message size. @default 65536 */
+  maxPayloadBytes?: number;
+  /** Maximum simultaneously connected WebSockets. @default 32 */
+  maxConnections?: number;
+  /** Serve HTTPS/WSS with this identity. Omit for tunnel-terminated TLS. */
+  tls?: { readonly key: string; readonly cert: string };
 }
 
 export interface Server {
@@ -50,28 +62,47 @@ export function startServer(options: ServerOptions): Promise<Server> {
   const host = options.host ?? 'localhost';
   const port = options.port ?? 0;
 
-  const httpServer = createServer((req, res) => {
+  const requestListener = (req: IncomingMessage, res: ServerResponse): void => {
     if (options.httpRequestHandler) {
       options.httpRequestHandler(req, res);
     } else {
       res.writeHead(404).end();
     }
-  });
+  };
+  const httpServer = options.tls
+    ? createHttpsServer({ key: options.tls.key, cert: options.tls.cert }, requestListener)
+    : createServer(requestListener);
 
-  const wss = new WebSocketServer({ server: httpServer });
-  wss.on('connection', (ws) => options.session.attach(ws));
+  httpServer.headersTimeout = 10_000;
+  httpServer.requestTimeout = 10_000;
+  const maxConnections = options.maxConnections ?? 32;
+  // Keep one extra TCP slot so an over-limit WebSocket can receive close code
+  // 1013; all other incomplete HTTP/TCP connections are bounded as well.
+  httpServer.maxConnections = maxConnections + 1;
+
+  const wss = new WebSocketServer({
+    server: httpServer,
+    maxPayload: options.maxPayloadBytes ?? 64 * 1024,
+    perMessageDeflate: false,
+  });
+  wss.on('connection', (ws) => {
+    if (wss.clients.size > maxConnections) {
+      ws.close(1013, 'connection limit reached');
+      return;
+    }
+    options.session.attach(ws);
+  });
 
   return new Promise<Server>((resolve, reject) => {
     httpServer.once('error', reject);
     httpServer.listen(port, host, () => {
       const addr = httpServer.address();
-      const boundPort =
-        typeof addr === 'object' && addr !== null ? addr.port : port;
+      const boundPort = typeof addr === 'object' && addr !== null ? addr.port : port;
 
       resolve({
         host,
         port: boundPort,
-        url: `ws://${host}:${boundPort}`,
+        url: `${options.tls ? 'wss' : 'ws'}://${host}:${boundPort}`,
         close: () => closeServer(httpServer, wss),
       });
     });

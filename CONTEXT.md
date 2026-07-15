@@ -16,6 +16,10 @@ _Avoid_: Host (overloaded with networking/tunneling meaning)
 A cryptographic keypair generated in Android Keystore on first pairing. The public key is sent to the CLI; the private key never leaves the device hardware. On reconnect, the device signs a challenge to prove identity.
 _Avoid_: Device fingerprint, device ID, device UUID
 
+**Device Binding ID**:
+A cryptographically random, non-secret identifier for one Device Key binding on a Station. It selects the public key used to verify a reconnect; it is not authentication by itself.
+_Avoid_: Device ID, UUID, fingerprint
+
 **Session**:
 A persistent terminal interaction on the Station. When `tmux` is available, backed by a tmux session (survives CLI crash). When `tmux` is absent, backed by the CLI process's PTY (survives client disconnects, but not CLI crash).
 _Avoid_: Connection (that's the WebSocket link, not the terminal session)

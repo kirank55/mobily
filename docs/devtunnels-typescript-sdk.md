@@ -1,5 +1,10 @@
 # Dev Tunnels TypeScript SDK — research
 
+> Historical research. Mobily no longer embeds these SDK packages or owns the
+> OAuth device-code flow. The current implementation orchestrates Microsoft's
+> official `devtunnel` helper; see
+> [`devtunnels-provisioning.md`](devtunnels-provisioning.md).
+
 Reference for implementing `DevTunnelsBackend` (`cli/src/tunnel/devtunnels.ts`) against
 the official `@microsoft/dev-tunnels-*` npm packages, embedded in-process. The flow:
 authenticate (device-code) → create a tunnel → enable anonymous *connect* → add a port →

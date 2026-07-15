@@ -12,9 +12,10 @@
 
 import * as os from 'node:os';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { Socket } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket, type RawData } from 'ws';
-import { PROTOCOL_VERSION } from '@mobily/shared';
+import { createPairingProofPayload, PROTOCOL_VERSION, WS_CLOSE_CODES } from '@mobily/shared';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
@@ -35,10 +36,7 @@ function waitForOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
       resolve();
       return;
     }
-    const timer = setTimeout(
-      () => reject(new Error('ws open timed out')),
-      timeoutMs,
-    );
+    const timer = setTimeout(() => reject(new Error('ws open timed out')), timeoutMs);
     const onError = (err: Error): void => {
       clearTimeout(timer);
       reject(err);
@@ -55,6 +53,10 @@ function waitForOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
 /** Resolve once the socket emits `close`. */
 function waitForClose(ws: WebSocket): Promise<void> {
   return new Promise((resolve) => ws.once('close', () => resolve()));
+}
+
+function waitForCloseCode(ws: WebSocket): Promise<number> {
+  return new Promise((resolve) => ws.once('close', (code) => resolve(code)));
 }
 
 /** Convert a `ws` inbound message to a UTF-8 string. */
@@ -95,8 +97,11 @@ function collectOutput(
       } catch {
         return;
       }
-      if (parsed !== null && typeof parsed === 'object' &&
-        typeof (parsed as { data?: unknown }).data === 'string') {
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        typeof (parsed as { data?: unknown }).data === 'string'
+      ) {
         buf += (parsed as { data: string }).data;
         if (predicate(buf)) {
           cleanup();
@@ -121,6 +126,7 @@ function sendFrame(ws: WebSocket, frame: object): void {
 const sessions: Session[] = [];
 const servers: Server[] = [];
 const conns: WebSocket[] = [];
+const rawSockets: Socket[] = [];
 
 afterEach(async () => {
   for (const ws of conns) {
@@ -131,6 +137,9 @@ afterEach(async () => {
     }
   }
   conns.length = 0;
+
+  for (const socket of rawSockets) socket.destroy();
+  rawSockets.length = 0;
 
   for (const s of servers) {
     try {
@@ -152,105 +161,129 @@ afterEach(async () => {
 });
 
 describe('WebSocket → PTY round-trip', () => {
-  it(
-    'echoes input through the PTY and back as output frames',
-    async () => {
-      const session = new Session({ cols: 80, rows: 24 });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+  it('echoes input through the PTY and back as output frames', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      sendFrame(ws, { type: 'input', data: `echo MOBILY_TEST${eol()}` });
+    sendFrame(ws, { type: 'input', data: `echo MOBILY_TEST${eol()}` });
 
-      const out = await collectOutput(ws, (b) => b.includes('MOBILY_TEST'));
-      expect(out).toContain('MOBILY_TEST');
-    },
-    15000,
-  );
+    const out = await collectOutput(ws, (b) => b.includes('MOBILY_TEST'));
+    expect(out).toContain('MOBILY_TEST');
+  }, 15000);
 
-  it(
-    'applies resize frames to the PTY',
-    async () => {
-      const session = new Session({ cols: 80, rows: 24 });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+  it('correlates tagged input with the next PTY output sent to that client', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      sendFrame(ws, { type: 'resize', cols: 120, rows: 36 });
+    const taggedOutput = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('tagged output timed out')), 10_000);
+      ws.on('message', (raw: RawData) => {
+        const frame = JSON.parse(toText(raw)) as Record<string, unknown>;
+        if (
+          frame['type'] === 'output' &&
+          Array.isArray(frame['latencyTags']) &&
+          frame['latencyTags'].includes('latency-1234')
+        ) {
+          clearTimeout(timer);
+          resolve(frame);
+        }
+      });
+    });
 
-      await vi.waitFor(
-        () => {
-          expect(session.pty.raw.cols).toBe(120);
-          expect(session.pty.raw.rows).toBe(36);
-        },
-        { timeout: 5000, interval: 50 },
-      );
-    },
-    15000,
-  );
+    sendFrame(ws, {
+      type: 'input',
+      data: `echo LATENCY_TEST${eol()}`,
+      latencyTag: 'latency-1234',
+    });
 
-  it(
-    'replies with an error output frame for malformed input',
-    async () => {
-      const session = new Session({ cols: 80, rows: 24 });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+    await expect(taggedOutput).resolves.toMatchObject({
+      type: 'output',
+      latencyTags: ['latency-1234'],
+    });
+  }, 15000);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+  it('applies resize frames to the PTY', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      ws.send('not-json');
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      const out = await collectOutput(ws, (b) => b.includes('mobily:'));
-      expect(out).toContain('mobily:');
-      expect(out).toContain('malformed frame');
-    },
-    15000,
-  );
+    sendFrame(ws, { type: 'resize', cols: 120, rows: 36 });
+
+    await vi.waitFor(
+      () => {
+        expect(session.pty.raw.cols).toBe(120);
+        expect(session.pty.raw.rows).toBe(36);
+      },
+      { timeout: 5000, interval: 50 },
+    );
+  }, 15000);
+
+  it('replies with an error output frame for malformed input', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    const closeCode = waitForCloseCode(ws);
+    ws.send('not-json-SENSITIVE_CONTENT');
+
+    const out = await collectOutput(ws, (b) => b.includes('mobily:'));
+    expect(out).toContain('mobily:');
+    expect(out).toContain('malformed frame');
+    expect(out).not.toContain('SENSITIVE_CONTENT');
+    expect(await closeCode).toBe(WS_CLOSE_CODES.MALFORMED_FRAME);
+  }, 15000);
 });
 
 describe('session survives client disconnect', () => {
-  it(
-    'keeps the PTY alive so a second client can reattach and drive it',
-    async () => {
-      const session = new Session({ cols: 80, rows: 24 });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+  it('keeps the PTY alive so a second client can reattach and drive it', async () => {
+    const session = new Session({ cols: 80, rows: 24 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      // Client A: drive the shell, then disconnect.
-      const a = new WebSocket(server.url);
-      await waitForOpen(a);
-      sendFrame(a, { type: 'input', data: `echo MARKER_A${eol()}` });
-      await collectOutput(a, (b) => b.includes('MARKER_A'));
-      a.close();
-      await waitForClose(a);
+    // Client A: drive the shell, then disconnect.
+    const a = new WebSocket(server.url);
+    await waitForOpen(a);
+    sendFrame(a, { type: 'input', data: `echo MARKER_A${eol()}` });
+    await collectOutput(a, (b) => b.includes('MARKER_A'));
+    a.close();
+    await waitForClose(a);
 
-      // The session must NOT have died with the client.
-      expect(session.closed).toBe(false);
+    // The session must NOT have died with the client.
+    expect(session.closed).toBe(false);
 
-      // Client B: reattach to the same live PTY and drive it.
-      const b = new WebSocket(server.url);
-      await waitForOpen(b);
-      conns.push(b);
-      sendFrame(b, { type: 'input', data: `echo MARKER_B${eol()}` });
+    // Client B: reattach to the same live PTY and drive it.
+    const b = new WebSocket(server.url);
+    await waitForOpen(b);
+    conns.push(b);
+    sendFrame(b, { type: 'input', data: `echo MARKER_B${eol()}` });
 
-      const out = await collectOutput(b, (x) => x.includes('MARKER_B'));
-      expect(out).toContain('MARKER_B');
-      expect(session.closed).toBe(false);
-    },
-    20000,
-  );
+    const out = await collectOutput(b, (x) => x.includes('MARKER_B'));
+    expect(out).toContain('MARKER_B');
+    expect(session.closed).toBe(false);
+  }, 20000);
 });
 
 // ---------------------------------------------------------------------------
@@ -269,6 +302,20 @@ function generateKeyPair(): { publicKeyPem: string; privateKeyPem: string } {
 
 function signNonce(privateKeyPem: string, nonce: string): string {
   return sign('SHA256', Buffer.from(nonce), privateKeyPem).toString('base64');
+}
+
+function pairDevice(
+  auth: AuthManager,
+  code: string,
+  deviceId: string,
+  publicKeyPem: string,
+  privateKeyPem: string,
+): void {
+  const proof = signNonce(
+    privateKeyPem,
+    createPairingProofPayload(code, deviceId, publicKeyPem, 'ws://test:9999'),
+  );
+  expect(auth.pair(code, deviceId, publicKeyPem, proof).ok).toBe(true);
 }
 
 /** Collect frames of a specific type. Buffers all messages to avoid races. */
@@ -304,153 +351,217 @@ function frameBuffer(ws: WebSocket): {
 }
 
 describe('handshake: version negotiation + auth', () => {
-  it(
-    'completes the full handshake and streams PTY output',
-    async () => {
-      const auth = new AuthManager('test-station');
-      auth.setTunnelUrl('ws://test:9999');
-      const code = auth.generatePairingCode();
-      const { publicKeyPem, privateKeyPem } = generateKeyPair();
-      auth.pair(code, 'device-1', publicKeyPem);
+  it('completes the full handshake and streams PTY output', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://test:9999');
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
-      const session = new Session({ cols: 80, rows: 24, auth });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+    const session = new Session({ cols: 80, rows: 24, auth });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      const fb = frameBuffer(ws);
+    const fb = frameBuffer(ws);
 
-      // Step 1: send hello
-      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    // Step 1: send hello
+    sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
 
-      // Step 2: expect hello-ack + auth-challenge
-      const ack = await fb.waitFor('hello-ack');
-      expect(ack['protocolVersion']).toBe(PROTOCOL_VERSION);
+    // Step 2: expect hello-ack + auth-challenge
+    const ack = await fb.waitFor('hello-ack');
+    expect(ack['protocolVersion']).toBe(PROTOCOL_VERSION);
 
-      const challenge = await fb.waitFor('auth-challenge');
-      const nonce = challenge['nonce'] as string;
-      expect(nonce).toBeTruthy();
+    const challenge = await fb.waitFor('auth-challenge');
+    const nonce = challenge['nonce'] as string;
+    expect(nonce).toBeTruthy();
 
-      // Step 3: sign and send auth-response
-      const signature = signNonce(privateKeyPem, nonce);
-      sendFrame(ws, { type: 'auth-response', deviceId: 'device-1', signature });
+    // Step 3: sign and send auth-response
+    const signature = signNonce(privateKeyPem, nonce);
+    sendFrame(ws, { type: 'auth-response', deviceId: 'device-1', signature });
 
-      // Step 4: verify PTY output streams
-      sendFrame(ws, { type: 'input', data: `echo HANDSHAKE_OK${eol()}` });
-      const out = await collectOutput(ws, (b) => b.includes('HANDSHAKE_OK'));
-      expect(out).toContain('HANDSHAKE_OK');
-    },
-    20000,
-  );
+    await fb.waitFor('auth-ok');
 
-  it(
-    'rejects version mismatch and closes the connection',
-    async () => {
-      const auth = new AuthManager('test-station');
-      auth.setTunnelUrl('ws://test:9999');
-      const code = auth.generatePairingCode();
-      const { publicKeyPem } = generateKeyPair();
-      auth.pair(code, 'device-1', publicKeyPem);
+    // Step 4: verify PTY output streams
+    sendFrame(ws, { type: 'input', data: `echo HANDSHAKE_OK${eol()}` });
+    const out = await collectOutput(ws, (b) => b.includes('HANDSHAKE_OK'));
+    expect(out).toContain('HANDSHAKE_OK');
+  }, 20000);
 
-      const session = new Session({ cols: 80, rows: 24, auth });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+  it('rejects version mismatch and closes the connection', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://test:9999');
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+    const session = new Session({ cols: 80, rows: 24, auth });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      sendFrame(ws, { type: 'hello', protocolVersion: 999 });
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      const out = await collectOutput(ws, (b) => b.includes('version mismatch'));
-      expect(out).toContain('version mismatch');
+    sendFrame(ws, { type: 'hello', protocolVersion: 999 });
 
-      await waitForClose(ws);
-      expect(ws.readyState).toBe(WebSocket.CLOSED);
-    },
-    15000,
-  );
+    const out = await collectOutput(ws, (b) => b.includes('version mismatch'));
+    expect(out).toContain('version mismatch');
 
-  it(
-    'rejects invalid auth signature and closes the connection',
-    async () => {
-      const auth = new AuthManager('test-station');
-      auth.setTunnelUrl('ws://test:9999');
-      const code = auth.generatePairingCode();
-      const { publicKeyPem } = generateKeyPair();
-      auth.pair(code, 'device-1', publicKeyPem);
+    const closeCode = await waitForCloseCode(ws);
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+    expect(closeCode).toBe(WS_CLOSE_CODES.VERSION_MISMATCH);
+  }, 15000);
 
-      const session = new Session({ cols: 80, rows: 24, auth });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
+  it('rejects invalid auth signature and closes the connection', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://test:9999');
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
+    const session = new Session({ cols: 80, rows: 24, auth });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
 
-      const fb = frameBuffer(ws);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
 
-      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
-      await fb.waitFor('hello-ack');
-      await fb.waitFor('auth-challenge');
+    const fb = frameBuffer(ws);
 
-      sendFrame(ws, {
-        type: 'auth-response',
-        deviceId: 'device-1',
-        signature: Buffer.from('fake-signature').toString('base64'),
+    sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    await fb.waitFor('hello-ack');
+    await fb.waitFor('auth-challenge');
+
+    sendFrame(ws, {
+      type: 'auth-response',
+      deviceId: 'device-1',
+      signature: Buffer.from('fake-signature').toString('base64'),
+    });
+
+    const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
+    expect(out).toContain('authentication failed');
+
+    await waitForClose(ws);
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  }, 15000);
+
+  it('rejects unbound device and closes the connection', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://test:9999');
+
+    const session = new Session({ cols: 80, rows: 24, auth });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    const fb = frameBuffer(ws);
+
+    sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    await fb.waitFor('hello-ack');
+    const challenge = await fb.waitFor('auth-challenge');
+    const nonce = challenge['nonce'] as string;
+
+    const { privateKeyPem } = generateKeyPair();
+    const signature = signNonce(privateKeyPem, nonce);
+    sendFrame(ws, {
+      type: 'auth-response',
+      deviceId: 'unknown-device',
+      signature,
+    });
+
+    const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
+    expect(out).toContain('authentication failed');
+
+    await waitForClose(ws);
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  }, 15000);
+
+  it('expires a connection that does not complete the handshake', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('wss://test.example:9999');
+    const session = new Session({ auth, handshakeTimeoutMs: 50 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    expect(await waitForCloseCode(ws)).toBe(WS_CLOSE_CODES.HANDSHAKE_TIMEOUT);
+  }, 5000);
+});
+
+describe('anonymous connection limits', () => {
+  it('rejects frames larger than the protocol payload limit', async () => {
+    const session = new Session();
+    sessions.push(session);
+    const server = await startServer({ session, maxPayloadBytes: 1024 });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    ws.send('x'.repeat(1025));
+    expect(await waitForCloseCode(ws)).toBe(1009);
+  });
+
+  it('rejects connections above the global cap', async () => {
+    const session = new Session();
+    sessions.push(session);
+    const server = await startServer({ session, maxConnections: 1 });
+    servers.push(server);
+
+    const first = new WebSocket(server.url);
+    await waitForOpen(first);
+    conns.push(first);
+
+    const second = new WebSocket(server.url);
+    const secondClosed = waitForCloseCode(second);
+    await waitForOpen(second);
+    conns.push(second);
+    expect(await secondClosed).toBe(1013);
+  });
+
+  it('bounds incomplete TCP/HTTP connections before WebSocket upgrade', async () => {
+    const session = new Session();
+    sessions.push(session);
+    const server = await startServer({ session, maxConnections: 1 });
+    servers.push(server);
+
+    const connectRaw = (): Promise<Socket> =>
+      new Promise((resolve, reject) => {
+        const socket = new Socket();
+        rawSockets.push(socket);
+        socket.once('error', reject);
+        socket.connect(server.port, server.host, () => {
+          socket.off('error', reject);
+          resolve(socket);
+        });
       });
 
-      const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
-      expect(out).toContain('authentication failed');
+    await connectRaw();
+    await connectRaw();
 
-      await waitForClose(ws);
-      expect(ws.readyState).toBe(WebSocket.CLOSED);
-    },
-    15000,
-  );
+    const overLimit = new Socket();
+    rawSockets.push(overLimit);
+    const closed = new Promise<void>((resolve) => overLimit.once('close', () => resolve()));
+    overLimit.on('error', () => {});
+    overLimit.connect(server.port, server.host);
 
-  it(
-    'rejects unbound device and closes the connection',
-    async () => {
-      const auth = new AuthManager('test-station');
-      auth.setTunnelUrl('ws://test:9999');
-
-      const session = new Session({ cols: 80, rows: 24, auth });
-      sessions.push(session);
-      const server = await startServer({ session });
-      servers.push(server);
-
-      const ws = new WebSocket(server.url);
-      await waitForOpen(ws);
-      conns.push(ws);
-
-      const fb = frameBuffer(ws);
-
-      sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
-      await fb.waitFor('hello-ack');
-      const challenge = await fb.waitFor('auth-challenge');
-      const nonce = challenge['nonce'] as string;
-
-      const { privateKeyPem } = generateKeyPair();
-      const signature = signNonce(privateKeyPem, nonce);
-      sendFrame(ws, {
-        type: 'auth-response',
-        deviceId: 'unknown-device',
-        signature,
-      });
-
-      const out = await collectOutput(ws, (b) => b.includes('authentication failed'));
-      expect(out).toContain('authentication failed');
-
-      await waitForClose(ws);
-      expect(ws.readyState).toBe(WebSocket.CLOSED);
-    },
-    15000,
-  );
+    await closed;
+    expect(overLimit.destroyed).toBe(true);
+  });
 });

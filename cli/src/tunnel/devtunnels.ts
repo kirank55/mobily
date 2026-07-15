@@ -1,95 +1,390 @@
 /**
- * cli/src/tunnel/devtunnels.ts
- *
- * Opt-in remote TunnelBackend (ADR 0003). Creates a Microsoft Dev Tunnel with
- * anonymous connect access, hosts it via the relay, and returns a public
- * `wss://` URL. The operator authenticates once via a device-code flow (see
- * `device-code.ts`); the phone connects without a Microsoft account and proves
- * identity via the Device Key (Phase 2 auth).
- *
- * Uses the official `@microsoft/dev-tunnels-*` SDKs in-process.
+ * Dev Tunnels integration through Microsoft's official `devtunnel` helper.
+ * The helper owns account login and credential storage; Mobily owns the
+ * first-run guidance and the lifetime of the temporary tunnel process.
  */
 
-import {
-  ManagementApiVersions,
-  TunnelManagementHttpClient,
-} from '@microsoft/dev-tunnels-management';
-import type { TunnelRequestOptions } from '@microsoft/dev-tunnels-management';
-import {
-  TunnelAccessControlEntryType,
-  TunnelAccessScopes,
-  TunnelEndpoint,
-  TunnelProtocol,
-} from '@microsoft/dev-tunnels-contracts';
-import type { Tunnel } from '@microsoft/dev-tunnels-contracts';
-import { TunnelRelayTunnelHost } from '@microsoft/dev-tunnels-connections';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createInterface } from 'node:readline/promises';
+
+import { UserFacingError } from '../errors.js';
 import type { TunnelBackend, TunnelConnection } from './types.js';
 
-/** DevTunnelsBackend — opt-in remote tunnel via Microsoft Dev Tunnels. */
+export type DevTunnelsProvider = 'github' | 'microsoft';
+
+export interface CommandResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface DevTunnelHostProcess {
+  readonly stdout: NodeJS.ReadableStream;
+  readonly stderr: NodeJS.ReadableStream;
+  readonly exitCode: number | null;
+  once(event: 'error', listener: (error: Error) => void): this;
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  kill(signal?: NodeJS.Signals | number): boolean;
+}
+
+/** Process and terminal operations injected at the Dev Tunnels seam. */
+export interface DevTunnelsRuntime {
+  readonly interactive: boolean;
+  readonly platform: NodeJS.Platform;
+  findExecutable(): string | undefined;
+  run(
+    executable: string,
+    args: readonly string[],
+    options: { inheritStdio: boolean },
+  ): Promise<CommandResult>;
+  spawnHost(executable: string, args: readonly string[]): DevTunnelHostProcess;
+  prompt(message: string): Promise<string>;
+  write(message: string): void;
+}
+
+export interface PrepareDevTunnelsOptions {
+  readonly provider?: DevTunnelsProvider;
+  readonly verbose?: boolean;
+  readonly readinessTimeoutMs?: number;
+  readonly runtime?: DevTunnelsRuntime;
+}
+
+const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
+const HOST_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+/** Resolve the helper, guide first-run login, and return a ready backend. */
+export async function prepareDevTunnelsBackend(
+  options: PrepareDevTunnelsOptions = {},
+): Promise<DevTunnelsBackend> {
+  const runtime = options.runtime ?? createNodeRuntime();
+  let executable = runtime.findExecutable();
+
+  if (!executable && runtime.interactive) {
+    runtime.write(`${installMessage(runtime.platform)}\n\n`);
+    await promptUser(runtime, 'Install it in another terminal, then press Enter to retry: ');
+    executable = runtime.findExecutable();
+  }
+
+  if (!executable) {
+    throw new UserFacingError(installMessage(runtime.platform));
+  }
+
+  await ensureSignedIn(runtime, executable, options.provider);
+  return new DevTunnelsBackend(executable, runtime, {
+    provider: options.provider,
+    verbose: options.verbose ?? false,
+    readinessTimeoutMs: options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
+  });
+}
+
+export function isDevTunnelsProvider(value: string): value is DevTunnelsProvider {
+  return value === 'github' || value === 'microsoft';
+}
+
+async function ensureSignedIn(
+  runtime: DevTunnelsRuntime,
+  executable: string,
+  requestedProvider?: DevTunnelsProvider,
+  force = false,
+): Promise<void> {
+  if (!force) {
+    const status = await runtime.run(executable, ['user', 'show'], { inheritStdio: false });
+    if (hasCachedLogin(status)) return;
+  }
+
+  const provider = requestedProvider ?? (await promptForProvider(runtime));
+  runtime.write(
+    `Signing in to Dev Tunnels with ${provider === 'github' ? 'GitHub' : 'Microsoft'}…\n`,
+  );
+  const args = provider === 'github' ? ['user', 'login', '-g', '-d'] : ['user', 'login', '-d'];
+  const login = await runtime.run(executable, args, { inheritStdio: true });
+  if (login.exitCode !== 0) {
+    throw new UserFacingError(
+      'Dev Tunnels sign-in was not completed. Run Mobily again when you are ready to sign in.',
+    );
+  }
+}
+
+function hasCachedLogin(status: CommandResult): boolean {
+  if (status.exitCode !== 0) return false;
+  const output = `${status.stdout}\n${status.stderr}`.toLowerCase();
+  return !/(not logged in|not signed in|no logged-in user|login required|token expired)/.test(
+    output,
+  );
+}
+
+async function promptForProvider(runtime: DevTunnelsRuntime): Promise<DevTunnelsProvider> {
+  if (!runtime.interactive) {
+    throw new UserFacingError(
+      'Dev Tunnels sign-in is required. Rerun with --devtunnels-provider github or --devtunnels-provider microsoft.',
+    );
+  }
+
+  for (;;) {
+    const answer = (
+      await promptUser(runtime, 'Choose an account: [1] GitHub (default), [2] Microsoft: ')
+    )
+      .trim()
+      .toLowerCase();
+    if (answer === '' || answer === '1' || answer === 'github' || answer === 'g') {
+      return 'github';
+    }
+    if (answer === '2' || answer === 'microsoft' || answer === 'm') {
+      return 'microsoft';
+    }
+    runtime.write("Enter '1' for GitHub or '2' for Microsoft.\n");
+  }
+}
+
+async function promptUser(runtime: DevTunnelsRuntime, message: string): Promise<string> {
+  try {
+    return await runtime.prompt(message);
+  } catch {
+    throw new UserFacingError('Dev Tunnels setup was cancelled. Run Mobily again when ready.');
+  }
+}
+
+/** TunnelBackend backed by a temporary `devtunnel host` child process. */
 export class DevTunnelsBackend implements TunnelBackend {
   readonly id = 'devtunnels';
   readonly bindHost = 'localhost';
 
-  /**
-   * @param accessToken Entra ID access token (audience: Dev Tunnels first-party
-   * App ID). Obtained via the device-code flow in `device-code.ts`.
-   */
-  constructor(private readonly accessToken: string) {}
+  constructor(
+    private readonly executable: string,
+    private readonly runtime: DevTunnelsRuntime,
+    private readonly options: {
+      readonly provider?: DevTunnelsProvider;
+      readonly verbose: boolean;
+      readonly readinessTimeoutMs: number;
+    },
+  ) {}
 
   async connect(localPort: number): Promise<TunnelConnection> {
-    const client = new TunnelManagementHttpClient(
-      { name: 'mobily', version: '0.0.0' },
-      ManagementApiVersions.Version20230927preview,
-      () => Promise.resolve(`Bearer ${this.accessToken}`),
-    );
+    try {
+      return await this.startHost(localPort);
+    } catch (error) {
+      const status = await this.runtime.run(this.executable, ['user', 'show'], {
+        inheritStdio: false,
+      });
+      if (hasCachedLogin(status)) throw error;
 
-    const options: TunnelRequestOptions = {
-      tokenScopes: [TunnelAccessScopes.Host, TunnelAccessScopes.Connect],
-      includePorts: true,
-    };
+      await ensureSignedIn(this.runtime, this.executable, this.options.provider, true);
+      return this.startHost(localPort);
+    }
+  }
 
-    const tunnel: Tunnel = {
-      accessControl: {
-        entries: [
-          {
-            type: TunnelAccessControlEntryType.Anonymous,
-            subjects: [],
-            scopes: [TunnelAccessScopes.Connect],
-          },
-        ],
-      },
-      ports: [{ portNumber: localPort, protocol: TunnelProtocol.Http }],
-    };
-
-    const created = await client.createTunnel(tunnel, options);
-
-    const host = new TunnelRelayTunnelHost(client);
-    await host.connect(created);
-
-    const port = created.ports?.find((p) => p.portNumber === localPort);
-    const httpsUrl =
-      port?.portForwardingUris?.[0] ??
-      created.endpoints?.map((e) => TunnelEndpoint.getPortUri(e, localPort))[0];
-
-    if (!httpsUrl) {
-      await host.dispose().catch(() => {});
-      await client.deleteTunnel(created).catch(() => {});
-      await client.dispose().catch(() => {});
-      throw new Error('Dev Tunnels did not return a port URI.');
+  private async startHost(localPort: number): Promise<TunnelConnection> {
+    const child = this.runtime.spawnHost(this.executable, [
+      'host',
+      '-p',
+      String(localPort),
+      '--allow-anonymous',
+      '--protocol',
+      'http',
+    ]);
+    let url: string;
+    try {
+      url = await waitForTunnelUrl(
+        child,
+        localPort,
+        this.options.readinessTimeoutMs,
+        this.options.verbose ? (text) => this.runtime.write(text) : undefined,
+      );
+    } catch (error) {
+      await stopHost(child);
+      throw error;
     }
 
-    const wsUrl = httpsUrl.replace(/^https:\/\//, 'wss://');
-
-    let disposed = false;
+    let disconnected = false;
     return {
-      url: wsUrl,
+      url,
       disconnect: async () => {
-        if (disposed) return;
-        disposed = true;
-        await host.dispose().catch(() => {});
-        await client.deleteTunnel(created).catch(() => {});
-        await client.dispose().catch(() => {});
+        if (disconnected) return;
+        disconnected = true;
+        await stopHost(child);
       },
     };
   }
+}
+
+async function waitForTunnelUrl(
+  child: DevTunnelHostProcess,
+  localPort: number,
+  timeoutMs: number,
+  onOutput?: (text: string) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let output = '';
+
+    const finish = (result: { url?: string; error?: UserFacingError }): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (result.url) resolve(result.url);
+      else reject(result.error);
+    };
+
+    const onData = (chunk: string | Buffer): void => {
+      const text = chunk.toString();
+      onOutput?.(text);
+      output = (output + text).slice(-32_768);
+      const url = extractTunnelUrl(output, localPort);
+      if (url) finish({ url });
+    };
+
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.once('error', () => {
+      finish({
+        error: new UserFacingError(
+          'Dev Tunnels could not start. Check that the devtunnel helper is installed and try again.',
+        ),
+      });
+    });
+    child.once('exit', (code) => {
+      if (settled) return;
+      const detail = conciseHelperDetail(output);
+      finish({
+        error: new UserFacingError(
+          `Dev Tunnels stopped before it was ready${code === null ? '' : ` (exit ${code})`}.${detail}`,
+        ),
+      });
+    });
+
+    const timer = setTimeout(() => {
+      finish({
+        error: new UserFacingError(
+          'Dev Tunnels did not become ready within 60 seconds. Check your connection and try again.',
+        ),
+      });
+    }, timeoutMs);
+  });
+}
+
+function extractTunnelUrl(output: string, localPort: number): string | undefined {
+  const matches = output.match(/https:\/\/[^\s,]+\.devtunnels\.ms(?::\d+)?\/?/gi) ?? [];
+  const candidates = matches
+    .map((value) => value.replace(/[)\]}]+$/, ''))
+    .filter((value) => {
+      try {
+        const url = new URL(value);
+        return url.hostname.endsWith('.devtunnels.ms') && !url.hostname.includes('-inspect.');
+      } catch {
+        return false;
+      }
+    });
+  const selected =
+    candidates.find((value) => new URL(value).hostname.includes(`-${localPort}.`)) ?? candidates[0];
+  if (!selected) return undefined;
+  const url = new URL(selected);
+  url.protocol = 'wss:';
+  return url.toString();
+}
+
+function conciseHelperDetail(output: string): string {
+  const line = output
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .at(-1);
+  const sanitized = line?.replace(/^error:?\s*/i, '').replace(/^\s*at\s+/, '');
+  return sanitized ? ` ${sanitized.slice(0, 240)}` : '';
+}
+
+async function stopHost(child: DevTunnelHostProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  const exitPromise = new Promise<true>((resolve) => child.once('exit', () => resolve(true)));
+  child.kill('SIGTERM');
+  const exited = await Promise.race([
+    exitPromise,
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), HOST_SHUTDOWN_TIMEOUT_MS)),
+  ]);
+  if (!exited && child.exitCode === null) child.kill('SIGKILL');
+}
+
+function installMessage(platform: NodeJS.Platform): string {
+  const command =
+    platform === 'win32'
+      ? 'winget install Microsoft.devtunnel'
+      : platform === 'darwin'
+        ? 'brew install --cask devtunnel'
+        : 'curl -sL https://aka.ms/DevTunnelCliInstall | bash';
+  return (
+    'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
+    `  ${command}\n` +
+    'Then run Mobily again.'
+  );
+}
+
+function createNodeRuntime(): DevTunnelsRuntime {
+  const homeDir = os.homedir();
+  return {
+    interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    platform: process.platform,
+    findExecutable: () => findDevTunnelExecutable(process.platform, homeDir, process.env),
+    run: runCommand,
+    spawnHost: (executable, args) =>
+      spawn(executable, [...args], { stdio: ['ignore', 'pipe', 'pipe'] }),
+    prompt: async (message) => {
+      const readline = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        return await readline.question(message);
+      } finally {
+        readline.close();
+      }
+    },
+    write: (message) => process.stdout.write(message),
+  };
+}
+
+export function findDevTunnelExecutable(
+  platform: NodeJS.Platform,
+  homeDir: string,
+  env: NodeJS.ProcessEnv,
+  fileExists: (candidate: string) => boolean = existsSync,
+): string | undefined {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix;
+  const filename = platform === 'win32' ? 'devtunnel.exe' : 'devtunnel';
+  const pathCandidates = (env.PATH ?? '')
+    .split(pathApi.delimiter)
+    .filter(Boolean)
+    .map((directory) => pathApi.join(directory, filename));
+  const commonCandidates =
+    platform === 'win32'
+      ? [
+          env.LOCALAPPDATA
+            ? pathApi.join(env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links', filename)
+            : '',
+        ]
+      : [
+          pathApi.join(homeDir, 'bin', filename),
+          pathApi.join(homeDir, '.local', 'bin', filename),
+          '/usr/local/bin/devtunnel',
+          '/opt/homebrew/bin/devtunnel',
+        ];
+  return [...pathCandidates, ...commonCandidates].find(
+    (candidate) => candidate.length > 0 && fileExists(candidate),
+  );
+}
+
+async function runCommand(
+  executable: string,
+  args: readonly string[],
+  options: { inheritStdio: boolean },
+): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const child = spawn(executable, [...args], {
+      stdio: options.inheritStdio ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    if (child.stdout) child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+    if (child.stderr) child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    child.once('error', (error) => resolve({ exitCode: 1, stdout, stderr: error.message }));
+    child.once('exit', (code) => resolve({ exitCode: code ?? 1, stdout, stderr }));
+  });
 }

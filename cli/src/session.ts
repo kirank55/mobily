@@ -28,6 +28,7 @@ import {
   decodeFrame,
   encodeFrame,
   PROTOCOL_VERSION,
+  WS_CLOSE_CODES,
   type Frame,
   type OutputFrame,
 } from '@mobily/shared';
@@ -36,11 +37,14 @@ import type { AuthManager } from './auth.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
+const MAX_BUFFERED_OUTPUT_BYTES = 1024 * 1024;
 
 /** Extended spawn options — includes optional auth for the handshake. */
 export interface SessionOptions extends SpawnOptions {
   /** Auth manager for Device Key challenge-response. If omitted, no auth. */
   auth?: AuthManager;
+  /** Maximum time allowed for hello + Device Key authentication. @default 10000 */
+  handshakeTimeoutMs?: number;
 }
 
 /**
@@ -53,19 +57,20 @@ export class Session {
   readonly pty: PtyProcess;
 
   private readonly auth?: AuthManager;
+  private readonly handshakeTimeoutMs: number;
   private readonly subscribers = new Set<WebSocket>();
+  private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
 
   constructor(opts: SessionOptions = {}) {
-    const { auth, ...spawnOpts } = opts;
+    const { auth, handshakeTimeoutMs = 10_000, ...spawnOpts } = opts;
     this.auth = auth;
+    this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.pty = spawn(spawnOpts);
 
-    this.onDataDisposable = this.pty.onData((data) =>
-      this.broadcast({ type: 'output', data }),
-    );
+    this.onDataDisposable = this.pty.onData((data) => this.broadcast({ type: 'output', data }));
 
     this.onExitDisposable = this.pty.onExit(() => this.handleExit());
   }
@@ -95,16 +100,23 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private startHandshake(ws: WebSocket): void {
+    const timeout = setTimeout(() => {
+      ws.close(WS_CLOSE_CODES.HANDSHAKE_TIMEOUT, 'handshake timeout');
+    }, this.handshakeTimeoutMs);
+    const clearHandshakeTimeout = (): void => clearTimeout(timeout);
+    ws.once('close', clearHandshakeTimeout);
+    ws.once('error', clearHandshakeTimeout);
+
     const onMessage = (data: RawData): void => {
       let frame: Frame;
       try {
         frame = decodeFrame(rawToUtf8(data));
-      } catch (err) {
+      } catch {
         this.sendTo(ws, {
           type: 'output',
-          data: `mobily: malformed frame — ${errorText(err)}\r\n`,
+          data: 'mobily: malformed frame\r\n',
         });
-        ws.close(4000, 'malformed frame');
+        ws.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
         return;
       }
 
@@ -113,12 +125,12 @@ export class Session {
           type: 'output',
           data: 'mobily: expected hello frame first\r\n',
         });
-        ws.close(4002, 'protocol error');
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'protocol error');
         return;
       }
 
       ws.off('message', onMessage);
-      this.handleHello(ws, frame.protocolVersion);
+      this.handleHello(ws, frame.protocolVersion, clearHandshakeTimeout);
     };
 
     ws.on('message', onMessage);
@@ -126,7 +138,11 @@ export class Session {
     ws.on('error', () => ws.off('message', onMessage));
   }
 
-  private handleHello(ws: WebSocket, clientVersion: number): void {
+  private handleHello(
+    ws: WebSocket,
+    clientVersion: number,
+    clearHandshakeTimeout: () => void,
+  ): void {
     if (clientVersion !== PROTOCOL_VERSION) {
       this.sendTo(ws, {
         type: 'output',
@@ -135,15 +151,15 @@ export class Session {
           `(client ${clientVersion}, server ${PROTOCOL_VERSION}). ` +
           `Please update.\r\n`,
       });
-      ws.close(4003, 'version mismatch');
+      ws.close(WS_CLOSE_CODES.VERSION_MISMATCH, 'version mismatch');
       return;
     }
 
     this.sendTo(ws, { type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
-    this.startAuthChallenge(ws);
+    this.startAuthChallenge(ws, clearHandshakeTimeout);
   }
 
-  private startAuthChallenge(ws: WebSocket): void {
+  private startAuthChallenge(ws: WebSocket, clearHandshakeTimeout: () => void): void {
     const nonce = this.auth!.createChallenge();
     this.sendTo(ws, { type: 'auth-challenge', nonce });
 
@@ -151,12 +167,12 @@ export class Session {
       let frame: Frame;
       try {
         frame = decodeFrame(rawToUtf8(data));
-      } catch (err) {
+      } catch {
         this.sendTo(ws, {
           type: 'output',
-          data: `mobily: malformed frame — ${errorText(err)}\r\n`,
+          data: 'mobily: malformed frame\r\n',
         });
-        ws.close(4000, 'malformed frame');
+        ws.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
         return;
       }
 
@@ -165,27 +181,25 @@ export class Session {
           type: 'output',
           data: 'mobily: expected auth-response frame\r\n',
         });
-        ws.close(4002, 'protocol error');
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'protocol error');
         return;
       }
 
       ws.off('message', onMessage);
 
-      const verified = this.auth!.verifyResponse(
-        frame.deviceId,
-        nonce,
-        frame.signature,
-      );
+      const verified = this.auth!.verifyResponse(frame.deviceId, nonce, frame.signature);
 
       if (!verified) {
         this.sendTo(ws, {
           type: 'output',
           data: 'mobily: authentication failed — device not recognized. Scan QR to re-pair.\r\n',
         });
-        ws.close(4001, 'auth failed');
+        ws.close(WS_CLOSE_CODES.AUTH_REJECTED, 'auth failed');
         return;
       }
 
+      clearHandshakeTimeout();
+      this.sendTo(ws, { type: 'auth-ok' });
       this.attachAuthenticated(ws);
     };
 
@@ -200,25 +214,38 @@ export class Session {
 
   private attachAuthenticated(ws: WebSocket): void {
     this.subscribers.add(ws);
+    this.pendingLatencyTags.set(ws, []);
     ws.on('message', (data) => this.handleMessage(ws, data));
-    ws.on('close', () => this.subscribers.delete(ws));
-    ws.on('error', () => this.subscribers.delete(ws));
+    const detach = (): void => {
+      this.subscribers.delete(ws);
+      this.pendingLatencyTags.delete(ws);
+    };
+    ws.on('close', detach);
+    ws.on('error', detach);
   }
 
   private handleMessage(ws: WebSocket, data: RawData): void {
     let frame: Frame;
     try {
       frame = decodeFrame(rawToUtf8(data));
-    } catch (err) {
+    } catch {
       this.sendTo(ws, {
         type: 'output',
-        data: `mobily: malformed frame — ${errorText(err)}\r\n`,
+        data: 'mobily: malformed frame\r\n',
       });
+      ws.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
       return;
     }
 
     switch (frame.type) {
       case 'input':
+        if (frame.latencyTag) {
+          const tags = this.pendingLatencyTags.get(ws);
+          if (tags) {
+            tags.push(frame.latencyTag);
+            if (tags.length > 256) tags.splice(0, tags.length - 256);
+          }
+        }
         this.pty.write(frame.data);
         break;
       case 'resize':
@@ -237,6 +264,7 @@ export class Session {
       case 'hello-ack':
       case 'auth-challenge':
       case 'auth-response':
+      case 'auth-ok':
         break;
     }
   }
@@ -246,9 +274,9 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private broadcast(frame: OutputFrame): void {
-    const raw = encodeFrame(frame);
     for (const ws of [...this.subscribers]) {
-      this.sendRaw(ws, raw);
+      const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
+      this.sendRaw(ws, encodeFrame(latencyTags?.length ? { ...frame, latencyTags } : frame));
     }
   }
 
@@ -258,6 +286,11 @@ export class Session {
 
   private sendRaw(ws: WebSocket, raw: string): void {
     if (ws.readyState !== READY_STATE_OPEN) return;
+    if (ws.bufferedAmount + Buffer.byteLength(raw, 'utf8') > MAX_BUFFERED_OUTPUT_BYTES) {
+      ws.close(1013, 'client is too slow');
+      this.subscribers.delete(ws);
+      return;
+    }
     try {
       ws.send(raw);
     } catch {
@@ -293,6 +326,7 @@ export class Session {
       }
     }
     this.subscribers.clear();
+    this.pendingLatencyTags.clear();
     try {
       this.pty.kill();
     } catch {

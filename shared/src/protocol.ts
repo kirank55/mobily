@@ -23,6 +23,15 @@
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
 export const PROTOCOL_VERSION = 1;
 
+/** Stable application-specific WebSocket close codes shared by both peers. */
+export const WS_CLOSE_CODES = {
+  MALFORMED_FRAME: 4000,
+  AUTH_REJECTED: 4001,
+  PROTOCOL_ERROR: 4002,
+  VERSION_MISMATCH: 4003,
+  HANDSHAKE_TIMEOUT: 4008,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Frame type literals
 // ---------------------------------------------------------------------------
@@ -35,6 +44,7 @@ export const FRAME_TYPES = [
   'hello-ack',
   'auth-challenge',
   'auth-response',
+  'auth-ok',
 ] as const;
 export type FrameType = (typeof FRAME_TYPES)[number];
 
@@ -47,6 +57,8 @@ export interface InputFrame {
   type: 'input';
   /** UTF-8 encoded text to write to the PTY. */
   data: string;
+  /** Optional client-generated identifier for keystroke-to-output latency measurement. */
+  latencyTag?: string;
 }
 
 /** CLI → Client: raw PTY output (may contain ANSI escape sequences). */
@@ -54,6 +66,8 @@ export interface OutputFrame {
   type: 'output';
   /** UTF-8 encoded text from the PTY. */
   data: string;
+  /** Input identifiers whose first following PTY output is this frame. */
+  latencyTags?: string[];
 }
 
 /** Either direction: terminal window dimensions changed. */
@@ -81,6 +95,11 @@ export interface AuthResponseFrame {
   signature: string;
 }
 
+/** CLI → Client: Device Key authentication succeeded; terminal I/O may begin. */
+export interface AuthOkFrame {
+  type: 'auth-ok';
+}
+
 /** Client → CLI: protocol version negotiation. Sent on WS connect. */
 export interface HelloFrame {
   type: 'hello';
@@ -103,7 +122,8 @@ export type Frame =
   | HelloFrame
   | HelloAckFrame
   | AuthChallengeFrame
-  | AuthResponseFrame;
+  | AuthResponseFrame
+  | AuthOkFrame;
 
 // ---------------------------------------------------------------------------
 // Encode
@@ -133,7 +153,7 @@ export function decodeFrame(raw: string): Frame {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new SyntaxError(`mobily/protocol: invalid JSON — ${raw}`);
+    throw new SyntaxError('mobily/protocol: invalid JSON');
   }
 
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -155,14 +175,14 @@ export function decodeFrame(raw: string): Frame {
       return validateAuthChallengeFrame(obj);
     case 'auth-response':
       return validateAuthResponseFrame(obj);
+    case 'auth-ok':
+      return { type: 'auth-ok' };
     case 'hello':
       return validateHelloFrame(obj);
     case 'hello-ack':
       return validateHelloAckFrame(obj);
     default:
-      throw new TypeError(
-        `mobily/protocol: unknown frame type "${String(obj['type'])}"`,
-      );
+      throw new TypeError(`mobily/protocol: unknown frame type "${String(obj['type'])}"`);
   }
 }
 
@@ -171,12 +191,18 @@ export function decodeFrame(raw: string): Frame {
 // ---------------------------------------------------------------------------
 
 function validateInputFrame(obj: Record<string, unknown>): InputFrame {
-  if (typeof obj['data'] !== 'string') {
+  if (typeof obj['data'] !== 'string' || obj['data'].length > 32 * 1024) {
     throw new TypeError(
       `mobily/protocol: InputFrame.data must be a string, got ${typeof obj['data']}`,
     );
   }
-  return { type: 'input', data: obj['data'] };
+  const latencyTag = obj['latencyTag'];
+  if (latencyTag !== undefined && !isLatencyTag(latencyTag)) {
+    throw new TypeError('mobily/protocol: InputFrame.latencyTag must be a bounded identifier');
+  }
+  return latencyTag === undefined
+    ? { type: 'input', data: obj['data'] }
+    : { type: 'input', data: obj['data'], latencyTag };
 }
 
 function validateOutputFrame(obj: Record<string, unknown>): OutputFrame {
@@ -185,19 +211,37 @@ function validateOutputFrame(obj: Record<string, unknown>): OutputFrame {
       `mobily/protocol: OutputFrame.data must be a string, got ${typeof obj['data']}`,
     );
   }
-  return { type: 'output', data: obj['data'] };
+  const latencyTags = obj['latencyTags'];
+  if (
+    latencyTags !== undefined &&
+    (!Array.isArray(latencyTags) ||
+      latencyTags.length === 0 ||
+      latencyTags.length > 256 ||
+      !latencyTags.every(isLatencyTag))
+  ) {
+    throw new TypeError(
+      'mobily/protocol: OutputFrame.latencyTags must be a bounded identifier list',
+    );
+  }
+  return latencyTags === undefined
+    ? { type: 'output', data: obj['data'] }
+    : { type: 'output', data: obj['data'], latencyTags };
+}
+
+function isLatencyTag(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value);
 }
 
 function validateResizeFrame(obj: Record<string, unknown>): ResizeFrame {
   const cols = obj['cols'];
   const rows = obj['rows'];
 
-  if (typeof cols !== 'number' || !Number.isInteger(cols) || cols < 1) {
+  if (typeof cols !== 'number' || !Number.isInteger(cols) || cols < 1 || cols > 1000) {
     throw new TypeError(
       `mobily/protocol: ResizeFrame.cols must be a positive integer, got ${String(cols)}`,
     );
   }
-  if (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 1) {
+  if (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 1 || rows > 1000) {
     throw new TypeError(
       `mobily/protocol: ResizeFrame.rows must be a positive integer, got ${String(rows)}`,
     );
@@ -216,12 +260,20 @@ function validateAuthChallengeFrame(obj: Record<string, unknown>): AuthChallenge
 }
 
 function validateAuthResponseFrame(obj: Record<string, unknown>): AuthResponseFrame {
-  if (typeof obj['deviceId'] !== 'string' || obj['deviceId'].length === 0) {
+  if (
+    typeof obj['deviceId'] !== 'string' ||
+    obj['deviceId'].length === 0 ||
+    obj['deviceId'].length > 128
+  ) {
     throw new TypeError(
       `mobily/protocol: AuthResponseFrame.deviceId must be a non-empty string, got ${typeof obj['deviceId']}`,
     );
   }
-  if (typeof obj['signature'] !== 'string' || obj['signature'].length === 0) {
+  if (
+    typeof obj['signature'] !== 'string' ||
+    obj['signature'].length === 0 ||
+    obj['signature'].length > 4096
+  ) {
     throw new TypeError(
       `mobily/protocol: AuthResponseFrame.signature must be a non-empty string, got ${typeof obj['signature']}`,
     );

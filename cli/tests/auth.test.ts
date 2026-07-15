@@ -10,8 +10,9 @@
 
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PROTOCOL_VERSION } from '@mobily/shared';
+import { createPairingProofPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { AuthManager } from '../src/auth.js';
+import { MemoryBindingRepository } from '../src/bindings.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,6 +36,20 @@ function generateKeyPair(): { publicKeyPem: string; privateKeyPem: string } {
 function signNonce(privateKeyPem: string, nonce: string): string {
   const signature = sign('SHA256', Buffer.from(nonce), privateKeyPem);
   return signature.toString('base64');
+}
+
+function pairDevice(
+  auth: AuthManager,
+  code: string,
+  deviceId: string,
+  publicKeyPem: string,
+  privateKeyPem: string,
+) {
+  const proof = signNonce(
+    privateKeyPem,
+    createPairingProofPayload(code, deviceId, publicKeyPem, TUNNEL_URL),
+  );
+  return auth.pair(code, deviceId, publicKeyPem, proof);
 }
 
 function createAuth(): AuthManager {
@@ -74,13 +89,29 @@ describe('AuthManager — pairing code', () => {
   });
 });
 
+describe('AuthManager — binding administration', () => {
+  it('loads bindings from its repository and revokes them explicitly', () => {
+    const repository = new MemoryBindingRepository();
+    const auth = new AuthManager(STATION, repository);
+    auth.setTunnelUrl(TUNNEL_URL);
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
+
+    const restarted = new AuthManager(STATION, repository);
+    expect(restarted.listBindings()).toHaveLength(1);
+    expect(restarted.revokeBinding('device-1')).toBe(true);
+    expect(restarted.isDeviceBound('device-1')).toBe(false);
+  });
+});
+
 describe('AuthManager — pairing', () => {
   it('binds a device with a valid code and returns the connection payload', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
-    const result = auth.pair(code, 'device-1', publicKeyPem);
+    const result = pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
@@ -96,19 +127,34 @@ describe('AuthManager — pairing', () => {
   it('rejects pairing with an invalid code', () => {
     const auth = createAuth();
     auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
-    const result = auth.pair('WRONG', 'device-1', publicKeyPem);
+    const result = pairDevice(auth, 'WRONG', 'device-1', publicKeyPem, privateKeyPem);
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(403);
+  });
+
+  it('rejects non-ASCII strings whose low bytes match the pairing code', () => {
+    const auth = createAuth();
+    const code = auth.generatePairingCode();
+    const lowByteAlias = [...code]
+      .map((character) => String.fromCharCode(character.charCodeAt(0) + 256))
+      .join('');
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+
+    const result = pairDevice(auth, lowByteAlias, 'device-1', publicKeyPem, privateKeyPem);
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(403);
+    expect(auth.currentPairingCode).toBe(code);
   });
 
   it('rejects pairing with missing fields', () => {
     const auth = createAuth();
     auth.generatePairingCode();
 
-    const result = auth.pair('', '', '');
+    const result = auth.pair('', '', '', '');
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(400);
@@ -117,9 +163,9 @@ describe('AuthManager — pairing', () => {
   it('rejects pairing when no tunnel URL is set', () => {
     const auth = new AuthManager(STATION);
     auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
-    const result = auth.pair(auth.currentPairingCode!, 'dev', publicKeyPem);
+    const result = pairDevice(auth, auth.currentPairingCode!, 'dev', publicKeyPem, privateKeyPem);
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(503);
@@ -128,15 +174,38 @@ describe('AuthManager — pairing', () => {
   it('burns the code after first successful bind', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
-    auth.pair(code, 'device-1', publicKeyPem);
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     expect(auth.currentPairingCode).toBeNull();
 
-    const second = auth.pair(code, 'device-2', publicKeyPem);
+    const second = pairDevice(auth, code, 'device-2', publicKeyPem, privateKeyPem);
     expect(second.ok).toBe(false);
     expect(second.status).toBe(403);
+  });
+
+  it('rejects malformed key material without burning the code', () => {
+    const auth = createAuth();
+    const code = auth.generatePairingCode();
+
+    const result = auth.pair(code, 'device-1', 'not-a-public-key', 'not-a-proof');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(auth.currentPairingCode).toBe(code);
+  });
+
+  it('requires proof that the device holds the submitted private key', () => {
+    const auth = createAuth();
+    const code = auth.generatePairingCode();
+    const { publicKeyPem } = generateKeyPair();
+
+    const result = auth.pair(code, 'device-1', publicKeyPem, 'invalid-proof');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(403);
+    expect(auth.currentPairingCode).toBe(code);
   });
 });
 
@@ -145,7 +214,7 @@ describe('AuthManager — challenge-response', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
-    auth.pair(code, 'device-1', publicKeyPem);
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     const nonce = auth.createChallenge();
     expect(nonce).toBeTruthy();
@@ -157,8 +226,8 @@ describe('AuthManager — challenge-response', () => {
   it('rejects an invalid signature', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
-    auth.pair(code, 'device-1', publicKeyPem);
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     const nonce = auth.createChallenge();
     const fakeSignature = Buffer.from('not-a-real-signature').toString('base64');
@@ -169,8 +238,8 @@ describe('AuthManager — challenge-response', () => {
   it('rejects a signature signed with a different key', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
-    auth.pair(code, 'device-1', publicKeyPem);
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     const nonce = auth.createChallenge();
     const { privateKeyPem: wrongKey } = generateKeyPair();
@@ -188,10 +257,10 @@ describe('AuthManager — challenge-response', () => {
   it('isDeviceBound returns true for paired devices', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
-    const { publicKeyPem } = generateKeyPair();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
     expect(auth.isDeviceBound('device-1')).toBe(false);
-    auth.pair(code, 'device-1', publicKeyPem);
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
     expect(auth.isDeviceBound('device-1')).toBe(true);
   });
 
@@ -221,8 +290,8 @@ describe('AuthManager — lifecycle', () => {
 
     expect(auth.currentPairingCode).toBeNull();
 
-    const { publicKeyPem } = generateKeyPair();
-    const result = auth.pair(code, 'device-1', publicKeyPem);
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    const result = pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
     expect(result.ok).toBe(false);
     expect(result.status).toBe(403);
   });
@@ -235,8 +304,8 @@ describe('AuthManager — lifecycle', () => {
     expect(code1).not.toBe(code2);
     expect(auth.currentPairingCode).toBe(code2);
 
-    const { publicKeyPem } = generateKeyPair();
-    const result = auth.pair(code1, 'device-1', publicKeyPem);
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    const result = pairDevice(auth, code1, 'device-1', publicKeyPem, privateKeyPem);
     expect(result.ok).toBe(false);
     expect(result.status).toBe(403);
   });
@@ -246,12 +315,12 @@ describe('AuthManager — lifecycle', () => {
 
     const code1 = auth.generatePairingCode();
     const { publicKeyPem: pub1, privateKeyPem: priv1 } = generateKeyPair();
-    const r1 = auth.pair(code1, 'device-A', pub1);
+    const r1 = pairDevice(auth, code1, 'device-A', pub1, priv1);
     expect(r1.ok).toBe(true);
 
     const code2 = auth.generatePairingCode();
     const { publicKeyPem: pub2, privateKeyPem: priv2 } = generateKeyPair();
-    const r2 = auth.pair(code2, 'device-B', pub2);
+    const r2 = pairDevice(auth, code2, 'device-B', pub2, priv2);
     expect(r2.ok).toBe(true);
 
     // Both devices can authenticate.
@@ -266,7 +335,7 @@ describe('AuthManager — lifecycle', () => {
     const auth = createAuth();
     const code = auth.generatePairingCode();
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
-    auth.pair(code, 'device-1', publicKeyPem);
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
     // First challenge-response.
     const n1 = auth.createChallenge();
@@ -283,12 +352,12 @@ describe('AuthManager — lifecycle', () => {
 
     // First pairing — burns the code.
     const code1 = auth.generatePairingCode();
-    auth.pair(code1, 'device-1', publicKeyPem);
+    pairDevice(auth, code1, 'device-1', publicKeyPem, privateKeyPem);
 
     // Generate a new code and re-pair the same device.
     const code2 = auth.generatePairingCode();
-    const { publicKeyPem: pub2 } = generateKeyPair();
-    const r = auth.pair(code2, 'device-1', pub2);
+    const { publicKeyPem: pub2, privateKeyPem: priv2 } = generateKeyPair();
+    const r = pairDevice(auth, code2, 'device-1', pub2, priv2);
     expect(r.ok).toBe(true);
 
     // The device can authenticate with the new key.

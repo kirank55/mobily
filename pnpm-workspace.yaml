@@ -1,3 +1,5 @@
 packages:
   - cli
   - shared
+  - android
+nodeLinker: hoisted
