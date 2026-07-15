@@ -1,15 +1,15 @@
-# Device binding via react-native-biometrics keypair
+# Device binding via a biometric Android Keystore keypair
 
-The device-binding auth model uses a cryptographic keypair generated in Android Keystore via `react-native-biometrics`, rather than a client-generated UUID stored in encrypted storage.
+The device-binding auth model uses a cryptographic keypair generated in Android Keystore through a local Expo native module, rather than a client-generated UUID stored in encrypted storage.
 
-On pairing, the app generates a keypair in hardware-backed Android Keystore and sends the public key to the CLI. On reconnect, the CLI issues a nonce challenge and the app signs it with the private key. `react-native-biometrics` requires a biometric prompt for signing, which doubles as session-hijack protection.
+On pairing, the app generates a non-exportable Android Keystore keypair and sends the public key to the CLI. It inspects and reports whether the key is backed by a trusted execution environment or StrongBox. On reconnect, the CLI issues a nonce challenge and the app uses `BiometricPrompt` to authorize signing with the private key.
 
-This replaces session tokens entirely — every reconnect is authenticated by a fresh cryptographic challenge. There is no long-lived token to steal, rotate, or expire. The only stored secret is the private key in Android Keystore (hardware-backed, non-extractable).
+This replaces session tokens entirely — every reconnect is authenticated by a fresh cryptographic challenge. There is no long-lived token to steal, rotate, or expire. The only stored secret is the non-exportable private key in Android Keystore. Software backing remains supported for devices and emulators without secure hardware.
 
 **Considered alternatives:**
 
 - **Client-generated UUID in `expo-secure-store`** — simplest (~40 lines), but the UUID is copyable if device storage is compromised. No real device-binding.
-- **Custom Expo native module** — full control over Android Keystore without biometric prompt, but requires ~60 lines of Kotlin and ongoing native maintenance.
+- **`react-native-biometrics`** — less native code to maintain, but insufficient control over per-Station aliases, prerequisite diagnostics, error classification, and Keystore security-level reporting.
 - **Session tokens with Device Key as second factor** — rejected because the Device Key challenge-response is strictly stronger than token-based auth; session tokens add complexity without security benefit.
 
-We picked `react-native-biometrics` because it gives hardware-backed non-extractable keys with zero native code to maintain. The biometric prompt on reconnect is an acceptable UX trade — it's a brief interaction and prevents unauthorized use of an unlocked phone.
+We picked a local Expo native module to keep per-Station keys non-exportable while controlling biometric policy and diagnostics. The biometric prompt on reconnect is an acceptable UX trade — it's a brief interaction and prevents unauthorized use of an unlocked phone.

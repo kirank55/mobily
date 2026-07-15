@@ -16,15 +16,15 @@ export const site = {
 
 export const navigation = [
   { label: "Features", href: "#features" },
-  { label: "How it works", href: "#how-it-works" },
+  { label: "Experience", href: "#how-it-works" },
   { label: "Security", href: "#security" },
   { label: "FAQ", href: "#faq" },
 ] as const;
 
 export const trustPoints = [
   { mark: "MIT", label: "Open source" },
-  { mark: "A", label: "Built for Android" },
-  { mark: "KEY", label: "Hardware-backed keys" },
+  { mark: "APK", label: "Built for Android" },
+  { mark: "KEY", label: "Android Device Keys" },
   { mark: "Ø", label: "No Mobily cloud" },
 ] as const;
 
@@ -35,6 +35,8 @@ export const features = [
     description:
       "Stream a live xterm.js session with Ctrl, Alt, Esc, Tab, arrow keys, paste, and hardware-keyboard support.",
     mark: ">_",
+    layout: "wide",
+    metric: "LIVE",
   },
   {
     eyebrow: "SESSIONS",
@@ -42,6 +44,8 @@ export const features = [
     description:
       "Mobily uses tmux when it is available, keeping the same named Session alive across phone reconnects and CLI restarts.",
     mark: "∞",
+    layout: "standard",
+    metric: "TMUX",
   },
   {
     eyebrow: "ALERTS",
@@ -49,6 +53,8 @@ export const features = [
     description:
       "Connection state, recent terminal output, and prompts that need attention stay visible through an Android foreground notification.",
     mark: "!",
+    layout: "standard",
+    metric: "READY",
   },
   {
     eyebrow: "GIT",
@@ -56,6 +62,8 @@ export const features = [
     description:
       "Review changes, inspect large diffs, stage or unstage files, switch branches, and commit without typing raw Git commands.",
     mark: "±",
+    layout: "tall",
+    metric: "04 FILES",
   },
   {
     eyebrow: "STATIONS",
@@ -63,6 +71,8 @@ export const features = [
     description:
       "Keep multiple paired Stations on your phone and switch between workstations without scanning the QR code again.",
     mark: "02",
+    layout: "standard",
+    metric: "MULTI",
   },
   {
     eyebrow: "NETWORK",
@@ -70,49 +80,62 @@ export const features = [
     description:
       "Use Dev Tunnels away from home or pinned TLS on the same Wi-Fi network. The transport is explicit and replaceable.",
     mark: "↗",
+    layout: "wide",
+    metric: "LAN / WAN",
   },
 ] as const;
 
-export const steps = [
+export const productStory = [
   {
+    id: "pair",
     number: "01",
-    title: "Start a Session",
+    eyebrow: "PAIR ONCE",
+    title: "One scan creates the trust line.",
     description:
-      "Run Mobily from your project. It starts or attaches to a persistent Session and opens the selected secure transport.",
+      "Run Mobily in your project, point Android at the one-time QR code, and bind a Device Key to this Station—without creating an account.",
+    src: "/product/pairing.webp",
+    alt: "Mobily's secure one-time QR pairing screen on Android",
+    status: "ONE-TIME CODE",
   },
   {
+    id: "terminal",
     number: "02",
-    title: "Scan once",
+    eyebrow: "STAY LIVE",
+    title: "The Session follows, not the laptop.",
     description:
-      "Scan the terminal QR code. Your phone creates a Device Key and pairs it to this Station with a one-time code.",
+      "Return to the same terminal output, send the keys developers actually need, and answer a waiting prompt from anywhere your secure transport reaches.",
+    src: "/product/terminal.webp",
+    alt: "A live Mobily terminal Session showing passing tests on Android",
+    status: "CONNECTED",
   },
   {
+    id: "stations",
     number: "03",
-    title: "Keep moving",
+    eyebrow: "MOVE BETWEEN",
+    title: "Every machine stays within reach.",
     description:
-      "Use the terminal and Git controls from Android. Reconnect to the same Session whenever the network changes.",
+      "Keep several paired Stations on one phone and move between a workstation, devbox, home server, or travel laptop without pairing again.",
+    src: "/product/stations.webp",
+    alt: "Mobily Stations showing multiple paired developer machines and their status",
+    status: "4 STATIONS",
+  },
+  {
+    id: "git",
+    number: "04",
+    eyebrow: "CLOSE THE LOOP",
+    title: "Handle the small Git moments natively.",
+    description:
+      "Inspect changed files and real diffs, stage or unstage work, switch branches, and commit without forcing desktop Git controls into a phone-sized terminal.",
+    src: "/product/git.webp",
+    alt: "Mobily Git workflow showing changed files, staging actions, and a code diff",
+    status: "GIT READY",
   },
 ] as const;
 
-export const gallery = [
-  {
-    src: "/product/stations.webp",
-    alt: "Mobily Stations screen showing paired workstations and connection status",
-    label: "Stations",
-    description: "Your paired workstations, ready when you are.",
-  },
-  {
-    src: "/product/terminal.webp",
-    alt: "Mobily terminal screen connected to a workstation with live development output",
-    label: "Live terminal",
-    description: "The same Session, shaped for a phone.",
-  },
-  {
-    src: "/product/git.webp",
-    alt: "Mobily Git screen showing changed files and staging controls",
-    label: "Native Git",
-    description: "Review and move changes forward without command gymnastics.",
-  },
+export const securityFlow = [
+  { label: "Station", detail: "Your workstation", mark: ">_" },
+  { label: "Secure transport", detail: "Dev Tunnel or pinned LAN TLS", mark: "↗" },
+  { label: "Android", detail: "Android Keystore Device Key", mark: "KEY" },
 ] as const;
 
 export const securityPoints = [

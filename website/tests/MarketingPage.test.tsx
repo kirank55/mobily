@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { MarketingPage, copyText } from "@/components/MarketingPage";
-import { site } from "@/content";
+import { MarketingPage, copyText, getMenuFocusWrapTarget } from "@/components/MarketingPage";
+import { productStory, site } from "@/content";
 
 describe("copyText", () => {
   it("uses the Clipboard API when available", async () => {
@@ -73,7 +73,18 @@ describe("MarketingPage", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('aria-controls="mobile-menu"');
     expect(markup).toContain('id="mobile-menu"');
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
     expect(markup).toContain("hidden");
+  });
+
+  it("keeps every authentic product-story chapter in the initial document", () => {
+    const markup = renderToStaticMarkup(<MarketingPage />);
+    for (const chapter of productStory) {
+      expect(markup).toContain(`data-story-chapter="${chapter.id}"`);
+      expect(markup).toContain(chapter.title);
+      expect(markup).toContain(`alt="${chapter.alt.replaceAll("'", "&#x27;")}"`);
+    }
   });
 
   it("renders command controls with live feedback and the exact CLI command", () => {
@@ -87,5 +98,25 @@ describe("MarketingPage", () => {
     const css = await readFile(resolve("app/globals.css"), "utf8");
     expect(css).toContain("prefers-reduced-motion: reduce");
     expect(css).toContain("scroll-behavior: auto !important");
+  });
+});
+
+describe("getMenuFocusWrapTarget", () => {
+  const first = { focus: vi.fn() } as unknown as HTMLElement;
+  const middle = { focus: vi.fn() } as unknown as HTMLElement;
+  const last = { focus: vi.fn() } as unknown as HTMLElement;
+  const focusable = [first, middle, last];
+
+  it("wraps forward from the last item to the first", () => {
+    expect(getMenuFocusWrapTarget({ key: "Tab", shiftKey: false }, last, focusable)).toBe(first);
+  });
+
+  it("wraps backward from the first item to the last", () => {
+    expect(getMenuFocusWrapTarget({ key: "Tab", shiftKey: true }, first, focusable)).toBe(last);
+  });
+
+  it("does not interfere with focus inside the menu", () => {
+    expect(getMenuFocusWrapTarget({ key: "Tab", shiftKey: false }, middle, focusable)).toBeNull();
+    expect(getMenuFocusWrapTarget({ key: "Escape", shiftKey: false }, last, focusable)).toBeNull();
   });
 });

@@ -13,7 +13,7 @@ The developer's physical or virtual machine where the CLI runs and code lives.
 _Avoid_: Host (overloaded with networking/tunneling meaning)
 
 **Device Key**:
-A cryptographic keypair generated in Android Keystore on first pairing. The public key is sent to the CLI; the private key never leaves the device hardware. On reconnect, the device signs a challenge to prove identity.
+A non-exportable cryptographic keypair generated in Android Keystore on first pairing. The public key is sent to the CLI; the private key never leaves Android Keystore. The app reports whether the key is backed by a trusted execution environment or StrongBox because secure-hardware backing depends on the device. On reconnect, the device signs a challenge to prove identity.
 _Avoid_: Device fingerprint, device ID, device UUID
 
 **Device Binding ID**:
