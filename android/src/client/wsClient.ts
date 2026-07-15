@@ -44,6 +44,8 @@ export interface WsClientOptions {
   onStateChange?: (state: ConnectionState, detail?: string) => void;
   /** Callback for output frames (PTY data). */
   onOutput?: (data: string, latencyTags?: readonly string[]) => void;
+  /** Callback when the Station detects terminal output that needs attention. */
+  onAlert?: (message: string) => void;
   /** Callback for structured RPC responses after authentication. */
   onRpcFrame?: (frame: RpcResponseFrame | RpcStreamFrame) => void;
   /** Callback when the handshake completes (ready to send input). */
@@ -298,6 +300,10 @@ export class WsClient {
 
       case 'output':
         this.opts.onOutput?.(frame.data, frame.latencyTags);
+        break;
+
+      case 'alert':
+        this.opts.onAlert?.(frame.message);
         break;
 
       case 'rpc':

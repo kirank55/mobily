@@ -43,6 +43,7 @@ function createClient() {
   const states: ConnectionState[] = [];
   const errors: ErrorKind[] = [];
   const outputs: Array<{ data: string; tags?: readonly string[] }> = [];
+  const alerts: string[] = [];
   const client = new WsClient({
     url: 'wss://station.example.devtunnels.ms',
     deviceBindingId: 'binding_AAAAAAAAAAAAAAAAAAAAAA',
@@ -50,8 +51,9 @@ function createClient() {
     onStateChange: (state) => states.push(state),
     onError: (_message, kind) => errors.push(kind ?? 'generic'),
     onOutput: (data, tags) => outputs.push({ data, tags }),
+    onAlert: (message) => alerts.push(message),
   });
-  return { client, states, errors, outputs };
+  return { client, states, errors, outputs, alerts };
 }
 
 beforeEach(() => {
@@ -95,6 +97,21 @@ describe('WsClient', () => {
     expect(states.at(-1)).toBe('failed');
     expect(errors).toEqual(['auth-rejection']);
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('delivers authenticated terminal alerts to the app', async () => {
+    const { client, alerts } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+
+    socket.receive({ type: 'alert', message: 'Approve the deployment?' });
+
+    expect(alerts).toEqual(['Approve the deployment?']);
   });
 
   it('reconnects transient failures with exponential backoff', async () => {

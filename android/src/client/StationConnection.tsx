@@ -14,6 +14,7 @@ import type { PairingRecord } from '@/auth/storage';
 import { markConnected } from '@/auth/storage';
 import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
 import { RpcClient } from './rpcClient';
+import { ForegroundConnectionController } from '@/foreground/controller';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 
@@ -43,6 +44,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const rpcRef = useRef<RpcClient | null>(null);
   const pairingRef = useRef<PairingRecord | null>(null);
   const outputListeners = useRef(new Set<OutputListener>());
+  const foreground = useRef(new ForegroundConnectionController());
 
   const disconnect = useCallback(() => {
     rpcRef.current?.disconnect();
@@ -53,6 +55,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     setRpc(null);
     setPairing(null);
     setState('disconnected');
+    void foreground.current.disconnect();
   }, []);
 
   const connect = useCallback((nextPairing: PairingRecord) => {
@@ -80,10 +83,17 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         if (nextState === 'reconnecting' || nextState === 'failed' || nextState === 'disconnected') {
           nextRpc.disconnect();
         }
+        if (nextState === 'failed' || nextState === 'disconnected') {
+          void foreground.current.disconnect();
+        } else {
+          void foreground.current.updateState(nextState);
+        }
       },
       onOutput: (data, latencyTags) => {
+        foreground.current.recordOutput(data);
         for (const listener of outputListeners.current) listener(data, latencyTags);
       },
+      onAlert: (message) => void foreground.current.alert(message),
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
       onReady: () => {
         void markConnected(nextPairing.deviceBindingId);
@@ -99,10 +109,14 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     setPairing(nextPairing);
     setRpc(nextRpc);
     setErrorKind('generic');
+    void foreground.current.connect(nextPairing.stationName);
     client.connect();
   }, []);
 
-  const retry = useCallback(() => clientRef.current?.connect(), []);
+  const retry = useCallback(() => {
+    if (pairingRef.current) void foreground.current.connect(pairingRef.current.stationName);
+    clientRef.current?.connect();
+  }, []);
   const sendInput = useCallback((data: string, latencyTag?: string) => {
     clientRef.current?.sendInput(data, latencyTag);
   }, []);
@@ -119,6 +133,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       if (nextState !== 'active' || !clientRef.current) return;
       const current = clientRef.current.currentState;
       if (current === 'disconnected' || (current === 'failed' && errorKind !== 'auth-rejection')) {
+        if (pairingRef.current) void foreground.current.connect(pairingRef.current.stationName);
         clientRef.current.connect();
       }
     });
