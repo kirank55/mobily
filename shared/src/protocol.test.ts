@@ -12,6 +12,9 @@ import {
   type HelloFrame,
   type InputFrame,
   type OutputFrame,
+  type RpcRequestFrame,
+  type RpcResponseFrame,
+  type RpcStreamFrame,
   type ResizeFrame,
 } from './protocol.js';
 
@@ -136,6 +139,42 @@ describe('round-trip: auth-ok frame', () => {
   });
 });
 
+describe('round-trip: rpc frames', () => {
+  it('preserves an RPC request with nested JSON parameters', () => {
+    const frame: RpcRequestFrame = {
+      type: 'rpc',
+      id: 'rpc-1',
+      method: 'git.diff',
+      params: { path: 'src/index.ts', staged: false, page: { cursor: 20 } },
+    };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+
+  it('preserves success and error responses', () => {
+    const frames: RpcResponseFrame[] = [
+      { type: 'rpc', id: 'rpc-2', result: { branch: 'main', clean: true } },
+      {
+        type: 'rpc',
+        id: 'rpc-3',
+        error: { code: 'NOT_A_REPOSITORY', message: 'Not a Git repository' },
+      },
+    ];
+    for (const frame of frames) expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+
+  it('preserves streamed diff chunks and page metadata', () => {
+    const frame: RpcStreamFrame = {
+      type: 'rpc-stream',
+      id: 'rpc-4',
+      chunk: '@@ -1 +1 @@\n-old\n+new\n',
+      done: true,
+      truncated: true,
+      nextCursor: 'line-500',
+    };
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
 describe('WS_CLOSE_CODES', () => {
   it('keeps permanent failure codes stable across clients', () => {
     expect(WS_CLOSE_CODES.AUTH_REJECTED).toBe(4001);
@@ -213,6 +252,19 @@ describe('decodeFrame errors: unknown frame type', () => {
 
   it('throws TypeError when type is null', () => {
     expect(() => decodeFrame('{"type":null}')).toThrow(TypeError);
+  });
+});
+
+describe('decodeFrame errors: malformed rpc frames', () => {
+  it.each([
+    '{"type":"rpc","id":"has spaces","method":"git.status","params":{}}',
+    '{"type":"rpc","id":"rpc-1","method":"git status","params":{}}',
+    '{"type":"rpc","id":"rpc-1","method":"git.status","params":[]}',
+    '{"type":"rpc","id":"rpc-1","result":{},"error":{"code":"X","message":"x"}}',
+    '{"type":"rpc-stream","id":"rpc-1","chunk":42,"done":false}',
+    '{"type":"rpc-stream","id":"rpc-1","chunk":"x","done":false,"nextCursor":"no"}',
+  ])('rejects %s', (raw) => {
+    expect(() => decodeFrame(raw)).toThrow(TypeError);
   });
 });
 

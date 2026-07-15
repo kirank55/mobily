@@ -21,7 +21,7 @@
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Stable application-specific WebSocket close codes shared by both peers. */
 export const WS_CLOSE_CODES = {
@@ -45,6 +45,8 @@ export const FRAME_TYPES = [
   'auth-challenge',
   'auth-response',
   'auth-ok',
+  'rpc',
+  'rpc-stream',
 ] as const;
 export type FrameType = (typeof FRAME_TYPES)[number];
 
@@ -114,6 +116,41 @@ export interface HelloAckFrame {
   protocolVersion: number;
 }
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+export interface RpcError {
+  code: string;
+  message: string;
+}
+
+/** Client to CLI: invoke one registered structured method after authentication. */
+export interface RpcRequestFrame {
+  type: 'rpc';
+  id: string;
+  method: string;
+  params: JsonObject;
+}
+
+/** CLI to client: complete a non-streaming RPC request. */
+export type RpcResponseFrame =
+  | { type: 'rpc'; id: string; result: JsonValue }
+  | { type: 'rpc'; id: string; error: RpcError };
+
+/** CLI to client: one bounded chunk or the completion marker for a stream. */
+export interface RpcStreamFrame {
+  type: 'rpc-stream';
+  id: string;
+  chunk: string;
+  done: boolean;
+  truncated?: boolean;
+  nextCursor?: string;
+  error?: RpcError;
+}
+
 /** Union of all wire frames. */
 export type Frame =
   | InputFrame
@@ -123,7 +160,10 @@ export type Frame =
   | HelloAckFrame
   | AuthChallengeFrame
   | AuthResponseFrame
-  | AuthOkFrame;
+  | AuthOkFrame
+  | RpcRequestFrame
+  | RpcResponseFrame
+  | RpcStreamFrame;
 
 // ---------------------------------------------------------------------------
 // Encode
@@ -181,6 +221,10 @@ export function decodeFrame(raw: string): Frame {
       return validateHelloFrame(obj);
     case 'hello-ack':
       return validateHelloAckFrame(obj);
+    case 'rpc':
+      return validateRpcFrame(obj);
+    case 'rpc-stream':
+      return validateRpcStreamFrame(obj);
     default:
       throw new TypeError(`mobily/protocol: unknown frame type "${String(obj['type'])}"`);
   }
@@ -299,4 +343,118 @@ function validateHelloAckFrame(obj: Record<string, unknown>): HelloAckFrame {
     );
   }
   return { type: 'hello-ack', protocolVersion: v };
+}
+
+const RPC_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const RPC_METHOD_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/;
+const RPC_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+const RPC_CURSOR_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_RPC_CHUNK_LENGTH = 16 * 1024;
+
+function validateRpcFrame(obj: Record<string, unknown>): RpcRequestFrame | RpcResponseFrame {
+  const id = validateRpcId(obj['id']);
+  const hasMethod = Object.prototype.hasOwnProperty.call(obj, 'method');
+  const hasResult = Object.prototype.hasOwnProperty.call(obj, 'result');
+  const hasError = Object.prototype.hasOwnProperty.call(obj, 'error');
+
+  if (hasMethod) {
+    if (hasResult || hasError || !RPC_METHOD_PATTERN.test(String(obj['method']))) {
+      throw new TypeError('mobily/protocol: invalid RPC request shape');
+    }
+    if (!isJsonObject(obj['params']) || !isJsonValue(obj['params'])) {
+      throw new TypeError('mobily/protocol: RpcRequestFrame.params must be a JSON object');
+    }
+    return { type: 'rpc', id, method: obj['method'] as string, params: obj['params'] };
+  }
+
+  if (hasResult === hasError || Object.prototype.hasOwnProperty.call(obj, 'params')) {
+    throw new TypeError('mobily/protocol: RPC response must contain exactly one result or error');
+  }
+  if (hasResult) {
+    if (!isJsonValue(obj['result'])) {
+      throw new TypeError('mobily/protocol: RpcResponseFrame.result must be JSON-compatible');
+    }
+    return { type: 'rpc', id, result: obj['result'] };
+  }
+  return { type: 'rpc', id, error: validateRpcError(obj['error']) };
+}
+
+function validateRpcStreamFrame(obj: Record<string, unknown>): RpcStreamFrame {
+  const id = validateRpcId(obj['id']);
+  if (typeof obj['chunk'] !== 'string' || obj['chunk'].length > MAX_RPC_CHUNK_LENGTH) {
+    throw new TypeError('mobily/protocol: RpcStreamFrame.chunk must be a bounded string');
+  }
+  if (typeof obj['done'] !== 'boolean') {
+    throw new TypeError('mobily/protocol: RpcStreamFrame.done must be a boolean');
+  }
+  const truncated = obj['truncated'];
+  const nextCursor = obj['nextCursor'];
+  const error = obj['error'];
+  if (!obj['done'] && (truncated !== undefined || nextCursor !== undefined || error !== undefined)) {
+    throw new TypeError('mobily/protocol: stream completion metadata requires done=true');
+  }
+  if (truncated !== undefined && typeof truncated !== 'boolean') {
+    throw new TypeError('mobily/protocol: RpcStreamFrame.truncated must be a boolean');
+  }
+  if (nextCursor !== undefined && !RPC_CURSOR_PATTERN.test(String(nextCursor))) {
+    throw new TypeError('mobily/protocol: RpcStreamFrame.nextCursor must be a bounded cursor');
+  }
+
+  return {
+    type: 'rpc-stream',
+    id,
+    chunk: obj['chunk'],
+    done: obj['done'],
+    ...(truncated === undefined ? {} : { truncated }),
+    ...(nextCursor === undefined ? {} : { nextCursor: nextCursor as string }),
+    ...(error === undefined ? {} : { error: validateRpcError(error) }),
+  };
+}
+
+function validateRpcId(value: unknown): string {
+  if (typeof value !== 'string' || !RPC_ID_PATTERN.test(value)) {
+    throw new TypeError('mobily/protocol: RPC id must be a bounded identifier');
+  }
+  return value;
+}
+
+function validateRpcError(value: unknown): RpcError {
+  if (!isJsonObject(value)) throw new TypeError('mobily/protocol: invalid RPC error');
+  const code = value['code'];
+  const message = value['message'];
+  if (
+    typeof code !== 'string' ||
+    !RPC_ERROR_CODE_PATTERN.test(code) ||
+    typeof message !== 'string' ||
+    message.length === 0 ||
+    message.length > 1024
+  ) {
+    throw new TypeError('mobily/protocol: invalid RPC error');
+  }
+  return { code, message };
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isJsonValue(value: unknown, depth = 0): value is JsonValue {
+  if (depth > 8) return false;
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.length <= 256 && value.every((entry) => isJsonValue(entry, depth + 1));
+  }
+  if (!isJsonObject(value)) return false;
+  const entries = Object.entries(value);
+  return (
+    entries.length <= 256 &&
+    entries.every(([key, entry]) => key.length <= 128 && isJsonValue(entry, depth + 1))
+  );
 }
