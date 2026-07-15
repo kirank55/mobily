@@ -56,7 +56,7 @@ export class RpcClient {
     this.idFactory = options.idFactory ?? (() => `rpc-${Date.now()}-${++this.nextId}`);
   }
 
-  request<T extends JsonValue = JsonValue>(method: string, params: JsonObject): Promise<T> {
+  request<T = JsonValue>(method: string, params: JsonObject): Promise<T> {
     const id = this.uniqueId();
     return new Promise<T>((resolve, reject) => {
       const timer = this.timeout(id);

@@ -152,6 +152,12 @@ export default function TerminalRoute() {
               ? `Reconnecting… ${detail}`
               : `Connecting to ${stationName}…`}
         </Text>
+        <TouchableOpacity onPress={() => router.push('/git' as never)} accessibilityLabel="Open Git">
+          <Text style={styles.navLink}>Git</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/hosts' as never)} accessibilityLabel="Open Stations">
+          <Text style={styles.navLink}>Stations</Text>
+        </TouchableOpacity>
         {latencyStats && (
           <Text style={styles.latencyText} accessibilityLabel="Terminal latency">
             P50 {latencyStats.p50}ms · P95 {latencyStats.p95}ms
@@ -224,6 +230,11 @@ const styles = StyleSheet.create({
   latencyText: {
     color: '#6e7681',
     fontSize: 11,
+  },
+  navLink: {
+    color: '#58a6ff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   terminalWrapper: {
     flex: 1,
