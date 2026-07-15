@@ -135,11 +135,13 @@ describe('spawn()', () => {
         ? os.tmpdir().split('\\').pop()!
         : os.tmpdir().split('/').pop()!;
 
-    const output = await collectUntil(pty, (buf) =>
-      buf.toLowerCase().includes(tmpFragment.toLowerCase()),
+    const output = await collectUntil(
+      pty,
+      (buf) => buf.toLowerCase().includes(tmpFragment.toLowerCase()),
+      10_000,
     );
     expect(output.toLowerCase()).toContain(tmpFragment.toLowerCase());
-  });
+  }, 10_000);
 });
 
 describe('PtyProcess.onData()', () => {

@@ -34,7 +34,7 @@ export class TmuxBackend implements SessionBackend {
     runtime.execFile('tmux', [
       'set-window-option',
       '-t',
-      `${sessionName}:0`,
+      sessionName,
       'window-size',
       'largest',
     ]);
@@ -47,7 +47,7 @@ export class TmuxBackend implements SessionBackend {
           '-S',
           `-${INITIAL_CAPTURE_LINES}`,
           '-t',
-          `${sessionName}:0.0`,
+          sessionName,
         ]),
       );
     } catch {

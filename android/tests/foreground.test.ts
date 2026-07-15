@@ -78,7 +78,8 @@ describe('ForegroundConnectionController', () => {
       vi.mocked(notifications.update).mockClear();
 
       controller.recordOutput('\u001b[32mcompiling\u001b[0m\n');
-      controller.recordOutput('tests passed\r\n');
+      controller.recordOutput('tests ');
+      controller.recordOutput('passed\r\n');
       await vi.advanceTimersByTimeAsync(25);
 
       expect(notifications.update).toHaveBeenCalledOnce();

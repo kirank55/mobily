@@ -303,6 +303,10 @@ export class WsClient {
         break;
 
       case 'alert':
+        if (this.handshakeState !== 'ready') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'alert before authentication');
+          return;
+        }
         this.opts.onAlert?.(frame.message);
         break;
 

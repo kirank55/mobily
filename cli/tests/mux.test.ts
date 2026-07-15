@@ -125,7 +125,11 @@ describe('TmuxBackend', () => {
         },
         {
           file: 'tmux',
-          args: ['set-window-option', '-t', 'mobily-work-1234:0', 'window-size', 'largest'],
+          args: ['set-window-option', '-t', 'mobily-work-1234', 'window-size', 'largest'],
+        },
+        {
+          file: 'tmux',
+          args: ['capture-pane', '-p', '-J', '-S', '-500', '-t', 'mobily-work-1234'],
         },
       ]),
     );

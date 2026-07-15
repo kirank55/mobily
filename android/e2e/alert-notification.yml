@@ -19,6 +19,13 @@ env:
 - extendedWaitUntil:
     visible: '${STATION_NAME}'
     timeout: 30000
+- tapOn: 'Open ${STATION_NAME}'
+- extendedWaitUntil:
+    visible: 'Open Git'
+    timeout: 15000
+- extendedWaitUntil:
+    visible: '^${STATION_NAME}$'
+    timeout: 30000
 - pressKey: 'home'
 - swipe:
     start: 50%, 0%
@@ -29,7 +36,7 @@ env:
     timeout: 30000
 - tapOn: '${ALERT_TEXT}'
 - extendedWaitUntil:
-    visible: '${STATION_NAME}'
+    visible: '^${STATION_NAME}$'
     timeout: 15000
 - assertNotVisible: 'Connection lost'
 - takeScreenshot: 'phase5-alert-opened-terminal'

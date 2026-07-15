@@ -16,13 +16,20 @@ env:
 - extendedWaitUntil:
     visible: '${STATION_NAME}'
     timeout: 30000
+- tapOn: 'Open ${STATION_NAME}'
+- extendedWaitUntil:
+    visible: 'Open Git'
+    timeout: 15000
+- extendedWaitUntil:
+    visible: '^${STATION_NAME}$'
+    timeout: 30000
 - pressKey: 'home'
 - waitForAnimationToEnd
 - launchApp:
     clearState: false
     stopApp: false
 - extendedWaitUntil:
-    visible: '${STATION_NAME}'
+    visible: '^${STATION_NAME}$'
     timeout: 30000
 - assertNotVisible: 'Connection lost'
 - takeScreenshot: 'phase5-background-reconnected'

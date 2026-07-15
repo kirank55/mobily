@@ -73,6 +73,9 @@ export class TerminalAlertDetector implements AlertDetector {
 
   private emit(message: string): void {
     const now = Date.now();
+    for (const [previousMessage, emittedAt] of this.emittedAt) {
+      if (now - emittedAt >= this.dedupeMs) this.emittedAt.delete(previousMessage);
+    }
     const last = this.emittedAt.get(message);
     if (last !== undefined && now - last < this.dedupeMs) return;
     this.emittedAt.set(message, now);

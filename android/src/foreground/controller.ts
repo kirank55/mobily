@@ -1,5 +1,8 @@
 import { foregroundNotification } from './foreground';
 import { latestTerminalLine, notificationText } from './text';
+import type { ConnectionState } from '@/client/wsClient';
+
+const MAX_TERMINAL_CONTEXT = 8 * 1024;
 
 export interface ForegroundNotification {
   requestNotificationPermission(): Promise<boolean>;
@@ -11,8 +14,9 @@ export interface ForegroundNotification {
 export class ForegroundConnectionController {
   private generation = 0;
   private started = false;
-  private state = 'connecting';
+  private state: ConnectionState = 'connecting';
   private lastLine = 'Waiting for terminal output';
+  private terminalContext = '';
   private outputTimer: ReturnType<typeof setTimeout> | null = null;
   private lifecycleQueue: Promise<void> = Promise.resolve();
 
@@ -25,6 +29,7 @@ export class ForegroundConnectionController {
     const generation = ++this.generation;
     this.state = 'connecting';
     this.lastLine = 'Waiting for terminal output';
+    this.terminalContext = '';
     try {
       await this.notifications.requestNotificationPermission();
     } catch {
@@ -48,13 +53,14 @@ export class ForegroundConnectionController {
     });
   }
 
-  async updateState(state: string): Promise<void> {
-    this.state = notificationText(state, 40, 'connected');
+  async updateState(state: ConnectionState): Promise<void> {
+    this.state = state;
     await this.safeUpdate();
   }
 
   recordOutput(data: string): void {
-    const latestLine = latestTerminalLine(data);
+    this.terminalContext = (this.terminalContext + data).slice(-MAX_TERMINAL_CONTEXT);
+    const latestLine = latestTerminalLine(this.terminalContext);
     if (latestLine) this.lastLine = latestLine;
     if (!this.started || this.outputTimer) return;
     this.outputTimer = setTimeout(() => {
@@ -74,6 +80,7 @@ export class ForegroundConnectionController {
       this.outputTimer = null;
     }
     this.started = false;
+    this.terminalContext = '';
     await this.queueLifecycle(() => this.safeStop());
   }
 

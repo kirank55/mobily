@@ -114,6 +114,18 @@ describe('WsClient', () => {
     expect(alerts).toEqual(['Approve the deployment?']);
   });
 
+  it('rejects terminal alerts before authentication completes', () => {
+    const { client, alerts } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+
+    socket.receive({ type: 'alert', message: 'Untrusted prompt' });
+
+    expect(alerts).toEqual([]);
+    expect(socket.readyState).toBe(3);
+  });
+
   it('reconnects transient failures with exponential backoff', async () => {
     vi.useFakeTimers();
     try {
