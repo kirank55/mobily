@@ -21,6 +21,9 @@ import {
   isSecureWebSocketUrl,
   WS_CLOSE_CODES,
   type Frame,
+  type RpcRequestFrame,
+  type RpcResponseFrame,
+  type RpcStreamFrame,
 } from '@mobily/shared';
 import { PinnedWebSocket } from './pinnedTransport';
 
@@ -39,6 +42,8 @@ export interface WsClientOptions {
   onStateChange?: (state: ConnectionState, detail?: string) => void;
   /** Callback for output frames (PTY data). */
   onOutput?: (data: string, latencyTags?: readonly string[]) => void;
+  /** Callback for structured RPC responses after authentication. */
+  onRpcFrame?: (frame: RpcResponseFrame | RpcStreamFrame) => void;
   /** Callback when the handshake completes (ready to send input). */
   onReady?: () => void;
   /** Callback for structured errors. */
@@ -140,6 +145,13 @@ export class WsClient {
   /** Send a resize frame. */
   sendResize(cols: number, rows: number): void {
     if (this.ready) this.send({ type: 'resize', cols, rows });
+  }
+
+  /** Send a structured request after authentication. */
+  sendRpc(frame: RpcRequestFrame): boolean {
+    if (!this.ready) return false;
+    this.send(frame);
+    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -280,6 +292,18 @@ export class WsClient {
 
       case 'output':
         this.opts.onOutput?.(frame.data, frame.latencyTags);
+        break;
+
+      case 'rpc':
+        if ('method' in frame) {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected RPC request');
+        } else {
+          this.opts.onRpcFrame?.(frame);
+        }
+        break;
+
+      case 'rpc-stream':
+        this.opts.onRpcFrame?.(frame);
         break;
 
       case 'auth-ok':

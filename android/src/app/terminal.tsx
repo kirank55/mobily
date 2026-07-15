@@ -14,121 +14,73 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ActivityIndicator,
-  TouchableOpacity,
-  AppState,
-  type AppStateStatus,
-} from 'react-native';
+import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { WsClient, type ConnectionState, type ErrorKind } from '@/client/wsClient';
 import { loadPairing, clearPairing } from '@/auth/storage';
-import { PROTOCOL_VERSION } from '@mobily/shared';
+import { useStationConnection } from '@/client/StationConnection';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
 
 export default function TerminalRoute() {
-  const [connState, setConnState] = useState<ConnectionState>('disconnected');
-  const [detail, setDetail] = useState('');
-  const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
-  const [stationName, setStationName] = useState('Station');
+  const {
+    state: connState,
+    detail,
+    errorKind,
+    pairing,
+    connect,
+    disconnect,
+    retry,
+    sendInput,
+    sendResize,
+    subscribeOutput,
+  } = useStationConnection();
+  const stationName = pairing?.stationName ?? 'Station';
   const [termReady, setTermReady] = useState(false);
   const [latencyStats, setLatencyStats] = useState<{ n: number; p50: number; p95: number } | null>(
     null,
   );
 
-  const clientRef = useRef<WsClient | null>(null);
   const termRef = useRef<TerminalViewHandle | null>(null);
-  const cancelledRef = useRef(false);
 
   const handleReScan = useCallback(() => {
-    clientRef.current?.disconnect();
+    disconnect();
     void clearPairing();
     router.replace('/scanner');
-  }, []);
+  }, [disconnect]);
 
   const handleRetry = useCallback(() => {
-    clientRef.current?.connect();
-  }, []);
+    retry();
+  }, [retry]);
 
   // ── Connect on mount ────────────────────────────────────────────────────
   useEffect(() => {
-    cancelledRef.current = false;
-
-    (async () => {
+    let cancelled = false;
+    void (async () => {
       const record = await loadPairing();
-      if (!record || cancelledRef.current) return;
-
-      setStationName(record.stationName);
-
-      const client = new WsClient({
-        url: record.tunnelUrl,
-        deviceBindingId: record.deviceBindingId,
-        certificatePin: record.certificatePin,
-        protocolVersion: PROTOCOL_VERSION,
-
-        onStateChange: (state, d) => {
-          if (cancelledRef.current) return;
-          setConnState(state);
-          setDetail(d ?? '');
-        },
-
-        onOutput: (data, latencyTags) => {
-          if (cancelledRef.current) return;
-          termRef.current?.write(data, latencyTags);
-        },
-
-        onReady: () => {
-          if (cancelledRef.current) return;
-          setConnState('connected');
-        },
-
-        onError: (msg, kind) => {
-          if (cancelledRef.current) return;
-          setDetail(msg);
-          setErrorKind(kind ?? 'generic');
-        },
-      });
-
-      clientRef.current = client;
-      client.connect();
+      if (record && !cancelled) connect(record);
     })();
-
     return () => {
-      cancelledRef.current = true;
-      clientRef.current?.disconnect();
+      cancelled = true;
     };
-  }, []);
+  }, [connect]);
 
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState === 'active' && clientRef.current) {
-        const s = clientRef.current.currentState;
-        // Don't retry auth-rejection failures — they need re-pairing
-        if (s === 'disconnected' || s === 'failed') {
-          if (errorKind !== 'auth-rejection') {
-            clientRef.current.connect();
-          }
-        }
-      }
+    return subscribeOutput((data, latencyTags) => {
+      termRef.current?.write(data, latencyTags);
     });
-    return () => sub.remove();
-  }, [errorKind]);
+  }, [subscribeOutput]);
 
   // ── Terminal resize → send to WS ────────────────────────────────────────
   const handleTermResize = useCallback((cols: number, rows: number) => {
-    clientRef.current?.sendResize(cols, rows);
-  }, []);
+    sendResize(cols, rows);
+  }, [sendResize]);
 
   // ── Terminal input → send to WS ─────────────────────────────────────────
   const handleTermInput = useCallback((data: string, latencyTag: string) => {
-    clientRef.current?.sendInput(data, latencyTag);
-  }, []);
+    sendInput(data, latencyTag);
+  }, [sendInput]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
