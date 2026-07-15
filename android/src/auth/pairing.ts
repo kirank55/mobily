@@ -13,7 +13,7 @@ import {
   type PairingPayload,
   type PairingResponse,
 } from '@mobily/shared';
-import { createDeviceKey, generateDeviceBindingId, signNonce } from './deviceKey';
+import { createDeviceKey, deleteKey, generateDeviceBindingId, signNonce } from './deviceKey';
 import { savePairing, type PairingRecord } from './storage';
 import { pinnedJsonRequest } from '@/client/pinnedTransport';
 
@@ -46,12 +46,22 @@ export async function pairWithStation(
   const deviceBindingId = generateDeviceBindingId();
 
   let publicKey: string;
+  let keyAlias: string;
   try {
     const keyResult = await createDeviceKey(deviceBindingId);
     publicKey = keyResult.publicKey;
+    keyAlias = keyResult.keyAlias;
   } catch {
     return { ok: false, error: 'Failed to create Device Key. Is biometrics set up?' };
   }
+  const fail = async (error: string): Promise<PairResult> => {
+    try {
+      await deleteKey(keyAlias);
+    } catch {
+      // Best-effort cleanup; an unreferenced alias can be overwritten safely.
+    }
+    return { ok: false, error };
+  };
 
   const proofPayload = createPairingProofPayload(
     pairing.code,
@@ -62,12 +72,12 @@ export async function pairWithStation(
   );
   let proof: string | null;
   try {
-    proof = await signNonce(proofPayload, 'Confirm pairing with this Station');
+    proof = await signNonce(proofPayload, 'Confirm pairing with this Station', keyAlias);
   } catch {
-    return { ok: false, error: 'Failed to prove Device Key ownership.' };
+    return await fail('Failed to prove Device Key ownership.');
   }
   if (!proof) {
-    return { ok: false, error: 'Pairing confirmation was cancelled.' };
+    return await fail('Pairing confirmation was cancelled.');
   }
 
   let resp: { ok: boolean; status: number; json(): Promise<unknown> };
@@ -85,10 +95,9 @@ export async function pairWithStation(
           body: JSON.stringify(body),
         });
   } catch (err) {
-    return {
-      ok: false,
-      error: `Cannot reach Station — ${err instanceof Error ? err.message : 'network error'}`,
-    };
+    return await fail(
+      `Cannot reach Station — ${err instanceof Error ? err.message : 'network error'}`,
+    );
   }
 
   if (!resp.ok) {
@@ -99,14 +108,14 @@ export async function pairWithStation(
     } catch {
       // ignore JSON parse errors
     }
-    return { ok: false, error };
+    return await fail(error);
   }
 
   let payload: PairingResponse;
   try {
     payload = (await resp.json()) as PairingResponse;
   } catch {
-    return { ok: false, error: 'Station returned an invalid pairing response.' };
+    return await fail('Station returned an invalid pairing response.');
   }
   if (
     !payload ||
@@ -117,18 +126,23 @@ export async function pairWithStation(
     payload.tunnelUrl !== pairing.endpoint ||
     payload.protocolVersion !== PROTOCOL_VERSION
   ) {
-    return { ok: false, error: 'Station returned an invalid pairing response.' };
+    return await fail('Station returned an invalid pairing response.');
   }
 
   const record: PairingRecord = {
     stationName: payload.stationName,
     tunnelUrl: payload.tunnelUrl,
     deviceBindingId,
+    keyAlias,
     pairedAt: Date.now(),
     certificatePin: pairing.certificatePin,
   };
 
-  await savePairing(record);
+  try {
+    await savePairing(record);
+  } catch {
+    return await fail('Could not save the paired Station.');
+  }
 
   return { ok: true, record };
 }

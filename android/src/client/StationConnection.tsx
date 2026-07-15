@@ -11,6 +11,7 @@ import {
 import { AppState, type AppStateStatus } from 'react-native';
 import { PROTOCOL_VERSION } from '@mobily/shared';
 import type { PairingRecord } from '@/auth/storage';
+import { markConnected } from '@/auth/storage';
 import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
 import { RpcClient } from './rpcClient';
 
@@ -70,6 +71,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     client = new WsClient({
       url: nextPairing.tunnelUrl,
       deviceBindingId: nextPairing.deviceBindingId,
+      keyAlias: nextPairing.keyAlias,
       certificatePin: nextPairing.certificatePin,
       protocolVersion: PROTOCOL_VERSION,
       onStateChange: (nextState, nextDetail) => {
@@ -83,6 +85,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         for (const listener of outputListeners.current) listener(data, latencyTags);
       },
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
+      onReady: () => {
+        void markConnected(nextPairing.deviceBindingId);
+      },
       onError: (message, kind) => {
         setDetail(message);
         setErrorKind(kind ?? 'generic');

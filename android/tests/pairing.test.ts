@@ -26,7 +26,11 @@ const pairing: PairingPayload = {
 beforeEach(() => {
   vi.clearAllMocks();
   deviceKey.generateDeviceBindingId.mockReturnValue(bindingId);
-  deviceKey.createDeviceKey.mockResolvedValue({ deviceBindingId: bindingId, publicKey: 'key' });
+  deviceKey.createDeviceKey.mockResolvedValue({
+    deviceBindingId: bindingId,
+    keyAlias: 'mobily.device.test',
+    publicKey: 'key',
+  });
   deviceKey.signNonce.mockResolvedValue('proof');
 });
 
@@ -103,6 +107,7 @@ describe('pairWithStation()', () => {
     expect(deviceKey.signNonce).toHaveBeenCalledWith(
       expect.stringContaining(localPairing.certificatePin),
       'Confirm pairing with this Station',
+      'mobily.device.test',
     );
   });
 });

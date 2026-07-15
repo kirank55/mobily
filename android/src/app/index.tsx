@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
-import { loadPairing } from '@/auth/storage';
+import { listPairings } from '@/auth/storage';
 
 export default function HomeScreen() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const record = await loadPairing();
-      if (record) {
-        router.replace('/terminal');
+      const records = await listPairings();
+      if (records.length > 0) {
+        router.replace('/hosts' as never);
       } else {
         router.replace('/scanner');
       }

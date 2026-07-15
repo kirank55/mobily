@@ -37,6 +37,8 @@ export type ErrorKind =
 export interface WsClientOptions {
   url: string;
   deviceBindingId: string;
+  /** Android Keystore alias for this Station's Device Key. */
+  keyAlias?: string;
   protocolVersion: number;
   /** Callback for state changes. */
   onStateChange?: (state: ConnectionState, detail?: string) => void;
@@ -264,7 +266,11 @@ export class WsClient {
         this.handshakeState = 'signing-challenge';
         let signature: string | null;
         try {
-          signature = await signNonce(frame.nonce);
+          signature = await signNonce(
+            frame.nonce,
+            'Authenticate to connect to your Station',
+            this.opts.keyAlias,
+          );
         } catch {
           signature = null;
         }
