@@ -53,6 +53,7 @@
     "lint": "expo lint",
     "test": "vitest run",
     "prebuild": "expo prebuild --platform android",
-    "build:android": "expo run:android"
+    "build:android": "expo run:android",
+    "eas-dev": "eas build --profile development --platform android"
   }
 }
