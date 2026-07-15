@@ -8,6 +8,9 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 
 **Consequences:**
 
-- The session layer needs a `SessionBackend` abstraction with two implementations (`TmuxBackend`, `BareBackend`).
-- Scrollback replay on the bare backend requires an in-process ring buffer (deferred to Phase 5 alongside tmux scrollback replay).
+- The session layer uses a `SessionBackend` seam with two adapters (`TmuxBackend`, `BareBackend`).
+- Both adapters expose bounded scrollback replay; the bare adapter uses an in-process ring buffer and tmux seeds the same buffer with `capture-pane` on startup.
+- A deterministic working-directory-derived session name is reused across CLI restarts. `--session` overrides it, and `--kill-session` is the only Mobily command that terminates a persisted tmux session.
+- Normal CLI shutdown detaches its tmux client. It never kills the shared session.
+- The tmux window uses the `largest` sizing policy so an Android resize does not shrink a larger attached workstation terminal.
 - CI tests both paths: tmux on Linux/macOS runners, bare on Windows runner.
