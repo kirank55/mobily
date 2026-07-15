@@ -278,47 +278,49 @@
 
 ### SessionBackend Abstraction
 
-- [ ] `cli/src/mux/types.ts`: `SessionBackend` interface
-- [ ] `cli/src/mux/bare.ts`: `BareBackend` — extract the Phase 1 inline bare behavior (PTY held by CLI process) behind the interface
-- [ ] `cli/src/mux/tmux.ts`: `TmuxBackend` — wrap PTY in `tmux` for crash survival; create named session, reattach on reconnect
-- [ ] Auto-detect: use `TmuxBackend` if `tmux` on `$PATH`, else `BareBackend`
-- [ ] Refactor `session.ts` to use `SessionBackend` instead of holding `PtyProcess` directly
+- [x] `cli/src/mux/types.ts`: `SessionBackend` interface
+- [x] `cli/src/mux/bare.ts`: `BareBackend` — extract the Phase 1 inline bare behavior (PTY held by CLI process) behind the interface
+- [x] `cli/src/mux/tmux.ts`: `TmuxBackend` — wrap PTY in `tmux` for crash survival; create named session, reattach on reconnect
+- [x] Auto-detect: use `TmuxBackend` if `tmux` on `$PATH`, else `BareBackend`
+- [x] Refactor `session.ts` to use `SessionBackend` instead of holding `PtyProcess` directly
 
 ### Shared Android + Workstation Terminal
 
-- [ ] Attach Mobily's PTY to the named tmux session used by Android instead of creating an Android-only shell
-- [ ] Print an exact workstation attach command such as `tmux attach -t mobily-<session>`
-- [ ] Stream the same output to Android and the attached workstation terminal; accept input from either client
-- [ ] Define session naming/selection, reuse, detach/terminate behavior, and stale-session cleanup
-- [ ] Define shared-window resize behavior for differently sized Android and workstation clients
-- [ ] Explain the `BareBackend` limitation when tmux is unavailable: no simultaneous workstation attachment
+- [x] Attach Mobily's PTY to the named tmux session used by Android instead of creating an Android-only shell
+- [x] Print an exact workstation attach command such as `tmux attach -t mobily-<session>`
+- [x] Stream the same output to Android and the attached workstation terminal; accept input from either client
+- [x] Define session naming/selection, reuse, detach/terminate behavior, and stale-session cleanup
+- [x] Define shared-window resize behavior for differently sized Android and workstation clients
+- [x] Explain the `BareBackend` limitation when tmux is unavailable: no simultaneous workstation attachment
 
 ### Scrollback Replay
 
-- [ ] `TmuxBackend`: replay last N lines via `tmux capture-pane` on reconnect
-- [ ] `BareBackend`: in-process ring buffer → replay on reconnect
+- [x] `TmuxBackend`: replay last N lines via `tmux capture-pane` on reconnect
+- [x] `BareBackend`: in-process ring buffer → replay on reconnect
 
 ### WebSocket Alerts
 
-- [ ] `shared/protocol.ts`: add `alert` frame type
-- [ ] CLI: detect agent prompt / idle-timeout via PTY output heuristics
-- [ ] Send `{ type: "alert", message }` frame over WS
-- [ ] Android: foreground service updates notification with alert content
+- [x] `shared/protocol.ts`: add `alert` frame type
+- [x] CLI: detect agent prompt / idle-timeout via PTY output heuristics
+- [x] Send `{ type: "alert", message }` frame over WS
+- [x] Android: foreground service updates notification with alert content
 
 ### Foreground Service
 
-- [ ] `android/app/foreground.ts`: keep WS alive in background
-- [ ] Ongoing notification: connection status + last terminal line + agent alerts
+- [x] `android/src/foreground/foreground.ts`: keep WS alive in background
+- [x] Ongoing notification: connection status + last terminal line + agent alerts
 
 ### Reconnect Polish
 
-- [ ] On app resume: re-auth (Device Key) → reattach session → replay scrollback
-- [ ] Survive network changes transparently
+- [x] On app resume: re-auth (Device Key) → reattach session → replay scrollback
+- [x] Survive network changes transparently
 
 ### Tests
 
-- [ ] vitest: scrollback replay (both backends)
-- [ ] Maestro: background → foreground → reconnected
-- [ ] Maestro: notification shows alert content
+- [x] vitest: scrollback replay (both backends)
+- [x] Define Maestro flow: background → foreground → reconnected
+- [x] Define Maestro flow: notification shows alert content and opens Mobily
+- [ ] Run both Phase 5 Maestro flows on an API 26+ device/emulator with a live Station fixture
+- [ ] Accept simultaneous Android/workstation control, CLI-crash reattachment, and a long background/network-change session on device
 
 **DoD:** Android and an attached workstation terminal display and control the same named session; commands entered on either client are visible on both; agent prompt → notification → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+.

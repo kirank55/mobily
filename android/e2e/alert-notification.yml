@@ -1,0 +1,35 @@
+# Maestro acceptance: a Station alert appears in Android's notification shade
+# and tapping it returns to the live Mobily terminal.
+#
+# Prerequisites:
+#   - API 26+ device/emulator with notification permission granted
+#   - a pre-paired, reachable Station named by STATION_NAME
+#   - after the app is backgrounded, make the Station print ALERT_TEXT as an
+#     input/approval prompt (the controlled fixture should do this on cue)
+
+appId: com.anonymous.mobily
+env:
+  STATION_NAME: Test Station
+  ALERT_TEXT: Approve the deployment?
+---
+- launchApp:
+    clearState: false
+    permissions:
+      notifications: allow
+- extendedWaitUntil:
+    visible: '${STATION_NAME}'
+    timeout: 30000
+- pressKey: 'home'
+- swipe:
+    start: 50%, 0%
+    end: 50%, 75%
+    duration: 600
+- extendedWaitUntil:
+    visible: '${ALERT_TEXT}'
+    timeout: 30000
+- tapOn: '${ALERT_TEXT}'
+- extendedWaitUntil:
+    visible: '${STATION_NAME}'
+    timeout: 15000
+- assertNotVisible: 'Connection lost'
+- takeScreenshot: 'phase5-alert-opened-terminal'

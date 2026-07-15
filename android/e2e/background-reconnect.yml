@@ -1,0 +1,28 @@
+# Maestro acceptance: a live terminal remains represented by the foreground
+# service while backgrounded and is connected (or transparently reconnects)
+# after returning to Mobily.
+#
+# Prerequisites:
+#   - API 26+ device/emulator with the development APK installed
+#   - a pre-paired Station named by STATION_NAME (default: Test Station)
+#   - the Station CLI remains reachable throughout the flow
+
+appId: com.anonymous.mobily
+env:
+  STATION_NAME: Test Station
+---
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: '${STATION_NAME}'
+    timeout: 30000
+- pressKey: 'home'
+- waitForAnimationToEnd
+- launchApp:
+    clearState: false
+    stopApp: false
+- extendedWaitUntil:
+    visible: '${STATION_NAME}'
+    timeout: 30000
+- assertNotVisible: 'Connection lost'
+- takeScreenshot: 'phase5-background-reconnected'

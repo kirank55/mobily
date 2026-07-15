@@ -119,11 +119,15 @@ update(connectionState: string, lastLine: string, alert?: string): Promise<void>
 stop(): Promise<void>;
 ```
 
-The service creates a low-importance notification channel and an ongoing
-notification that opens Mobily when tapped. It starts when a Station connection
-starts, updates on connection state/output/alerts, and stops only on deliberate
-disconnect or provider teardown. The notification contains bounded plain text;
-terminal escape sequences are removed.
+The service creates a low-importance ongoing-session channel and a high-
+importance alert channel. Both notifications open Mobily when tapped. It starts
+when a Station connection starts, updates on connection state/output/alerts,
+and stops on permanent failure, deliberate disconnect, or provider teardown.
+The notification contains bounded plain text; terminal escape sequences are
+removed. Android 13+ notification permission is requested without making
+terminal connectivity depend on the user's choice. Android 14+ declares the
+`specialUse` foreground-service type and describes the interactive terminal
+use case in the manifest.
 
 Keeping the process in foreground-service priority allows the existing
 WebSocket client to remain active in the background. On resume, the existing

@@ -6,14 +6,12 @@ A free and open-source mobile remote-control for terminal-based development envi
 
 - **Live terminal** — full `xterm.js` terminal on your phone with special key support (Ctrl, Alt, Esc, arrows)
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
-- **Reconnectable session** — the current bare PTY survives phone/network disconnects while the CLI remains running
+- **Shared persistent session** — automatically uses tmux when available, with bounded replay on phone/network reconnects and a bare PTY fallback
+- **Background terminal alerts** — an Android foreground service reports connection state, the latest terminal line, and prompts that need attention
 - **Native Git controls** — browse changes, stage/unstage, inspect large diffs, switch branches, and commit from Android
 - **Multiple Stations** — retain paired workstations and switch between them without scanning again
 - **Pluggable tunneling** — Dev Tunnels for remote access, plus pinned TLS directly on your LAN
 - **No Mobily-operated cloud** — secure remote access currently uses Microsoft Dev Tunnels and requires operator authentication
-
-Planned features, including shared workstation/tmux sessions and background
-alerts, are tracked in the roadmap and are not part of the current release.
 
 ## Quick Start
 
@@ -21,6 +19,21 @@ alerts, are tracked in the roadmap and are not part of the current release.
 # Secure remote access (guides first-time install and login)
 npx mobily --tunnel devtunnels
 ```
+
+When tmux is available, Mobily prints the exact command for attaching a second
+workstation terminal to the same named session. Use `--session <name>` to choose
+a stable name explicitly:
+
+```bash
+npx mobily --tunnel devtunnels --session project-x
+tmux attach-session -t project-x
+```
+
+Normal CLI shutdown only detaches Mobily; it does not kill the tmux session.
+Use `npx mobily --kill-session project-x` when you intentionally want to remove
+it. If tmux is unavailable, Mobily explains that bare mode survives phone
+disconnects only while the CLI process is alive and cannot mirror a local
+workstation terminal.
 
 On first use, Mobily guides installation of Microsoft's official `devtunnel`
 helper and offers GitHub or Microsoft device-code login. Credentials are cached
