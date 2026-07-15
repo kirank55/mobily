@@ -87,6 +87,9 @@ function deviceKeyRequiresRepair(error: unknown): boolean {
   if (code === 'ERR_DEVICE_KEY_INVALIDATED' || code === 'ERR_DEVICE_KEY_UNAVAILABLE') {
     return true;
   }
+  if (code === 'ERR_BIOMETRIC_AUTHENTICATION') {
+    return false;
+  }
   const message = error instanceof Error ? error.message : String(error);
   return /invalidated|unavailable|could not be recovered|pair this Station again/i.test(message);
 }

@@ -7,9 +7,12 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "vinext start",
+    "dev": "next dev",
+    "build": "next build && node tests/assert-vercel-output.mjs",
+    "start": "next start",
+    "dev:sites": "vinext dev",
+    "build:sites": "vinext build",
+    "start:sites": "vinext start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "vitest run"
