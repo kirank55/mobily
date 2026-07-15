@@ -27,6 +27,7 @@ import type { RawData, WebSocket } from 'ws';
 import {
   decodeFrame,
   encodeFrame,
+  GIT_RPC_METHODS,
   PROTOCOL_VERSION,
   WS_CLOSE_CODES,
   type Frame,
@@ -39,6 +40,7 @@ import type { RpcRouter } from './rpc/router.js';
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
 const MAX_BUFFERED_OUTPUT_BYTES = 1024 * 1024;
+const DEFAULT_MAX_ACTIVE_RPC_REQUESTS = 4;
 
 /** Extended spawn options — includes optional auth for the handshake. */
 export interface SessionOptions extends SpawnOptions {
@@ -47,7 +49,9 @@ export interface SessionOptions extends SpawnOptions {
   /** Maximum time allowed for hello + Device Key authentication. @default 10000 */
   handshakeTimeoutMs?: number;
   /** Structured request router available after authentication. */
-  rpc?: RpcRouter;
+  rpc?: Pick<RpcRouter, 'handle'>;
+  /** Maximum concurrent structured requests per authenticated connection. @default 4 */
+  maxActiveRpcRequests?: number;
 }
 
 /**
@@ -60,8 +64,9 @@ export class Session {
   readonly pty: PtyProcess;
 
   private readonly auth?: AuthManager;
-  private readonly rpc?: RpcRouter;
+  private readonly rpc?: Pick<RpcRouter, 'handle'>;
   private readonly handshakeTimeoutMs: number;
+  private readonly maxActiveRpcRequests: number;
   private readonly subscribers = new Set<WebSocket>();
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
@@ -70,10 +75,17 @@ export class Session {
   private exited = false;
 
   constructor(opts: SessionOptions = {}) {
-    const { auth, rpc, handshakeTimeoutMs = 10_000, ...spawnOpts } = opts;
+    const {
+      auth,
+      rpc,
+      handshakeTimeoutMs = 10_000,
+      maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
+      ...spawnOpts
+    } = opts;
     this.auth = auth;
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
+    this.maxActiveRpcRequests = maxActiveRpcRequests;
     this.pty = spawn(spawnOpts);
 
     this.onDataDisposable = this.pty.onData((data) => this.broadcast({ type: 'output', data }));
@@ -302,6 +314,15 @@ export class Session {
         id: frame.id,
         error: { code: 'DUPLICATE_REQUEST', message: 'RPC request id is already active' },
       });
+      return;
+    }
+    if (active.size >= this.maxActiveRpcRequests) {
+      const error = { code: 'BUSY', message: 'Too many active RPC requests' };
+      if (frame.method === GIT_RPC_METHODS.DIFF) {
+        this.sendTo(ws, { type: 'rpc-stream', id: frame.id, chunk: '', done: true, error });
+      } else {
+        this.sendTo(ws, { type: 'rpc', id: frame.id, error });
+      }
       return;
     }
     const controller = new AbortController();

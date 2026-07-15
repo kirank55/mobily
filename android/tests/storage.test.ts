@@ -16,6 +16,7 @@ vi.mock('expo-secure-store', () => secureStore);
 
 import {
   LEGACY_KEY_ALIAS,
+  clearPairing,
   listPairings,
   loadPairing,
   removePairing,
@@ -77,6 +78,16 @@ describe('pairing storage', () => {
 
     await expect(listPairings()).resolves.toEqual([first]);
     await expect(loadPairing()).resolves.toEqual(first);
+  });
+
+  it('returns the selected Station when clearing it so its key can be deleted', async () => {
+    const first = record('first');
+    const second = record('second');
+    await savePairing(first);
+    await savePairing(second);
+
+    await expect(clearPairing()).resolves.toEqual(second);
+    await expect(listPairings()).resolves.toEqual([first]);
   });
 
   it('rejects malformed persisted list data', async () => {

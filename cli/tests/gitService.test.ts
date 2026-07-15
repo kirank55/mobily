@@ -24,6 +24,15 @@ function repository(): string {
   return cwd;
 }
 
+function unbornRepository(): string {
+  const cwd = mkdtempSync(join(tmpdir(), 'mobily-git-unborn-'));
+  repositories.push(cwd);
+  git(cwd, 'init', '--initial-branch=main');
+  git(cwd, 'config', 'user.name', 'Mobily Test');
+  git(cwd, 'config', 'user.email', 'mobily@example.test');
+  return cwd;
+}
+
 afterEach(() => {
   for (const cwd of repositories.splice(0)) rmSync(cwd, { recursive: true, force: true });
 });
@@ -81,6 +90,35 @@ describe('GitService', () => {
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
   });
 
+  it('does not mistake a non-repository for an unborn branch', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'mobily-not-git-'));
+    repositories.push(cwd);
+
+    await expect(
+      new GitService(cwd).execute(GIT_RPC_METHODS.LOG, {}),
+    ).rejects.toMatchObject({ code: 'NOT_A_REPOSITORY' });
+  });
+
+  it('treats option-like names as paths and supports the first commit workflow', async () => {
+    const cwd = unbornRepository();
+    writeFileSync(join(cwd, '--all'), 'selected\n');
+    writeFileSync(join(cwd, 'other.txt'), 'not selected\n');
+    const service = new GitService(cwd);
+
+    await expect(service.execute(GIT_RPC_METHODS.LOG, {})).resolves.toEqual({
+      commits: [],
+      hasMore: false,
+    });
+    await service.execute(GIT_RPC_METHODS.STAGE, { paths: ['--all'] });
+    expect(git(cwd, 'ls-files')).toBe('--all');
+    await service.execute(GIT_RPC_METHODS.UNSTAGE, { paths: ['--all'] });
+    expect(git(cwd, 'ls-files')).toBe('');
+    await service.execute(GIT_RPC_METHODS.STAGE, { paths: ['--all'] });
+    await expect(
+      service.execute(GIT_RPC_METHODS.COMMIT, { message: 'initial commit' }),
+    ).resolves.toMatchObject({ message: 'initial commit' });
+  });
+
   it('streams a bounded diff page and resumes from its cursor', async () => {
     const cwd = repository();
     writeFileSync(
@@ -104,5 +142,20 @@ describe('GitService', () => {
       (chunk) => secondChunks.push(chunk),
     );
     expect(secondChunks.join('')).not.toBe(firstChunks.join('').slice(0, secondChunks.join('').length));
+  });
+
+  it('terminates a diff that exceeds its server-side deadline', async () => {
+    const cwd = repository();
+    writeFileSync(
+      join(cwd, 'tracked.txt'),
+      Array.from({ length: 100_000 }, (_, index) => `changed-${index}`).join('\n') + '\n',
+    );
+
+    await expect(
+      new GitService(cwd, { diffTimeoutMs: 1 }).streamDiff(
+        { path: 'tracked.txt', maxLines: 1_000 },
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
   });
 });

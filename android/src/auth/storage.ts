@@ -83,9 +83,9 @@ export async function markConnected(
 }
 
 /** Phase 3 compatibility: remove only the currently selected pairing. */
-export async function clearPairing(): Promise<void> {
+export async function clearPairing(): Promise<PairingRecord | null> {
   const selected = await loadPairing();
-  if (selected) await removePairing(selected.deviceBindingId);
+  return selected ? await removePairing(selected.deviceBindingId) : null;
 }
 
 async function readPairings(): Promise<PairingRecord[] | null> {

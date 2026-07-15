@@ -17,6 +17,11 @@ const DEFAULT_LOG_LIMIT = 30;
 const MAX_DIFF_LINES = 1_000;
 const DEFAULT_DIFF_LINES = 500;
 const MAX_DIFF_CHUNK = 16 * 1024;
+const DEFAULT_DIFF_TIMEOUT_MS = 10_000;
+
+export interface GitServiceOptions {
+  diffTimeoutMs?: number;
+}
 
 export class GitServiceError extends Error {
   constructor(
@@ -35,9 +40,14 @@ export interface DiffPage {
 
 export class GitService {
   private readonly git: SimpleGit;
+  private readonly diffTimeoutMs: number;
 
-  constructor(private readonly cwd: string) {
+  constructor(
+    private readonly cwd: string,
+    options: GitServiceOptions = {},
+  ) {
     this.git = simpleGit({ baseDir: cwd, binary: 'git', maxConcurrentProcesses: 4 });
+    this.diffTimeoutMs = options.diffTimeoutMs ?? DEFAULT_DIFF_TIMEOUT_MS;
   }
 
   async execute(method: GitRpcMethod, params: JsonObject): Promise<JsonValue> {
@@ -54,11 +64,14 @@ export class GitService {
         case GIT_RPC_METHODS.CHECKOUT:
           return await this.checkout(params);
         case GIT_RPC_METHODS.STAGE:
-          await this.git.add(validatePaths(params));
+          await this.git.add(['--', ...validatePaths(params)]);
           return await this.status();
-        case GIT_RPC_METHODS.UNSTAGE:
-          await this.git.reset(['HEAD', '--', ...validatePaths(params)]);
+        case GIT_RPC_METHODS.UNSTAGE: {
+          const paths = validatePaths(params);
+          if (await this.hasHead()) await this.git.reset(['HEAD', '--', ...paths]);
+          else await this.git.raw(['rm', '--cached', '-f', '--', ...paths]);
           return await this.status();
+        }
         case GIT_RPC_METHODS.COMMIT:
           return await this.commit(params);
         case GIT_RPC_METHODS.DIFF:
@@ -96,6 +109,7 @@ export class GitService {
       let emitted = 0;
       let truncated = false;
       let cancelled = false;
+      let timedOut = false;
 
       const flush = (): void => {
         if (outbound.length > 0) {
@@ -138,6 +152,10 @@ export class GitService {
         cancelled = true;
         child.kill();
       };
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, this.diffTimeoutMs);
       signal?.addEventListener('abort', abort, { once: true });
 
       child.stdout.on('data', (chunk: string) => {
@@ -149,7 +167,12 @@ export class GitService {
       });
       child.once('error', (error) => reject(gitError(error)));
       child.once('close', (code) => {
+        clearTimeout(timeout);
         signal?.removeEventListener('abort', abort);
+        if (timedOut) {
+          reject(new GitServiceError('TIMEOUT', 'Git diff exceeded its time limit'));
+          return;
+        }
         if (cancelled) {
           reject(new GitServiceError('CANCELLED', 'Git request was cancelled'));
           return;
@@ -193,6 +216,7 @@ export class GitService {
     const skip = boundedInteger(params['skip'], 0, 100_000, 0, 'skip');
     const limit = boundedInteger(params['limit'], 1, MAX_LOG_LIMIT, DEFAULT_LOG_LIMIT, 'limit');
     rejectUnknownParams(params, ['skip', 'limit']);
+    if (!(await this.hasHead())) return { commits: [], hasMore: false };
     const result = await this.git.log({ maxCount: limit + 1, '--skip': skip });
     const commits = result.all.slice(0, limit).map((entry) => ({
       hash: entry.hash,
@@ -243,6 +267,20 @@ export class GitService {
     const result = await this.git.commit(message.trim());
     if (!result.commit) throw new GitServiceError('NOTHING_TO_COMMIT', 'Nothing to commit');
     return { hash: result.commit, message: message.trim() };
+  }
+
+  private async hasHead(): Promise<boolean> {
+    try {
+      await this.git.revparse(['--verify', 'HEAD']);
+      return true;
+    } catch (headError) {
+      try {
+        await this.git.revparse(['--show-toplevel']);
+        return false;
+      } catch {
+        throw headError;
+      }
+    }
   }
 }
 

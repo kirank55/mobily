@@ -7,11 +7,13 @@ A free and open-source mobile remote-control for terminal-based development envi
 - **Live terminal** — full `xterm.js` terminal on your phone with special key support (Ctrl, Alt, Esc, arrows)
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
 - **Reconnectable session** — the current bare PTY survives phone/network disconnects while the CLI remains running
+- **Native Git controls** — browse changes, stage/unstage, inspect large diffs, switch branches, and commit from Android
+- **Multiple Stations** — retain paired workstations and switch between them without scanning again
 - **Pluggable tunneling** — Dev Tunnels for remote access, plus pinned TLS directly on your LAN
 - **No Mobily-operated cloud** — secure remote access currently uses Microsoft Dev Tunnels and requires operator authentication
 
-Planned features, including shared workstation/tmux sessions and the native Git
-GUI, are tracked in the roadmap and are not part of the current release.
+Planned features, including shared workstation/tmux sessions and background
+alerts, are tracked in the roadmap and are not part of the current release.
 
 ## Quick Start
 

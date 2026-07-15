@@ -347,6 +347,7 @@ function validateHelloAckFrame(obj: Record<string, unknown>): HelloAckFrame {
 
 const RPC_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const RPC_METHOD_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/;
+const MAX_RPC_METHOD_LENGTH = 128;
 const RPC_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const RPC_CURSOR_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_RPC_CHUNK_LENGTH = 16 * 1024;
@@ -358,7 +359,13 @@ function validateRpcFrame(obj: Record<string, unknown>): RpcRequestFrame | RpcRe
   const hasError = Object.prototype.hasOwnProperty.call(obj, 'error');
 
   if (hasMethod) {
-    if (hasResult || hasError || !RPC_METHOD_PATTERN.test(String(obj['method']))) {
+    if (
+      hasResult ||
+      hasError ||
+      typeof obj['method'] !== 'string' ||
+      obj['method'].length > MAX_RPC_METHOD_LENGTH ||
+      !RPC_METHOD_PATTERN.test(obj['method'])
+    ) {
       throw new TypeError('mobily/protocol: invalid RPC request shape');
     }
     if (!isJsonObject(obj['params']) || !isJsonValue(obj['params'])) {

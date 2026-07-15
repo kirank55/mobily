@@ -259,6 +259,7 @@ describe('decodeFrame errors: malformed rpc frames', () => {
   it.each([
     '{"type":"rpc","id":"has spaces","method":"git.status","params":{}}',
     '{"type":"rpc","id":"rpc-1","method":"git status","params":{}}',
+    `{"type":"rpc","id":"rpc-1","method":"git.${'a'.repeat(128)}","params":{}}`,
     '{"type":"rpc","id":"rpc-1","method":"git.status","params":[]}',
     '{"type":"rpc","id":"rpc-1","result":{},"error":{"code":"X","message":"x"}}',
     '{"type":"rpc-stream","id":"rpc-1","chunk":42,"done":false}',

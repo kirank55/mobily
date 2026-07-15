@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket, type RawData } from 'ws';
 import { decodeFrame, encodeFrame, GIT_RPC_METHODS, WS_CLOSE_CODES, type Frame } from '@mobily/shared';
 import { Session } from '../src/session.js';
@@ -141,5 +141,36 @@ describe('Git RPC over the Station WebSocket', () => {
       encodeFrame({ type: 'rpc', id: 'early-1', method: GIT_RPC_METHODS.STATUS, params: {} }),
     );
     await expect(closed).resolves.toBe(WS_CLOSE_CODES.PROTOCOL_ERROR);
+  });
+
+  it('bounds active RPC work per attached connection', async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rpc: Pick<RpcRouter, 'handle'> = {
+      handle: vi.fn(async () => await blocked),
+    };
+    const session = new Session({ rpc, maxActiveRpcRequests: 1 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+    const socket = new WebSocket(server.url);
+    sockets.push(socket);
+    const received = frames(socket);
+    await waitForOpen(socket);
+
+    socket.send(
+      encodeFrame({ type: 'rpc', id: 'held-1', method: GIT_RPC_METHODS.STATUS, params: {} }),
+    );
+    await expect.poll(() => rpc.handle).toHaveBeenCalledTimes(1);
+    socket.send(
+      encodeFrame({ type: 'rpc', id: 'busy-1', method: GIT_RPC_METHODS.STATUS, params: {} }),
+    );
+
+    await expect(
+      received.waitFor((frame) => frame.type === 'rpc' && frame.id === 'busy-1'),
+    ).resolves.toMatchObject({ error: { code: 'BUSY' } });
+    release();
   });
 });

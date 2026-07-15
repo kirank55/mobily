@@ -236,36 +236,37 @@
 
 ### Protocol Extension
 
-- [ ] `shared/protocol.ts`: add `rpc` request/response frames
+- [x] `shared/protocol.ts`: add `rpc` request/response frames
 
 ### Git RPC Handlers
 
-- [ ] `cli/src/git/status.ts`: `simple-git` — file status as JSON
-- [ ] `cli/src/git/log.ts`: `simple-git` — commit log as JSON
-- [ ] `cli/src/git/branch.ts`: `simple-git` — branch list/switch
-- [ ] `cli/src/git/stage.ts`: `simple-git` — stage/unstage files
-- [ ] `cli/src/git/commit.ts`: `simple-git` — commit with message
-- [ ] `cli/src/git/diff.ts`: add `rpc-stream` chunked response frames to `shared/protocol.ts` (`{ type, id, chunk, done }`); raw `git diff` spawn → stream as `rpc-stream` frames
+- [x] `cli/src/git/service.ts`: `simple-git` file status as JSON
+- [x] `cli/src/git/service.ts`: `simple-git` commit log as JSON
+- [x] `cli/src/git/service.ts`: `simple-git` branch list/switch
+- [x] `cli/src/git/service.ts`: `simple-git` stage/unstage files
+- [x] `cli/src/git/service.ts`: `simple-git` commit with message
+- [x] `cli/src/git/service.ts`: raw `git diff` spawn → chunked `rpc-stream` frames (`{ type, id, chunk, done }`)
 
 ### Android Git UI
 
-- [ ] `android/app/git/`: file list (virtualized)
-- [ ] Unified diff view
-- [ ] Side-by-side diff view
-- [ ] Branch picker
-- [ ] Commit dialog
+- [x] `android/src/git/`: file list (virtualized)
+- [x] Unified diff view
+- [x] Side-by-side diff view
+- [x] Branch picker
+- [x] Commit dialog
 
 ### Host List UI
 
-- [ ] Generalize pairing storage from single record to list: `[{ stationName, tunnelUrl, pairedAt }]`
-- [ ] `android/app/hosts/`: station list screen
-- [ ] Station name, last connected, status indicator (online/offline)
-- [ ] Switch between stations without re-scanning
+- [x] Generalize pairing storage from single record to list: `[{ stationName, tunnelUrl, pairedAt }]`
+- [x] `android/src/hosts/`: Station list screen
+- [x] Station name, last connected, status indicator (online/offline)
+- [x] Switch between stations without re-scanning
 
 ### Tests
 
-- [ ] vitest: Git RPC handlers (mock git repo)
-- [ ] Maestro: host list navigation
+- [x] vitest: Git RPC handlers (temporary real Git repositories)
+- [x] Define the Maestro host-list navigation flow
+- [ ] Run the host-list flow against a test build seeded with two Station pairings and Device Keys
 
 **DoD:** browse changes, stage, commit from phone without terminal; large diffs (1000+ lines) render without jank; switch between multiple paired stations.
 

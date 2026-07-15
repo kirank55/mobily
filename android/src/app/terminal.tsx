@@ -18,6 +18,7 @@ import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
+import { deleteKey } from '@/auth/deviceKey';
 import { loadPairing, clearPairing } from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
@@ -45,8 +46,16 @@ export default function TerminalRoute() {
 
   const handleReScan = useCallback(() => {
     disconnect();
-    void clearPairing();
-    router.replace('/scanner');
+    void (async () => {
+      try {
+        const removed = await clearPairing();
+        if (removed) await deleteKey(removed.keyAlias);
+      } catch (error) {
+        console.warn('Failed to clear the selected pairing', error);
+      } finally {
+        router.replace('/scanner');
+      }
+    })();
   }, [disconnect]);
 
   const handleRetry = useCallback(() => {
@@ -152,10 +161,10 @@ export default function TerminalRoute() {
               ? `Reconnecting… ${detail}`
               : `Connecting to ${stationName}…`}
         </Text>
-        <TouchableOpacity onPress={() => router.push('/git' as never)} accessibilityLabel="Open Git">
+        <TouchableOpacity onPress={() => router.navigate('/git' as never)} accessibilityLabel="Open Git">
           <Text style={styles.navLink}>Git</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/hosts' as never)} accessibilityLabel="Open Stations">
+        <TouchableOpacity onPress={() => router.navigate('/hosts' as never)} accessibilityLabel="Open Stations">
           <Text style={styles.navLink}>Stations</Text>
         </TouchableOpacity>
         {latencyStats && (

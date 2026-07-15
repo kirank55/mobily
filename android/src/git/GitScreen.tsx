@@ -120,7 +120,7 @@ export default function GitScreen() {
       <SafeAreaView style={styles.center}>
         <Text style={styles.title}>Git</Text>
         <Text style={styles.muted}>Connect to a Station before opening its repository.</Text>
-        <Pressable style={styles.primaryButton} onPress={() => router.push('/hosts' as never)}>
+        <Pressable style={styles.primaryButton} onPress={() => router.navigate('/hosts' as never)}>
           <Text style={styles.primaryText}>Choose Station</Text>
         </Pressable>
       </SafeAreaView>
@@ -136,8 +136,8 @@ export default function GitScreen() {
             <Text style={styles.branch}>{status?.branch ?? 'Detached HEAD'} ▾</Text>
           </Pressable>
         </View>
-        <Pressable onPress={() => router.push('/terminal')}><Text style={styles.link}>Terminal</Text></Pressable>
-        <Pressable onPress={() => router.push('/hosts' as never)}><Text style={styles.link}>Stations</Text></Pressable>
+        <Pressable onPress={() => router.navigate('/terminal')}><Text style={styles.link}>Terminal</Text></Pressable>
+        <Pressable onPress={() => router.navigate('/hosts' as never)}><Text style={styles.link}>Stations</Text></Pressable>
       </View>
 
       {error.length > 0 && <Text style={styles.error}>{error}</Text>}

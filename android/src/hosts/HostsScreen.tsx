@@ -17,6 +17,7 @@ export default function HostsScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
+      const controller = new AbortController();
       void (async () => {
         const records = await listPairings();
         if (cancelled) return;
@@ -25,20 +26,23 @@ export default function HostsScreen() {
         setStatuses(
           Object.fromEntries(records.map((record) => [record.deviceBindingId, 'checking'])),
         );
-        await Promise.all(
-          records.map(async (record) => {
-            const online = await probeStation(record);
-            if (!cancelled) {
-              setStatuses((current) => ({
-                ...current,
-                [record.deviceBindingId]: online ? 'online' : 'offline',
-              }));
-            }
-          }),
-        );
+        for (let start = 0; start < records.length && !controller.signal.aborted; start += 4) {
+          await Promise.all(
+            records.slice(start, start + 4).map(async (record) => {
+              const online = await probeStation(record, 3_000, controller.signal);
+              if (!cancelled) {
+                setStatuses((current) => ({
+                  ...current,
+                  [record.deviceBindingId]: online ? 'online' : 'offline',
+                }));
+              }
+            }),
+          );
+        }
       })();
       return () => {
         cancelled = true;
+        controller.abort();
       };
     }, []),
   );
@@ -47,7 +51,7 @@ export default function HostsScreen() {
     async (record: PairingRecord) => {
       await selectPairing(record.deviceBindingId);
       connect(record);
-      router.push('/terminal');
+      router.navigate('/terminal');
     },
     [connect],
   );

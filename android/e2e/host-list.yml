@@ -1,0 +1,31 @@
+# Maestro flow: navigate between two pre-paired Stations.
+#
+# Prerequisite: the test build seeds `mobily.pairings.v2` with two reachable
+# Station fixtures named "Station One" and "Station Two", and seeds their
+# matching Device Keys in Android Keystore.
+
+appId: com.anonymous.mobily
+---
+- launchApp:
+    clearState: false
+
+- assertVisible: "Stations"
+- assertVisible: "Station One"
+- assertVisible: "Station Two"
+- assertVisible: "Last connected"
+
+- tapOn: "Open Station One"
+- assertVisible: "Station One"
+- assertVisible: "Git"
+- assertVisible: "Stations"
+
+- tapOn: "Stations"
+- assertVisible: "Station Two"
+- tapOn: "Open Station Two"
+- assertVisible: "Station Two"
+
+- tapOn: "Stations"
+- tapOn: "Add Station"
+- assertVisible: "Point at the QR code on your Station"
+
+- takeScreenshot: "host-list-navigation"
