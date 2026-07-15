@@ -34,6 +34,7 @@ import {
 } from '@mobily/shared';
 import { spawn, type IDisposable, type PtyProcess, type SpawnOptions } from './pty/node-pty.js';
 import type { AuthManager } from './auth.js';
+import type { RpcRouter } from './rpc/router.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
@@ -45,6 +46,8 @@ export interface SessionOptions extends SpawnOptions {
   auth?: AuthManager;
   /** Maximum time allowed for hello + Device Key authentication. @default 10000 */
   handshakeTimeoutMs?: number;
+  /** Structured request router available after authentication. */
+  rpc?: RpcRouter;
 }
 
 /**
@@ -57,16 +60,19 @@ export class Session {
   readonly pty: PtyProcess;
 
   private readonly auth?: AuthManager;
+  private readonly rpc?: RpcRouter;
   private readonly handshakeTimeoutMs: number;
   private readonly subscribers = new Set<WebSocket>();
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
+  private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
 
   constructor(opts: SessionOptions = {}) {
-    const { auth, handshakeTimeoutMs = 10_000, ...spawnOpts } = opts;
+    const { auth, rpc, handshakeTimeoutMs = 10_000, ...spawnOpts } = opts;
     this.auth = auth;
+    this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.pty = spawn(spawnOpts);
 
@@ -215,10 +221,13 @@ export class Session {
   private attachAuthenticated(ws: WebSocket): void {
     this.subscribers.add(ws);
     this.pendingLatencyTags.set(ws, []);
+    this.activeRpcRequests.set(ws, new Map());
     ws.on('message', (data) => this.handleMessage(ws, data));
     const detach = (): void => {
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
+      for (const controller of this.activeRpcRequests.get(ws)?.values() ?? []) controller.abort();
+      this.activeRpcRequests.delete(ws);
     };
     ws.on('close', detach);
     ws.on('error', detach);
@@ -258,6 +267,13 @@ export class Session {
           });
         }
         break;
+      case 'rpc':
+        if ('method' in frame) this.handleRpc(ws, frame);
+        else ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected RPC response');
+        break;
+      case 'rpc-stream':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected RPC stream');
+        break;
       case 'output':
         break;
       case 'hello':
@@ -267,6 +283,32 @@ export class Session {
       case 'auth-ok':
         break;
     }
+  }
+
+  private handleRpc(ws: WebSocket, frame: Extract<Frame, { type: 'rpc'; method: string }>): void {
+    if (!this.rpc) {
+      this.sendTo(ws, {
+        type: 'rpc',
+        id: frame.id,
+        error: { code: 'METHOD_NOT_FOUND', message: 'Structured RPC is not enabled' },
+      });
+      return;
+    }
+    const active = this.activeRpcRequests.get(ws);
+    if (!active) return;
+    if (active.has(frame.id)) {
+      this.sendTo(ws, {
+        type: 'rpc',
+        id: frame.id,
+        error: { code: 'DUPLICATE_REQUEST', message: 'RPC request id is already active' },
+      });
+      return;
+    }
+    const controller = new AbortController();
+    active.set(frame.id, controller);
+    void this.rpc
+      .handle(frame, (outbound) => this.sendTo(ws, outbound), controller.signal)
+      .finally(() => active.delete(frame.id));
   }
 
   // -------------------------------------------------------------------------
@@ -327,6 +369,10 @@ export class Session {
     }
     this.subscribers.clear();
     this.pendingLatencyTags.clear();
+    for (const active of this.activeRpcRequests.values()) {
+      for (const controller of active.values()) controller.abort();
+    }
+    this.activeRpcRequests.clear();
     try {
       this.pty.kill();
     } catch {

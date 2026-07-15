@@ -16,6 +16,8 @@ import { PAIRING_CODE_TTL_MS } from './auth.js';
 import { formatCliError, UserFacingError } from './errors.js';
 import { defaultBindingFile, FileBindingRepository } from './bindings.js';
 import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
+import { GitService } from './git/service.js';
+import { RpcRouter } from './rpc/router.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -85,7 +87,14 @@ export async function main(): Promise<void> {
     verbose: values.verbose,
     allowInsecureLocal: values['allow-insecure-local'],
   });
-  const session = new Session({ cols: 80, rows: 24, auth });
+  const cwd = process.cwd();
+  const session = new Session({
+    cols: 80,
+    rows: 24,
+    cwd,
+    auth,
+    rpc: new RpcRouter(new GitService(cwd)),
+  });
   const server = await startServer({
     session,
     host: tunnel.bindHost,
