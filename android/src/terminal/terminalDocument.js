@@ -143,3 +143,5 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
 </body>
 </html>`;
 }
+
+

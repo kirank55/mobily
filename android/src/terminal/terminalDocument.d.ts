@@ -6,3 +6,5 @@ export interface TerminalDocumentAssets {
 }
 
 export function buildTerminalDocument(assets: TerminalDocumentAssets): string;
+
+
