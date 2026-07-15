@@ -80,7 +80,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       onStateChange: (nextState, nextDetail) => {
         setState(nextState);
         setDetail(nextDetail ?? '');
-        if (nextState === 'reconnecting' || nextState === 'failed' || nextState === 'disconnected') {
+        if (
+          nextState === 'reconnecting' ||
+          nextState === 'failed' ||
+          nextState === 'disconnected'
+        ) {
           nextRpc.disconnect();
         }
         if (nextState === 'failed' || nextState === 'disconnected') {
@@ -96,7 +100,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       onAlert: (message) => void foreground.current.alert(message),
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
       onReady: () => {
-        void markConnected(nextPairing.deviceBindingId);
+        void markConnected(nextPairing.deviceBindingId).catch((error) => {
+          console.warn('[Mobily][Connection] Failed to update last-connected metadata', error);
+        });
       },
       onError: (message, kind) => {
         setDetail(message);
@@ -132,7 +138,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active' || !clientRef.current) return;
       const current = clientRef.current.currentState;
-      if (current === 'disconnected' || (current === 'failed' && errorKind !== 'auth-rejection')) {
+      if (
+        current === 'disconnected' ||
+        (current === 'failed' && errorKind !== 'auth-rejection' && errorKind !== 'device-key-error')
+      ) {
         if (pairingRef.current) void foreground.current.connect(pairingRef.current.stationName);
         clientRef.current.connect();
       }
@@ -171,9 +180,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     ],
   );
   return (
-    <StationConnectionContext.Provider value={value}>
-      {children}
-    </StationConnectionContext.Provider>
+    <StationConnectionContext.Provider value={value}>{children}</StationConnectionContext.Provider>
   );
 }
 

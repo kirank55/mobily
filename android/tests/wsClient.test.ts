@@ -89,6 +89,58 @@ describe('WsClient', () => {
     expect(outputs).toEqual([{ data: 'ready', tags: ['lat-12345678'] }]);
   });
 
+  it('distinguishes a Device Key signing failure from biometric cancellation', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const nativeError = new Error('Device Key was permanently invalidated');
+    deviceKey.signNonce.mockRejectedValue(nativeError);
+    const { client, states, errors } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe('failed'));
+    expect(errors).toEqual(['device-key-error']);
+    expect(socket.sent).toHaveLength(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[Mobily][Connection] Device Key signing failed',
+      nativeError,
+    );
+  });
+
+  it('reports an explicitly cancelled biometric prompt as cancellation', async () => {
+    deviceKey.signNonce.mockResolvedValue(null);
+    const { client, states, errors } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe('failed'));
+    expect(errors).toEqual(['biometric-cancelled']);
+  });
+
+  it('allows retry after a transient biometric failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    deviceKey.signNonce.mockRejectedValue(
+      Object.assign(new Error('Biometric sensor is temporarily unavailable'), {
+        code: 'ERR_BIOMETRIC_AUTHENTICATION',
+      }),
+    );
+    const { client, states, errors } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe('failed'));
+    expect(errors).toEqual(['biometric-error']);
+    expect(errorSpy).toHaveBeenCalledOnce();
+  });
+
   it('maps permanent close codes to user-facing failures without reconnecting', () => {
     const { client, states, errors } = createClient();
     client.connect();

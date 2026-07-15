@@ -19,27 +19,50 @@ export default function ScannerScreen() {
   const [status, setStatus] = useState<'scanning' | 'pairing' | 'error'>('scanning');
   const [errorMsg, setErrorMsg] = useState('');
   const scannedRef = useRef(false);
+  const invalidQrLoggedRef = useRef(false);
+
+  function showPairingError(message: string) {
+    setStatus('error');
+    setErrorMsg(message);
+    setTimeout(() => {
+      scannedRef.current = false;
+      setStatus('scanning');
+    }, 3000);
+  }
 
   async function handleBarcodeScanned(data: string) {
     if (scannedRef.current) return;
     const parsed = parseQrPayload(data);
-    if (!parsed) return;
+    if (!parsed) {
+      if (!invalidQrLoggedRef.current) {
+        invalidQrLoggedRef.current = true;
+        console.warn('[Mobily][Scanner] Ignored a QR code that is not a valid Mobily payload');
+      }
+      return;
+    }
 
     scannedRef.current = true;
+    console.info('[Mobily][Scanner] Valid Mobily QR detected; starting pairing');
     setStatus('pairing');
     setErrorMsg('');
 
-    const result = await pairWithStation(parsed);
+    let result;
+    try {
+      result = await pairWithStation(parsed);
+    } catch (error) {
+      console.error('[Mobily][Scanner] Unexpected pairing failure', error);
+      showPairingError('Unexpected pairing failure. See the console for details.');
+      return;
+    }
 
     if (result.ok && result.record) {
+      console.info('[Mobily][Scanner] Pairing succeeded; opening terminal');
       router.replace('/terminal');
     } else {
-      setStatus('error');
-      setErrorMsg(result.error ?? 'Pairing failed');
-      setTimeout(() => {
-        scannedRef.current = false;
-        setStatus('scanning');
-      }, 3000);
+      console.warn('[Mobily][Scanner] Pairing did not complete', {
+        reason: result.error ?? 'Pairing failed',
+      });
+      showPairingError(result.error ?? 'Pairing failed');
     }
   }
 

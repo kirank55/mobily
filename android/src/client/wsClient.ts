@@ -32,7 +32,13 @@ export type ConnectionState =
 
 /** Structured error types for UX-specific messaging. */
 export type ErrorKind =
-  'auth-rejection' | 'version-mismatch' | 'station-offline' | 'biometric-cancelled' | 'generic';
+  | 'auth-rejection'
+  | 'version-mismatch'
+  | 'station-offline'
+  | 'biometric-cancelled'
+  | 'biometric-error'
+  | 'device-key-error'
+  | 'generic';
 
 export interface WsClientOptions {
   url: string;
@@ -72,6 +78,19 @@ interface SocketLike {
 
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30000;
+
+function deviceKeyRequiresRepair(error: unknown): boolean {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+  if (code === 'ERR_DEVICE_KEY_INVALIDATED' || code === 'ERR_DEVICE_KEY_UNAVAILABLE') {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalidated|unavailable|could not be recovered|pair this Station again/i.test(message);
+}
+
 type HandshakeState =
   | 'idle'
   | 'awaiting-hello-ack'
@@ -106,6 +125,7 @@ export class WsClient {
 
   /** Open the connection and start the handshake. */
   connect(): void {
+    console.info('[Mobily][Connection] Connecting to paired Station');
     this.deliberatelyClosed = false;
     this.reconnectSuppressed = false;
     this.authRejected = false;
@@ -186,6 +206,7 @@ export class WsClient {
 
     socket.onopen = () => {
       if (!this.isCurrentSocket(socket, generation)) return;
+      console.info('[Mobily][Connection] Socket opened; starting protocol negotiation');
       this.sendOn(socket, { type: 'hello', protocolVersion: this.opts.protocolVersion });
     };
 
@@ -257,6 +278,7 @@ export class WsClient {
           return;
         }
         this.handshakeState = 'awaiting-challenge';
+        console.info('[Mobily][Connection] Protocol negotiation completed');
         break;
       }
 
@@ -266,6 +288,7 @@ export class WsClient {
           return;
         }
         this.handshakeState = 'signing-challenge';
+        console.info('[Mobily][Connection] Station requested Device Key authentication');
         let signature: string | null;
         try {
           signature = await signNonce(
@@ -273,8 +296,24 @@ export class WsClient {
             'Authenticate to connect to your Station',
             this.opts.keyAlias,
           );
-        } catch {
-          signature = null;
+        } catch (error) {
+          console.error('[Mobily][Connection] Device Key signing failed', error);
+          if (
+            !this.isCurrentSocket(socket, generation) ||
+            this.handshakeState !== 'signing-challenge'
+          ) {
+            return;
+          }
+          const requiresRepair = deviceKeyRequiresRepair(error);
+          const message = requiresRepair
+            ? 'Device Key is unavailable or invalidated. Scan QR to pair again.'
+            : 'Biometric authentication failed. Retry when the device is ready.';
+          const kind: ErrorKind = requiresRepair ? 'device-key-error' : 'biometric-error';
+          this.reconnectSuppressed = true;
+          this.emitError(message, kind);
+          this.setState('failed', message);
+          socket.close(1008, requiresRepair ? 'device key error' : 'biometric error');
+          return;
         }
         if (
           !this.isCurrentSocket(socket, generation) ||
@@ -283,6 +322,7 @@ export class WsClient {
           return;
         }
         if (signature === null) {
+          console.warn('[Mobily][Connection] Biometric authentication was cancelled');
           this.reconnectSuppressed = true;
           this.emitError('Biometric authentication cancelled', 'biometric-cancelled');
           this.setState('failed', 'biometric-cancelled');
@@ -294,6 +334,7 @@ export class WsClient {
           deviceId: this.opts.deviceBindingId,
           signature,
         });
+        console.info('[Mobily][Connection] Device Key response sent');
         this.handshakeState = 'awaiting-auth-ok';
         break;
       }
@@ -332,6 +373,7 @@ export class WsClient {
         this.retries = 0;
         this.backoff = INITIAL_BACKOFF_MS;
         this.setState('connected');
+        console.info('[Mobily][Connection] Device Key accepted; terminal connected');
         this.opts.onReady?.();
         break;
 

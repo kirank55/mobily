@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const bindingId = parseDeviceBindingId('binding_AAAAAAAAAAAAAAAAAAAAAA')!;
 const deviceKey = vi.hoisted(() => ({
   createDeviceKey: vi.fn(),
+  deleteKey: vi.fn(),
+  getDeviceKeyAvailability: vi.fn(),
   generateDeviceBindingId: vi.fn(),
   signNonce: vi.fn(),
 }));
@@ -25,16 +27,54 @@ const pairing: PairingPayload = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deviceKey.getDeviceKeyAvailability.mockResolvedValue({
+    available: true,
+    reason: 'available',
+    biometricStatus: 0,
+    deviceSecure: true,
+  });
   deviceKey.generateDeviceBindingId.mockReturnValue(bindingId);
   deviceKey.createDeviceKey.mockResolvedValue({
     deviceBindingId: bindingId,
     keyAlias: 'mobily.device.test',
     publicKey: 'key',
+    hardwareBacked: true,
+    securityLevel: 'trusted-environment',
   });
   deviceKey.signNonce.mockResolvedValue('proof');
 });
 
 describe('pairWithStation()', () => {
+  it('stops before key generation when a secure lock screen is not configured', async () => {
+    deviceKey.getDeviceKeyAvailability.mockResolvedValue({
+      available: false,
+      reason: 'secure-lock-screen-not-configured',
+      biometricStatus: 11,
+      deviceSecure: false,
+    });
+
+    await expect(pairWithStation(pairing)).resolves.toEqual({
+      ok: false,
+      error: 'Set up a secure screen lock (PIN, pattern, or password) before pairing.',
+    });
+    expect(deviceKey.createDeviceKey).not.toHaveBeenCalled();
+  });
+
+  it('logs the native error when Device Key creation fails', async () => {
+    const nativeError = new Error('AndroidKeyStore is unavailable');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    deviceKey.createDeviceKey.mockRejectedValue(nativeError);
+
+    await expect(pairWithStation(pairing)).resolves.toEqual({
+      ok: false,
+      error: 'Android could not create the Device Key. See the console for details.',
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[Mobily][Pairing] Device Key creation failed',
+      nativeError,
+    );
+  });
+
   it('validates the Station response before saving a pairing', async () => {
     vi.stubGlobal(
       'fetch',

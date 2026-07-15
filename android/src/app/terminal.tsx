@@ -82,14 +82,20 @@ export default function TerminalRoute() {
   }, [subscribeOutput]);
 
   // ── Terminal resize → send to WS ────────────────────────────────────────
-  const handleTermResize = useCallback((cols: number, rows: number) => {
-    sendResize(cols, rows);
-  }, [sendResize]);
+  const handleTermResize = useCallback(
+    (cols: number, rows: number) => {
+      sendResize(cols, rows);
+    },
+    [sendResize],
+  );
 
   // ── Terminal input → send to WS ─────────────────────────────────────────
-  const handleTermInput = useCallback((data: string, latencyTag: string) => {
-    sendInput(data, latencyTag);
-  }, [sendInput]);
+  const handleTermInput = useCallback(
+    (data: string, latencyTag: string) => {
+      sendInput(data, latencyTag);
+    },
+    [sendInput],
+  );
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -97,6 +103,8 @@ export default function TerminalRoute() {
     const isAuthRejection = errorKind === 'auth-rejection';
     const isVersionMismatch = errorKind === 'version-mismatch';
     const isBiometric = errorKind === 'biometric-cancelled';
+    const isBiometricError = errorKind === 'biometric-error';
+    const isDeviceKeyError = errorKind === 'device-key-error';
 
     const headline = isAuthRejection
       ? 'Device not recognized'
@@ -104,7 +112,11 @@ export default function TerminalRoute() {
         ? 'Please update'
         : isBiometric
           ? 'Authentication cancelled'
-          : 'Connection lost';
+          : isBiometricError
+            ? 'Biometric authentication failed'
+            : isDeviceKeyError
+              ? 'Device Key unavailable'
+              : 'Connection lost';
 
     const subtext = isAuthRejection
       ? 'Scan QR to re-pair your device'
@@ -112,14 +124,18 @@ export default function TerminalRoute() {
         ? 'Update the app or the CLI to the same version'
         : isBiometric
           ? 'Biometric authentication was cancelled. Tap Retry to try again.'
-          : detail || 'Is the CLI running on your Station?';
+          : isBiometricError
+            ? 'Android could not complete biometric authentication. Tap Retry to try again.'
+            : isDeviceKeyError
+              ? 'The Device Key is missing or invalidated. Re-scan the QR code to pair again.'
+              : detail || 'Is the CLI running on your Station?';
 
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.center}>
           <Text style={styles.errorHeadline}>{headline}</Text>
           <Text style={styles.errorDetail}>{subtext}</Text>
-          {!isAuthRejection && (
+          {!isAuthRejection && !isDeviceKeyError && (
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={handleRetry}
@@ -161,10 +177,16 @@ export default function TerminalRoute() {
               ? `Reconnecting… ${detail}`
               : `Connecting to ${stationName}…`}
         </Text>
-        <TouchableOpacity onPress={() => router.navigate('/git' as never)} accessibilityLabel="Open Git">
+        <TouchableOpacity
+          onPress={() => router.navigate('/git' as never)}
+          accessibilityLabel="Open Git"
+        >
           <Text style={styles.navLink}>Git</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.navigate('/hosts' as never)} accessibilityLabel="Open Stations">
+        <TouchableOpacity
+          onPress={() => router.navigate('/hosts' as never)}
+          accessibilityLabel="Open Stations"
+        >
           <Text style={styles.navLink}>Stations</Text>
         </TouchableOpacity>
         {latencyStats && (

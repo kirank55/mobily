@@ -13,7 +13,14 @@ import {
   type PairingPayload,
   type PairingResponse,
 } from '@mobily/shared';
-import { createDeviceKey, deleteKey, generateDeviceBindingId, signNonce } from './deviceKey';
+import {
+  createDeviceKey,
+  deleteKey,
+  generateDeviceBindingId,
+  getDeviceKeyAvailability,
+  signNonce,
+  type DeviceKeyAvailability,
+} from './deviceKey';
 import { savePairing, type PairingRecord } from './storage';
 import { pinnedJsonRequest } from '@/client/pinnedTransport';
 
@@ -23,6 +30,24 @@ export interface PairResult {
   record?: PairingRecord;
   error?: string;
 }
+
+const AVAILABILITY_ERRORS: Record<DeviceKeyAvailability['reason'], string> = {
+  available: '',
+  'secure-lock-screen-not-configured':
+    'Set up a secure screen lock (PIN, pattern, or password) before pairing.',
+  'strong-biometric-not-enrolled':
+    'Enroll a strong biometric (usually a fingerprint) before pairing.',
+  'biometric-hardware-unavailable':
+    'Biometric hardware is temporarily unavailable. Try again in a moment.',
+  'biometric-hardware-not-present':
+    'This device does not have supported strong biometric hardware.',
+  'biometric-security-update-required':
+    'Install the device security update required for biometric authentication.',
+  'strong-biometric-unsupported': 'This device does not support strong biometric authentication.',
+  'context-unavailable': 'Biometric status is unavailable. Reopen the app and try again.',
+  'biometric-status-unknown':
+    'Android could not determine biometric availability. See the console for details.',
+};
 
 /**
  * Pair with a Station: send the pairing code + Device Key to the CLI,
@@ -35,31 +60,78 @@ export async function pairWithStation(
   pairing: PairingPayload,
   options: { allowInsecureTransport?: boolean } = {},
 ): Promise<PairResult> {
+  console.info('[Mobily][Pairing] Pairing started', {
+    protocolVersion: pairing.protocolVersion,
+    pinnedTransport: Boolean(pairing.certificatePin),
+  });
   if (pairing.protocolVersion !== PROTOCOL_VERSION) {
+    console.warn('[Mobily][Pairing] Protocol version mismatch');
     return { ok: false, error: 'Please update the app or CLI before pairing.' };
   }
   const insecureDevelopmentOverride = __DEV__ && options.allowInsecureTransport === true;
   if (!isSecureWebSocketUrl(pairing.endpoint) && !insecureDevelopmentOverride) {
+    console.warn('[Mobily][Pairing] Refused insecure Station transport');
     return { ok: false, error: 'Refusing insecure Station transport.' };
+  }
+
+  console.info('[Mobily][Pairing] Checking secure lock screen and strong biometrics');
+  let availability: DeviceKeyAvailability;
+  try {
+    availability = await getDeviceKeyAvailability();
+  } catch (error) {
+    console.error('[Mobily][Pairing] Device security check failed', error);
+    return {
+      ok: false,
+      error: 'Cannot check device security. Reinstall the latest development build.',
+    };
+  }
+  console.info('[Mobily][Pairing] Device security check completed', availability);
+  if (!availability.available) {
+    return {
+      ok: false,
+      error:
+        AVAILABILITY_ERRORS[availability.reason] ??
+        'Android could not determine biometric availability. See the console for details.',
+    };
   }
 
   const deviceBindingId = generateDeviceBindingId();
 
   let publicKey: string;
   let keyAlias: string;
+  let hardwareBacked: boolean;
+  let securityLevel: string;
+  console.info('[Mobily][Pairing] Creating Device Key in Android Keystore');
   try {
     const keyResult = await createDeviceKey(deviceBindingId);
     publicKey = keyResult.publicKey;
     keyAlias = keyResult.keyAlias;
-  } catch {
-    return { ok: false, error: 'Failed to create Device Key. Is biometrics set up?' };
+    hardwareBacked = keyResult.hardwareBacked;
+    securityLevel = keyResult.securityLevel;
+  } catch (error) {
+    console.error('[Mobily][Pairing] Device Key creation failed', error);
+    return {
+      ok: false,
+      error: 'Android could not create the Device Key. See the console for details.',
+    };
+  }
+  const keySecurity = { hardwareBacked, securityLevel };
+  if (hardwareBacked) {
+    console.info('[Mobily][Pairing] Device Key created', keySecurity);
+  } else {
+    console.warn(
+      '[Mobily][Pairing] Device Key created without secure hardware backing',
+      keySecurity,
+    );
   }
   const fail = async (error: string): Promise<PairResult> => {
     try {
       await deleteKey(keyAlias);
-    } catch {
+    } catch (cleanupError) {
       // Best-effort cleanup; an unreferenced alias can be overwritten safely.
+      console.warn('[Mobily][Pairing] Device Key cleanup failed', cleanupError);
     }
+    console.warn('[Mobily][Pairing] Pairing failed', { reason: error });
     return { ok: false, error };
   };
 
@@ -71,16 +143,20 @@ export async function pairWithStation(
     pairing.certificatePin,
   );
   let proof: string | null;
+  console.info('[Mobily][Pairing] Requesting biometric confirmation');
   try {
     proof = await signNonce(proofPayload, 'Confirm pairing with this Station', keyAlias);
-  } catch {
+  } catch (error) {
+    console.error('[Mobily][Pairing] Device Key proof failed', error);
     return await fail('Failed to prove Device Key ownership.');
   }
   if (!proof) {
     return await fail('Pairing confirmation was cancelled.');
   }
+  console.info('[Mobily][Pairing] Device Key ownership confirmed');
 
   let resp: { ok: boolean; status: number; json(): Promise<unknown> };
+  console.info('[Mobily][Pairing] Sending pairing request to Station');
   try {
     const body = { code: pairing.code, deviceId: deviceBindingId, publicKey, proof };
     resp = pairing.certificatePin
@@ -95,10 +171,12 @@ export async function pairWithStation(
           body: JSON.stringify(body),
         });
   } catch (err) {
+    console.error('[Mobily][Pairing] Station request failed', err);
     return await fail(
       `Cannot reach Station — ${err instanceof Error ? err.message : 'network error'}`,
     );
   }
+  console.info('[Mobily][Pairing] Station responded', { status: resp.status, ok: resp.ok });
 
   if (!resp.ok) {
     let error = `Pairing failed (HTTP ${resp.status})`;
@@ -140,9 +218,11 @@ export async function pairWithStation(
 
   try {
     await savePairing(record);
-  } catch {
+  } catch (error) {
+    console.error('[Mobily][Pairing] Saving pairing failed', error);
     return await fail('Could not save the paired Station.');
   }
 
+  console.info('[Mobily][Pairing] Pairing completed', { stationName: record.stationName });
   return { ok: true, record };
 }

@@ -3,12 +3,24 @@ import { randomUUID } from 'expo-crypto';
 import { parseDeviceBindingId, type DeviceBindingId } from '@mobily/shared';
 import { LEGACY_KEY_ALIAS } from './storage';
 
+interface NativeDeviceKeyResult {
+  publicKey: string;
+  hardwareBacked: boolean;
+  securityLevel: 'strongbox' | 'trusted-environment' | 'software';
+}
+
 interface MobilyDeviceKeyModule {
-  createKey(alias: string): Promise<string>;
-  sign(alias: string, payload: string, promptMessage: string, cancelButtonText: string): Promise<string | null>;
+  createKey(alias: string): Promise<NativeDeviceKeyResult>;
+  sign(
+    alias: string,
+    payload: string,
+    promptMessage: string,
+    cancelButtonText: string,
+  ): Promise<string | null>;
   hasKey(alias: string): Promise<boolean>;
   deleteKey(alias: string): Promise<boolean>;
   isAvailable(): Promise<boolean>;
+  getAvailability(): Promise<DeviceKeyAvailability>;
 }
 
 let cachedModule: MobilyDeviceKeyModule | null = null;
@@ -21,6 +33,26 @@ export interface DeviceKeyResult {
   deviceBindingId: DeviceBindingId;
   keyAlias: string;
   publicKey: string;
+  hardwareBacked: boolean;
+  securityLevel: NativeDeviceKeyResult['securityLevel'];
+}
+
+export type DeviceKeyAvailabilityReason =
+  | 'available'
+  | 'secure-lock-screen-not-configured'
+  | 'strong-biometric-not-enrolled'
+  | 'biometric-hardware-unavailable'
+  | 'biometric-hardware-not-present'
+  | 'biometric-security-update-required'
+  | 'strong-biometric-unsupported'
+  | 'context-unavailable'
+  | 'biometric-status-unknown';
+
+export interface DeviceKeyAvailability {
+  available: boolean;
+  reason: DeviceKeyAvailabilityReason;
+  biometricStatus: number;
+  deviceSecure: boolean;
 }
 
 export function keyAliasForBinding(deviceBindingId: DeviceBindingId): string {
@@ -29,8 +61,8 @@ export function keyAliasForBinding(deviceBindingId: DeviceBindingId): string {
 
 export async function createDeviceKey(deviceBindingId: DeviceBindingId): Promise<DeviceKeyResult> {
   const keyAlias = keyAliasForBinding(deviceBindingId);
-  const publicKey = await nativeModule().createKey(keyAlias);
-  return { deviceBindingId, keyAlias, publicKey };
+  const key = await nativeModule().createKey(keyAlias);
+  return { deviceBindingId, keyAlias, ...key };
 }
 
 export async function signNonce(
@@ -56,6 +88,10 @@ export async function deleteKeys(): Promise<void> {
 
 export async function isBiometricsAvailable(): Promise<boolean> {
   return await nativeModule().isAvailable();
+}
+
+export async function getDeviceKeyAvailability(): Promise<DeviceKeyAvailability> {
+  return await nativeModule().getAvailability();
 }
 
 export function generateDeviceBindingId(): DeviceBindingId {
