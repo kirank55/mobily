@@ -287,11 +287,14 @@
 ### Shared Android + Workstation Terminal
 
 - [x] Attach Mobily's PTY to the named tmux session used by Android instead of creating an Android-only shell
-- [x] Print an exact workstation attach command such as `tmux attach -t mobily-<session>`
-- [x] Stream the same output to Android and the attached workstation terminal; accept input from either client
+- [x] Attach the launching interactive CLI console directly to the shared session with scrollback-before-live ordering
+- [x] Stream exact PTY output to Android and the embedded workstation terminal; accept input from either client
+- [x] Reserve Ctrl+C for Mobily shutdown and map Ctrl+X to a shared-session interrupt
+- [x] Make workstation dimensions authoritative while the embedded terminal is active
+- [x] Print an exact workstation attach command such as `tmux attach -t mobily-<session>` for an optional additional client
 - [x] Define session naming/selection, reuse, detach/terminate behavior, and stale-session cleanup
 - [x] Define shared-window resize behavior for differently sized Android and workstation clients
-- [x] Explain the `BareBackend` limitation when tmux is unavailable: no simultaneous workstation attachment
+- [x] Explain the `BareBackend` limitation when tmux is unavailable: embedded mirroring works, but persistence and additional attachment do not
 
 ### Scrollback Replay
 
@@ -318,9 +321,10 @@
 ### Tests
 
 - [x] vitest: scrollback replay (both backends)
+- [x] vitest: embedded workstation replay/live output, input controls, resize authority, cleanup, and non-TTY fallback
 - [x] Define Maestro flow: background → foreground → reconnected
 - [x] Define Maestro flow: notification shows alert content and opens Mobily
 - [ ] Run both Phase 5 Maestro flows on an API 26+ device/emulator with a live Station fixture
 - [ ] Accept simultaneous Android/workstation control, CLI-crash reattachment, and a long background/network-change session on device
 
-**DoD:** Android and an attached workstation terminal display and control the same named session; commands entered on either client are visible on both; agent prompt → notification → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+.
+**DoD:** Android and the embedded workstation terminal display and control the same session; commands entered on either client are visible on both; agent prompt → notification → user opens app → responds → agent continues; long sessions survive backgrounding + network changes; with tmux, sessions survive CLI crash; works on API 26+.

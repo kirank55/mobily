@@ -7,6 +7,7 @@ A free and open-source mobile remote-control for terminal-based development envi
 - **Live terminal** — full `xterm.js` terminal on your phone with special key support (Ctrl, Alt, Esc, arrows)
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
 - **Shared persistent session** — automatically uses tmux when available, with bounded replay on phone/network reconnects and a bare PTY fallback
+- **Embedded workstation terminal** — the launching CLI becomes an interactive mirror of the Android session after setup
 - **Background terminal alerts** — an Android foreground service reports connection state, the latest terminal line, and prompts that need attention
 - **Native Git controls** — browse changes, stage/unstage, inspect large diffs, switch branches, and commit from Android
 - **Multiple Stations** — retain paired workstations and switch between them without scanning again
@@ -20,9 +21,13 @@ A free and open-source mobile remote-control for terminal-based development envi
 npx mobily --tunnel devtunnels
 ```
 
-When tmux is available, Mobily prints the exact command for attaching a second
-workstation terminal to the same named session. Use `--session <name>` to choose
-a stable name explicitly:
+After printing tunnel and pairing details, Mobily hands its interactive console
+to the shared terminal. Commands and PTY output are visible on both Android and
+the workstation. Ctrl+C exits Mobily; Ctrl+X sends an interrupt to the shared
+session.
+
+When tmux is available, Mobily also prints the exact command for attaching an
+additional workstation terminal. Use `--session <name>` to choose a stable name:
 
 ```bash
 npx mobily --tunnel devtunnels --session project-x
@@ -31,9 +36,9 @@ tmux attach-session -t project-x
 
 Normal CLI shutdown only detaches Mobily; it does not kill the tmux session.
 Use `npx mobily --kill-session project-x` when you intentionally want to remove
-it. If tmux is unavailable, Mobily explains that bare mode survives phone
-disconnects only while the CLI process is alive and cannot mirror a local
-workstation terminal.
+it. If tmux is unavailable, the embedded terminal still mirrors Android while
+the CLI is alive, but the bare session cannot survive CLI exit or accept an
+additional tmux attachment. Redirected/non-TTY CLI processes remain remote-only.
 
 On first use, Mobily guides installation of Microsoft's official `devtunnel`
 helper and offers GitHub or Microsoft device-code login. Credentials are cached
