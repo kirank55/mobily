@@ -57,4 +57,4 @@ jobs:
       - run: pnpm --filter @mobily/shared build
 
       # Run only the PTY integration tests in the cli package.
-      - run: pnpm --filter mobily test
+      - run: pnpm --filter mobily exec vitest run tests/pty.test.ts

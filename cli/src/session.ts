@@ -37,6 +37,7 @@ import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpc/router.js';
 import { BareBackend } from './mux/bare.js';
 import type { SessionBackend } from './mux/types.js';
+import type { SessionRuntime } from './mux/runtime.js';
 import { TerminalAlertDetector, type AlertDetector } from './alerts/detector.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
@@ -56,6 +57,12 @@ export interface SessionOptions extends SpawnOptions {
   rpc?: Pick<RpcRouter, 'handle'>;
   /** Maximum concurrent structured requests per authenticated connection. @default 4 */
   maxActiveRpcRequests?: number;
+  /**
+   * Override the session runtime used to spawn the PTY process.
+   * Intended for testing: inject a fake runtime to control which shell is
+   * spawned without relying on `$SHELL` / `COMSPEC` environment variables.
+   */
+  runtime?: SessionRuntime;
 }
 
 export interface LocalTerminalSink {
@@ -101,6 +108,7 @@ export class Session {
       auth,
       rpc,
       backend,
+      runtime,
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
       ...spawnOpts
@@ -109,7 +117,7 @@ export class Session {
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
-    this.backend = backend ?? new BareBackend(spawnOpts);
+    this.backend = backend ?? new BareBackend(spawnOpts, runtime);
     this.alertDetector = new TerminalAlertDetector((message) =>
       this.broadcast({ type: 'alert', message }),
     );
