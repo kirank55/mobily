@@ -1,4 +1,5 @@
 import type { Session } from './session.js';
+import type { SessionBackend } from './mux/types.js';
 import type { IDisposable } from './pty/node-pty.js';
 
 const CTRL_C = '\u0003';
@@ -39,6 +40,19 @@ export interface WorkstationTerminalOptions {
 
 export type WorkstationShutdownCause =
   'ctrl-c' | 'input-closed' | 'session-exited' | 'output-failed';
+
+export function shouldEmbedWorkstationTerminal(
+  backend: Pick<SessionBackend, 'kind'>,
+  input: Pick<WorkstationInput, 'isTTY' | 'setRawMode'> = process.stdin,
+  output: Pick<WorkstationOutput, 'isTTY'> = process.stdout,
+): boolean {
+  return Boolean(
+    backend.kind === 'bare' &&
+    input.isTTY &&
+    output.isTTY &&
+    typeof input.setRawMode === 'function',
+  );
+}
 
 export function workstationTerminalSize(
   output: Pick<WorkstationOutput, 'columns' | 'rows'> = process.stdout,

@@ -14,6 +14,10 @@ variable is required.
 npx mobily --tunnel devtunnels
 ```
 
+The CLI keeps the pairing QR visible in its terminal. When tmux is available,
+open a second terminal and run the printed `tmux attach-session` command to use
+the same Session from the Station while Mobily continues serving the phone.
+
 If the helper is not installed, Mobily prints the appropriate official install
 command. Install it in another terminal, then press Enter in Mobily to retry.
 

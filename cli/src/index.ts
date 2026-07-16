@@ -21,6 +21,7 @@ import { RpcRouter } from './rpc/router.js';
 import type { IDisposable } from './pty/node-pty.js';
 import {
   attachWorkstationTerminal,
+  shouldEmbedWorkstationTerminal,
   workstationTerminalSize,
   type WorkstationShutdownCause,
 } from './workstationTerminal.js';
@@ -160,20 +161,21 @@ export async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM received'));
   sessionExitSubscription = session.onExit(() => void shutdown('Session exited'));
 
-  const hasInteractiveWorkstation = Boolean(
-    process.stdin.isTTY && process.stdout.isTTY && typeof process.stdin.setRawMode === 'function',
-  );
+  const embedsWorkstation = shouldEmbedWorkstationTerminal(sessionBackend);
 
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
   console.log(
     `Session:      ${sessionBackend.kind}${sessionBackend.sessionName ? ` (${sessionBackend.sessionName})` : ''}`,
   );
-  if (hasInteractiveWorkstation) {
+  if (embedsWorkstation) {
     console.log('Workstation:  embedded in this CLI below');
     if (sessionBackend.attachCommand) {
       console.log(`Additional:   ${sessionBackend.attachCommand}`);
     }
+  } else if (sessionBackend.kind === 'tmux') {
+    console.log('Workstation:  open a second terminal (pairing QR stays visible here)');
+    console.log(`Attach:       ${sessionBackend.attachCommand}`);
   } else {
     console.log('Workstation:  embedded terminal unavailable (interactive TTY required)');
     if (sessionBackend.attachCommand) {
@@ -220,7 +222,7 @@ export async function main(): Promise<void> {
   } else if (!tunnel.serverTls) {
     console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
-  if (hasInteractiveWorkstation) {
+  if (embedsWorkstation) {
     console.log('Controls:     Ctrl+C exits Mobily; Ctrl+X interrupts the shared session.');
     console.log();
     workstationTerminal = attachWorkstationTerminal(session, {
