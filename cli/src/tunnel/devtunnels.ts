@@ -205,6 +205,7 @@ export class DevTunnelsBackend implements TunnelBackend {
         if (disconnected) return;
         disconnected = true;
         await stopHost(child);
+        await deleteTemporaryTunnel(this.runtime, this.executable, url, localPort);
       },
     };
   }
@@ -247,6 +248,14 @@ async function waitForTunnelUrl(
     });
     child.once('exit', (code) => {
       if (settled) return;
+      if (isTunnelQuotaError(output)) {
+        finish({
+          error: new UserFacingError(
+            'Dev Tunnels quota is full. Delete unused tunnels with `devtunnel delete-all`, then try again.',
+          ),
+        });
+        return;
+      }
       const detail = conciseHelperDetail(output);
       finish({
         error: new UserFacingError(
@@ -263,6 +272,12 @@ async function waitForTunnelUrl(
       });
     }, timeoutMs);
   });
+}
+
+function isTunnelQuotaError(output: string): boolean {
+  return /\b(?:tunnel quota (?:is )?full|(?:maximum|max) number of (?:dev )?tunnels? (?:has been )?reached|tunnel limit (?:has been )?(?:exceeded|reached))\b/i.test(
+    output,
+  );
 }
 
 function extractTunnelUrl(output: string, localPort: number): string | undefined {
@@ -285,6 +300,38 @@ function extractTunnelUrl(output: string, localPort: number): string | undefined
   return url.toString();
 }
 
+function extractTunnelId(tunnelUrl: string, localPort: number): string | undefined {
+  const url = new URL(tunnelUrl);
+  const tunnelPortLabel = url.hostname.split('.')[0];
+  const portSuffix = `-${localPort}`;
+  if (tunnelPortLabel?.endsWith(portSuffix)) {
+    return tunnelPortLabel.slice(0, -portSuffix.length);
+  }
+  return url.port === String(localPort) ? tunnelPortLabel : undefined;
+}
+
+async function deleteTemporaryTunnel(
+  runtime: DevTunnelsRuntime,
+  executable: string,
+  tunnelUrl: string,
+  localPort: number,
+): Promise<void> {
+  const tunnelId = extractTunnelId(tunnelUrl, localPort);
+  if (!tunnelId) return;
+  const deletion = await runtime.run(executable, ['delete', tunnelId], { inheritStdio: false });
+  if (deletion.exitCode === 0 || isMissingTunnel(deletion)) return;
+  const detail = conciseHelperDetail(`${deletion.stdout}\n${deletion.stderr}`);
+  throw new UserFacingError(
+    `Dev Tunnels could not delete temporary tunnel '${tunnelId}'. Delete it with \`devtunnel delete ${tunnelId}\` before starting Mobily again.${detail}`,
+  );
+}
+
+function isMissingTunnel(result: CommandResult): boolean {
+  return /\b(not found|does not exist|could not be found)\b/i.test(
+    `${result.stdout}\n${result.stderr}`,
+  );
+}
+
 function conciseHelperDetail(output: string): string {
   const line = output
     .split(/\r?\n/)
@@ -298,7 +345,9 @@ function conciseHelperDetail(output: string): string {
 async function stopHost(child: DevTunnelHostProcess): Promise<void> {
   if (child.exitCode !== null) return;
   const exitPromise = new Promise<true>((resolve) => child.once('exit', () => resolve(true)));
-  child.kill('SIGTERM');
+  // Dev Tunnels documents Ctrl-C as the graceful shutdown path that removes
+  // the temporary tunnel resource created by `devtunnel host -p`.
+  child.kill('SIGINT');
   const exited = await Promise.race([
     exitPromise,
     new Promise<false>((resolve) => setTimeout(() => resolve(false), HOST_SHUTDOWN_TIMEOUT_MS)),
