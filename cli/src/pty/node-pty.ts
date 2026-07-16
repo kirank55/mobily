@@ -17,6 +17,7 @@
  */
 
 import * as os from 'node:os';
+import { existsSync } from 'node:fs';
 import * as nodePty from 'node-pty';
 
 // ---------------------------------------------------------------------------
@@ -86,8 +87,11 @@ export function defaultShell(): string {
     // Prefer PowerShell when available; fall back to cmd.exe.
     return process.env['COMSPEC'] ?? 'cmd.exe';
   }
-  // POSIX: honour $SHELL if set; fall back to /bin/sh (always present).
-  return process.env['SHELL'] ?? '/bin/sh';
+  // POSIX: honour $SHELL if set and the binary actually exists on disk;
+  // fall back to /bin/sh which is guaranteed to be present.
+  const envShell = process.env['SHELL'];
+  if (envShell && existsSync(envShell)) return envShell;
+  return '/bin/sh';
 }
 
 // ---------------------------------------------------------------------------

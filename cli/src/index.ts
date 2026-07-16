@@ -18,11 +18,13 @@ import { defaultBindingFile, FileBindingRepository } from './bindings.js';
 import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
 import { GitService } from './git/service.js';
 import { RpcRouter } from './rpc/router.js';
+import type { IDisposable } from './pty/node-pty.js';
 import {
-  createSessionBackend,
-  killTmuxSession,
-  validateSessionName,
-} from './mux/factory.js';
+  attachWorkstationTerminal,
+  workstationTerminalSize,
+  type WorkstationShutdownCause,
+} from './workstationTerminal.js';
+import { createSessionBackend, killTmuxSession, validateSessionName } from './mux/factory.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -47,9 +49,7 @@ export async function main(): Promise<void> {
     console.log(`Terminated tmux session: ${name}`);
     return;
   }
-  const requestedSessionName = values.session
-    ? validateSessionName(values.session)
-    : undefined;
+  const requestedSessionName = values.session ? validateSessionName(values.session) : undefined;
 
   const bindingRepository = new FileBindingRepository(defaultBindingFile());
   if (values['list-bindings']) {
@@ -105,9 +105,10 @@ export async function main(): Promise<void> {
     allowInsecureLocal: values['allow-insecure-local'],
   });
   const cwd = process.cwd();
+  const workstationSize = workstationTerminalSize(process.stdout);
   const sessionBackend = createSessionBackend({
-    cols: 80,
-    rows: 24,
+    cols: workstationSize.cols,
+    rows: workstationSize.rows,
     cwd,
     sessionName: requestedSessionName,
   });
@@ -134,15 +135,52 @@ export async function main(): Promise<void> {
     certificatePin: connection.certificatePin,
   });
 
+  let workstationTerminal: IDisposable | null = null;
+  let sessionExitSubscription: IDisposable | null = null;
+  let shuttingDown = false;
+  const shutdown = async (reason: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    workstationTerminal?.dispose();
+    workstationTerminal = null;
+    sessionExitSubscription?.dispose();
+    sessionExitSubscription = null;
+    console.log(`${reason}; shutting down…`);
+    try {
+      session.dispose();
+      await server.close();
+      await connection.disconnect();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.on('SIGINT', () => void shutdown('SIGINT received'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM received'));
+  sessionExitSubscription = session.onExit(() => void shutdown('Session exited'));
+
+  const hasInteractiveWorkstation = Boolean(
+    process.stdin.isTTY && process.stdout.isTTY && typeof process.stdin.setRawMode === 'function',
+  );
+
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
   console.log(
     `Session:      ${sessionBackend.kind}${sessionBackend.sessionName ? ` (${sessionBackend.sessionName})` : ''}`,
   );
-  if (sessionBackend.attachCommand) {
-    console.log(`Workstation:  ${sessionBackend.attachCommand}`);
+  if (hasInteractiveWorkstation) {
+    console.log('Workstation:  embedded in this CLI below');
+    if (sessionBackend.attachCommand) {
+      console.log(`Additional:   ${sessionBackend.attachCommand}`);
+    }
   } else {
-    console.log('Workstation:  unavailable in bare mode; the session ends when the CLI exits');
+    console.log('Workstation:  embedded terminal unavailable (interactive TTY required)');
+    if (sessionBackend.attachCommand) {
+      console.log(`Attach:       ${sessionBackend.attachCommand}`);
+    } else {
+      console.log('Fallback:     unavailable in bare mode; the session ends when the CLI exits');
+    }
   }
   console.log();
   console.log('  Scan this QR with the Mobily app to pair your device:');
@@ -182,25 +220,28 @@ export async function main(): Promise<void> {
   } else if (!tunnel.serverTls) {
     console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
-  console.log('Press Ctrl+C to exit.');
+  if (hasInteractiveWorkstation) {
+    console.log('Controls:     Ctrl+C exits Mobily; Ctrl+X interrupts the shared session.');
+    console.log();
+    workstationTerminal = attachWorkstationTerminal(session, {
+      onShutdown: (reason) => void shutdown(workstationShutdownMessage(reason)),
+    });
+  } else {
+    console.log('Press Ctrl+C to exit.');
+  }
+}
 
-  let shuttingDown = false;
-  const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`\n${signal} received, shutting down…`);
-    try {
-      session.dispose();
-      await server.close();
-      await connection.disconnect();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      process.exit(0);
-    }
-  };
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+function workstationShutdownMessage(reason: WorkstationShutdownCause): string {
+  switch (reason) {
+    case 'ctrl-c':
+      return 'Ctrl+C received';
+    case 'input-closed':
+      return 'Input closed';
+    case 'session-exited':
+      return 'Session exited';
+    case 'output-failed':
+      return 'Workstation output failed';
+  }
 }
 
 const verbose = process.argv.includes('--verbose');

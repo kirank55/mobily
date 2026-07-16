@@ -29,6 +29,7 @@ class RecordingBackend implements SessionBackend {
   readonly writes: string[] = [];
   readonly resizes: Array<[number, number]> = [];
   readonly dataListeners = new Set<(data: string) => void>();
+  readonly exitListeners = new Set<(event: { exitCode: number; signal?: number }) => void>();
 
   constructor(private readonly replay = '') {}
 
@@ -42,8 +43,9 @@ class RecordingBackend implements SessionBackend {
     this.dataListeners.add(listener);
     return { dispose: () => this.dataListeners.delete(listener) };
   }
-  onExit(): IDisposable {
-    return { dispose() {} };
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void): IDisposable {
+    this.exitListeners.add(listener);
+    return { dispose: () => this.exitListeners.delete(listener) };
   }
   readScrollback(): string {
     return this.replay;
@@ -51,6 +53,9 @@ class RecordingBackend implements SessionBackend {
   dispose(): void {}
   emit(data: string): void {
     for (const listener of this.dataListeners) listener(data);
+  }
+  emitExit(event: { exitCode: number; signal?: number }): void {
+    for (const listener of this.exitListeners) listener(event);
   }
 }
 
@@ -290,6 +295,127 @@ describe('WebSocket → PTY round-trip', () => {
   }, 15000);
 });
 
+describe('local workstation terminal attachment', () => {
+  it('replays and streams exact PTY output while forwarding input and resize', () => {
+    const backend = new RecordingBackend('\u001b[31mexisting\u001b[0m\r\n');
+    const session = new Session({ backend });
+    sessions.push(session);
+    const output: string[] = [];
+
+    const terminal = session.attachLocalTerminal({
+      onOutput: (data) => output.push(data),
+    });
+
+    expect(output).toEqual(['\u001b[31mexisting\u001b[0m\r\n']);
+
+    terminal.input('hidden input');
+    terminal.resize(132, 43);
+
+    expect(backend.writes).toEqual(['hidden input']);
+    expect(backend.resizes).toEqual([[132, 43]]);
+    expect(output).toEqual(['\u001b[31mexisting\u001b[0m\r\n']);
+
+    backend.emit('\u001b[2Kvisible result\r\n');
+    expect(output).toEqual(['\u001b[31mexisting\u001b[0m\r\n', '\u001b[2Kvisible result\r\n']);
+
+    terminal.dispose();
+    backend.emit('after dispose');
+    expect(output).not.toContain('after dispose');
+  });
+
+  it('notifies the workstation when the shared session exits', () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    sessions.push(session);
+    const exits: Array<{ exitCode: number; signal?: number }> = [];
+    const sessionExits: Array<{ exitCode: number; signal?: number }> = [];
+
+    session.attachLocalTerminal({
+      onOutput() {},
+      onExit: (event) => exits.push(event),
+    });
+    session.onExit((event) => sessionExits.push(event));
+    backend.emitExit({ exitCode: 7, signal: 15 });
+
+    expect(exits).toEqual([{ exitCode: 7, signal: 15 }]);
+    expect(sessionExits).toEqual([{ exitCode: 7, signal: 15 }]);
+    expect(session.closed).toBe(true);
+  });
+
+  it('isolates failing exit observers so every client still receives cleanup', () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    sessions.push(session);
+    const delivered: string[] = [];
+
+    session.attachLocalTerminal({
+      onOutput() {},
+      onExit: () => {
+        throw new Error('local observer failed');
+      },
+    });
+    session.onExit(() => {
+      throw new Error('first observer failed');
+    });
+    session.onExit(() => delivered.push('second observer'));
+
+    expect(() => backend.emitExit({ exitCode: 0 })).not.toThrow();
+    expect(delivered).toEqual(['second observer']);
+  });
+
+  it('keeps workstation dimensions authoritative over remote resize frames', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    sessions.push(session);
+    const terminal = session.attachLocalTerminal({ onOutput() {} });
+    terminal.resize(160, 48);
+
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    sendFrame(ws, { type: 'resize', cols: 60, rows: 20 });
+    sendFrame(ws, { type: 'input', data: 'processed-after-resize' });
+    await vi.waitFor(() => expect(backend.writes).toContain('processed-after-resize'));
+
+    expect(backend.resizes).toEqual([[160, 48]]);
+  });
+
+  it('shares input and resulting PTY output between Android and the workstation', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    sessions.push(session);
+    const workstationOutput: string[] = [];
+    const terminal = session.attachLocalTerminal({
+      onOutput: (data) => workstationOutput.push(data),
+    });
+
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+
+    sendFrame(ws, { type: 'input', data: 'from Android\r' });
+    await vi.waitFor(() => expect(backend.writes).toContain('from Android\r'));
+    const androidResult = collectOutput(ws, (data) => data.includes('android result'));
+    backend.emit('from Android\r\nandroid result\r\n');
+
+    expect(await androidResult).toContain('android result');
+    expect(workstationOutput.join('')).toContain('from Android\r\nandroid result\r\n');
+
+    terminal.input('from workstation\r');
+    expect(backend.writes).toContain('from workstation\r');
+    const workstationResult = collectOutput(ws, (data) => data.includes('workstation result'));
+    backend.emit('from workstation\r\nworkstation result\r\n');
+
+    expect(await workstationResult).toContain('workstation result');
+    expect(workstationOutput.join('')).toContain('from workstation\r\nworkstation result\r\n');
+  });
+});
+
 describe('session survives client disconnect', () => {
   it('keeps the PTY alive so a second client can reattach and drive it', async () => {
     const session = new Session({ cols: 80, rows: 24 });
@@ -405,16 +531,16 @@ describe('handshake: version negotiation + auth', () => {
     conns.push(ws);
 
     sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
-    await vi.waitFor(() => expect(received.some((frame) => frame['type'] === 'auth-challenge')).toBe(true));
+    await vi.waitFor(() =>
+      expect(received.some((frame) => frame['type'] === 'auth-challenge')).toBe(true),
+    );
     const nonce = received.find((frame) => frame['type'] === 'auth-challenge')!['nonce'] as string;
     sendFrame(ws, {
       type: 'auth-response',
       deviceId: 'device-1',
       signature: signNonce(privateKeyPem, nonce),
     });
-    await vi.waitFor(() =>
-      expect(received.some((frame) => frame['type'] === 'output')).toBe(true),
-    );
+    await vi.waitFor(() => expect(received.some((frame) => frame['type'] === 'output')).toBe(true));
     backend.emit('live output\r\n');
     await vi.waitFor(() =>
       expect(received.filter((frame) => frame['type'] === 'output')).toHaveLength(2),
@@ -444,9 +570,9 @@ describe('handshake: version negotiation + auth', () => {
 
     backend.emit('\x1b[33mApprove deployment?\x1b[0m\r\n');
 
-    await vi.waitFor(() => expect(alerts).toEqual([
-      { type: 'alert', message: 'Approve deployment?' },
-    ]));
+    await vi.waitFor(() =>
+      expect(alerts).toEqual([{ type: 'alert', message: 'Approve deployment?' }]),
+    );
   });
 
   it('completes the full handshake and streams PTY output', async () => {

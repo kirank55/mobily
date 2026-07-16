@@ -40,7 +40,8 @@ stay behind this seam. `Session` no longer exposes a concrete PTY.
 `BareBackend` wraps the current node-pty behavior. It keeps a bounded 512 KiB
 ring buffer and returns at most the requested number of trailing logical lines.
 Disposal terminates the PTY, so bare sessions survive network disconnects but
-not CLI process exit.
+not CLI process exit. The CLI's interactive console attaches directly through
+the session seam, so Android/workstation mirroring also works in bare mode.
 
 ### Tmux backend
 
@@ -49,20 +50,21 @@ not CLI process exit.
 - creates a detached session when the name does not exist;
 - reuses the existing session otherwise;
 - seeds its bounded replay buffer from `capture-pane -p -J` before attaching;
-- attaches Mobily through its own PTY so Android and workstation clients share
-  input and output;
+- attaches Mobily through its own PTY so Android, the embedded CLI terminal,
+  and optional tmux clients share input and output;
 - sets the window sizing policy to `largest`, preventing a narrow phone from
   shrinking a larger workstation client;
 - detaches Mobily on disposal without killing the tmux session.
 
-The CLI prints the exact `tmux attach-session -t <name>` workstation command.
+The CLI embeds the shared terminal after setup and prints the exact
+`tmux attach-session -t <name>` command for an optional additional client.
 An explicit management command terminates a stale named session; ordinary
 Ctrl+C never terminates it.
 
 ### Detection and naming
 
 The factory selects tmux only when `tmux -V` succeeds. All other cases fall
-back to bare mode with a clear limitation message.
+back to bare mode with a clear persistence/additional-attachment limitation.
 
 `--session <name>` accepts `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. Without it, the
 name is `mobily-<cwd-slug>-<cwd-hash>`, where the hash is derived from the

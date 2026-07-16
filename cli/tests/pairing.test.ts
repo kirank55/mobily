@@ -14,6 +14,20 @@ import { createPairingProofPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
+import { defaultSessionRuntime } from '../src/mux/runtime.js';
+
+// ---------------------------------------------------------------------------
+// Test runtime: uses an explicit shell path so tests are not sensitive to
+// the $SHELL / COMSPEC env variables in CI runners (macOS / Windows).
+// ---------------------------------------------------------------------------
+
+const testRuntime = {
+  ...defaultSessionRuntime,
+  spawnPty(opts: Parameters<typeof defaultSessionRuntime.spawnPty>[0]) {
+    const shell = os.platform() === 'win32' ? 'cmd.exe' : '/bin/sh';
+    return defaultSessionRuntime.spawnPty({ ...opts, file: shell });
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -186,7 +200,7 @@ async function setupPairedSession(): Promise<{
   const { publicKeyPem, privateKeyPem } = generateKeyPair();
   const deviceId = 'device-e2e';
 
-  const session = new Session({ cols: 80, rows: 24, auth });
+  const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
   sessions.push(session);
 
   const server = await startServer({
@@ -249,7 +263,7 @@ describe('pairing flow end-to-end', () => {
     const code = auth.generatePairingCode();
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
 
-    const session = new Session({ cols: 80, rows: 24, auth });
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,
@@ -288,7 +302,7 @@ describe('pairing endpoint error cases', () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');
     auth.generatePairingCode();
-    const session = new Session({ auth });
+    const session = new Session({ auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,
@@ -314,7 +328,7 @@ describe('pairing endpoint error cases', () => {
     auth.generatePairingCode();
     const { publicKeyPem } = generateKeyPair();
 
-    const session = new Session({ cols: 80, rows: 24, auth });
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,
@@ -341,7 +355,7 @@ describe('pairing endpoint error cases', () => {
     auth.setTunnelUrl('ws://test:9999');
     auth.generatePairingCode();
 
-    const session = new Session({ cols: 80, rows: 24, auth });
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,
@@ -362,7 +376,7 @@ describe('pairing endpoint error cases', () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');
 
-    const session = new Session({ cols: 80, rows: 24, auth });
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,
@@ -379,7 +393,7 @@ describe('pairing endpoint error cases', () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');
 
-    const session = new Session({ cols: 80, rows: 24, auth });
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
     sessions.push(session);
     const server = await startServer({
       session,

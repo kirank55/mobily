@@ -12,5 +12,6 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 - Both adapters expose bounded scrollback replay; the bare adapter uses an in-process ring buffer and tmux seeds the same buffer with `capture-pane` on startup.
 - A deterministic working-directory-derived session name is reused across CLI restarts. `--session` overrides it, and `--kill-session` is the only Mobily command that terminates a persisted tmux session.
 - Normal CLI shutdown detaches its tmux client. It never kills the shared session.
+- The interactive CLI console mirrors the backend directly in both modes; bare mode cannot add another tmux client or survive CLI exit.
 - The tmux window uses the `largest` sizing policy so an Android resize does not shrink a larger attached workstation terminal.
 - CI tests both paths: tmux on Linux/macOS runners, bare on Windows runner.

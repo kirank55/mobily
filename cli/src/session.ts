@@ -32,11 +32,12 @@ import {
   type Frame,
   type OutputFrame,
 } from '@mobily/shared';
-import type { IDisposable, SpawnOptions } from './pty/node-pty.js';
+import type { ExitEvent, IDisposable, SpawnOptions } from './pty/node-pty.js';
 import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpc/router.js';
 import { BareBackend } from './mux/bare.js';
 import type { SessionBackend } from './mux/types.js';
+import type { SessionRuntime } from './mux/runtime.js';
 import { TerminalAlertDetector, type AlertDetector } from './alerts/detector.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
@@ -56,6 +57,28 @@ export interface SessionOptions extends SpawnOptions {
   rpc?: Pick<RpcRouter, 'handle'>;
   /** Maximum concurrent structured requests per authenticated connection. @default 4 */
   maxActiveRpcRequests?: number;
+  /**
+   * Override the session runtime used to spawn the PTY process.
+   * Intended for testing: inject a fake runtime to control which shell is
+   * spawned without relying on `$SHELL` / `COMSPEC` environment variables.
+   */
+  runtime?: SessionRuntime;
+}
+
+export interface LocalTerminalSink {
+  onOutput(data: string): void;
+  onExit?(event: ExitEvent): void;
+  onError?(error: unknown): void;
+}
+
+export interface LocalTerminalAttachment extends IDisposable {
+  input(data: string): void;
+  resize(cols: number, rows: number): void;
+}
+
+interface LocalTerminalState {
+  readonly sink: LocalTerminalSink;
+  deactivate(): void;
 }
 
 /**
@@ -73,15 +96,19 @@ export class Session {
   private readonly subscribers = new Set<WebSocket>();
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
+  private readonly exitListeners = new Set<(event: ExitEvent) => void>();
+  private localTerminal?: LocalTerminalState;
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
+  private exitEvent?: ExitEvent;
 
   constructor(opts: SessionOptions = {}) {
     const {
       auth,
       rpc,
       backend,
+      runtime,
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
       ...spawnOpts
@@ -90,7 +117,7 @@ export class Session {
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
-    this.backend = backend ?? new BareBackend(spawnOpts);
+    this.backend = backend ?? new BareBackend(spawnOpts, runtime);
     this.alertDetector = new TerminalAlertDetector((message) =>
       this.broadcast({ type: 'alert', message }),
     );
@@ -100,7 +127,7 @@ export class Session {
       this.alertDetector.push(data);
     });
 
-    this.onExitDisposable = this.backend.onExit(() => this.handleExit());
+    this.onExitDisposable = this.backend.onExit((event) => this.handleExit(event));
   }
 
   /** Whether the underlying PTY has exited. */
@@ -121,6 +148,55 @@ export class Session {
     } else {
       this.attachAuthenticated(ws);
     }
+  }
+
+  /** Attach the interactive terminal hosted by this CLI process. */
+  attachLocalTerminal(sink: LocalTerminalSink): LocalTerminalAttachment {
+    if (this.localTerminal) throw new Error('A local workstation terminal is already attached');
+
+    const replay = this.backend.readScrollback();
+    if (replay.length > 0) sink.onOutput(replay);
+
+    if (this.exited) {
+      if (this.exitEvent) sink.onExit?.(this.exitEvent);
+      return {
+        input() {},
+        resize() {},
+        dispose() {},
+      };
+    }
+
+    let active = true;
+    const state: LocalTerminalState = {
+      sink,
+      deactivate: () => {
+        active = false;
+      },
+    };
+    this.localTerminal = state;
+    return {
+      input: (data) => {
+        if (active && !this.exited) this.backend.write(data);
+      },
+      resize: (cols, rows) => {
+        if (active && !this.exited) this.backend.resize(cols, rows);
+      },
+      dispose: () => {
+        if (!active) return;
+        state.deactivate();
+        if (this.localTerminal === state) this.localTerminal = undefined;
+      },
+    };
+  }
+
+  /** Observe the shared terminal process exiting, including in headless mode. */
+  onExit(listener: (event: ExitEvent) => void): IDisposable {
+    if (this.exitEvent) {
+      listener(this.exitEvent);
+      return { dispose() {} };
+    }
+    this.exitListeners.add(listener);
+    return { dispose: () => this.exitListeners.delete(listener) };
   }
 
   // -------------------------------------------------------------------------
@@ -282,6 +358,7 @@ export class Session {
         this.backend.write(frame.data);
         break;
       case 'resize':
+        if (this.localTerminal) break;
         try {
           this.backend.resize(frame.cols, frame.rows);
         } catch (err) {
@@ -352,6 +429,20 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private broadcast(frame: OutputFrame | AlertFrame): void {
+    if (frame.type === 'output' && this.localTerminal) {
+      const state = this.localTerminal;
+      try {
+        state.sink.onOutput(frame.data);
+      } catch (error) {
+        state.deactivate();
+        if (this.localTerminal === state) this.localTerminal = undefined;
+        try {
+          state.sink.onError?.(error);
+        } catch {
+          // A failed local sink must not interrupt remote clients.
+        }
+      }
+    }
     for (const ws of [...this.subscribers]) {
       if (frame.type === 'output') {
         const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
@@ -384,8 +475,26 @@ export class Session {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  private handleExit(): void {
+  private handleExit(event: ExitEvent): void {
     this.exited = true;
+    this.exitEvent = event;
+    const localTerminal = this.localTerminal;
+    this.localTerminal = undefined;
+    localTerminal?.deactivate();
+    try {
+      localTerminal?.sink.onExit?.(event);
+    } catch {
+      // One local observer must not prevent the remaining exit cleanup.
+    }
+    const exitListeners = [...this.exitListeners];
+    this.exitListeners.clear();
+    for (const listener of exitListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Exit observers are isolated from each other and WebSocket cleanup.
+      }
+    }
     for (const ws of this.subscribers) {
       try {
         ws.close(1000, 'pty exited');
@@ -409,6 +518,9 @@ export class Session {
       }
     }
     this.subscribers.clear();
+    this.localTerminal?.deactivate();
+    this.localTerminal = undefined;
+    this.exitListeners.clear();
     this.pendingLatencyTags.clear();
     for (const active of this.activeRpcRequests.values()) {
       for (const controller of active.values()) controller.abort();
