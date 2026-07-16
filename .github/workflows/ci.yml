@@ -53,6 +53,16 @@ jobs:
       # all three platforms so no native compiler is needed.
       - run: pnpm install --frozen-lockfile
 
+      # node-pty 1.1.0 prebuilt tarballs store pty.node and spawn-helper
+      # without the execute bit set.  On POSIX systems the spawn-helper must
+      # be executable or posix_spawnp fails immediately at runtime.
+      - name: Fix node-pty prebuilt permissions (POSIX only)
+        if: runner.os != 'Windows'
+        run: |
+          PTY_PREBUILDS=cli/node_modules/node-pty/prebuilds
+          find "$PTY_PREBUILDS" -type f \( -name "spawn-helper" -o -name "*.node" \) \
+            -exec chmod +x {} \;
+
       # Build shared first (cli depends on it via turbo pipeline).
       - run: pnpm --filter @mobily/shared build
 
