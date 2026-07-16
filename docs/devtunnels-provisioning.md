@@ -69,3 +69,12 @@ Use `--verbose` when diagnostic details are needed:
 ```bash
 npx mobily --tunnel devtunnels --verbose
 ```
+
+Mobily shuts temporary tunnels down through the helper's graceful Ctrl-C path,
+then explicitly deletes the temporary tunnel ID as a cross-platform fallback.
+If an older interrupted run left the account quota full, remove the unused
+tunnels once and retry:
+
+```bash
+devtunnel delete-all
+```

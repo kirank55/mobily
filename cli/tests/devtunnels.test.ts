@@ -264,8 +264,34 @@ describe('DevTunnelsBackend', () => {
     expect(connection.url).toBe('wss://abc-4321.usw2.devtunnels.ms/');
   });
 
-  it('terminates the helper when the tunnel disconnects', async () => {
+  it.each(['linux', 'win32'] as const)(
+    'interrupts the helper and explicitly deletes its temporary tunnel on %s',
+    async (platform) => {
+      const runtime = new FakeRuntime();
+      runtime.platform = platform;
+      const host = new FakeHostProcess();
+      runtime.hosts.push(host);
+      const backend = await prepareDevTunnelsBackend({ runtime });
+      const connecting = backend.connect(4321);
+      host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
+      const connection = await connecting;
+
+      await connection.disconnect();
+
+      expect(host.signals).toEqual(['SIGINT']);
+      expect(runtime.calls.at(-1)).toEqual({
+        args: ['delete', 'abc'],
+        inheritStdio: false,
+      });
+    },
+  );
+
+  it('reports a temporary tunnel that could not be deleted', async () => {
     const runtime = new FakeRuntime();
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 1, stdout: '', stderr: 'Error: service unavailable' },
+    );
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
     const backend = await prepareDevTunnelsBackend({ runtime });
@@ -273,9 +299,27 @@ describe('DevTunnelsBackend', () => {
     host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
     const connection = await connecting;
 
-    await connection.disconnect();
+    await expect(connection.disconnect()).rejects.toEqual(
+      new UserFacingError(
+        "Dev Tunnels could not delete temporary tunnel 'abc'. Delete it with `devtunnel delete abc` before starting Mobily again. service unavailable",
+      ),
+    );
+  });
 
-    expect(host.signals).toEqual(['SIGTERM']);
+  it('accepts a temporary tunnel that graceful shutdown already deleted', async () => {
+    const runtime = new FakeRuntime();
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 1, stdout: '', stderr: 'Error: Tunnel abc was not found.' },
+    );
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareDevTunnelsBackend({ runtime });
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
+    const connection = await connecting;
+
+    await expect(connection.disconnect()).resolves.toBeUndefined();
   });
 
   it('times out with a user-facing error when the helper never becomes ready', async () => {
@@ -288,7 +332,7 @@ describe('DevTunnelsBackend', () => {
     });
 
     await expect(backend.connect(4321)).rejects.toThrow('did not become ready within 60 seconds');
-    expect(host.signals).toContain('SIGTERM');
+    expect(host.signals).toContain('SIGINT');
   });
 
   it('reports an early helper exit without a stack-oriented error', async () => {
@@ -304,6 +348,23 @@ describe('DevTunnelsBackend', () => {
     await expect(connecting).rejects.toEqual(
       new UserFacingError(
         'Dev Tunnels stopped before it was ready (exit 2). unsupported helper version',
+      ),
+    );
+  });
+
+  it('explains how to clear unused tunnels when the account quota is full', async () => {
+    const runtime = new FakeRuntime();
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareDevTunnelsBackend({ runtime });
+
+    const connecting = backend.connect(4321);
+    host.stderr.write('Error: The maximum number of tunnels has been reached.\n');
+    host.exit(1);
+
+    await expect(connecting).rejects.toEqual(
+      new UserFacingError(
+        'Dev Tunnels quota is full. Delete unused tunnels with `devtunnel delete-all`, then try again.',
       ),
     );
   });
@@ -324,7 +385,7 @@ describe('DevTunnelsBackend', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       await disconnecting;
 
-      expect(host.signals).toEqual(['SIGTERM', 'SIGKILL']);
+      expect(host.signals).toEqual(['SIGINT', 'SIGKILL']);
     } finally {
       vi.useRealTimers();
     }
