@@ -102,7 +102,7 @@ describe('attachWorkstationTerminal()', () => {
     expect(input.rawModeChanges).toEqual([true]);
     expect(input.encoding).toBe('utf8');
     expect(input.resumed).toBe(true);
-    expect(output.chunks).toEqual(['\u001b[32mready\u001b[0m\r\n']);
+    expect(output.chunks.at(-1)).toBe('\u001b[32mready\u001b[0m\r\n');
     expect(backend.resizes).toEqual([[120, 40]]);
 
     backend.emit('\u001b[2Kphone command and result\r\n');
@@ -134,7 +134,7 @@ describe('attachWorkstationTerminal()', () => {
     terminal?.dispose();
     expect(input.rawModeChanges).toEqual([true, false]);
     expect(input.paused).toBe(true);
-    expect(output.chunks.at(-1)).toBe('\u001b[0m\u001b[?25h\r\n');
+    expect(output.chunks.at(-1)).toContain('\u001b[0m\u001b[?25h\r\n');
 
     session.dispose();
   });
@@ -205,6 +205,35 @@ describe('attachWorkstationTerminal()', () => {
 
     output.failWrites = false;
     terminal?.dispose();
+    session.dispose();
+  });
+
+  it('prevents terminal mouse modes and hover reports from leaking into the shell', () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    const input = new FakeInput();
+    const output = new FakeOutput();
+    const terminal = attachWorkstationTerminal(session, {
+      input,
+      output,
+      onShutdown: vi.fn(),
+    });
+
+    backend.emit('\u001b[?1002;1006');
+    backend.emit('hready\r\n');
+    backend.emit('\u001b[?1000;25hcursor-visible\r\n');
+    input.emit('data', '\u001b[<35;43;26M\u001b[<35;44;25M');
+    input.emit('data', '\u001b');
+    input.emit('data', 'echo still-works\r');
+
+    expect(output.chunks.join('')).not.toContain('?1002;1006h');
+    expect(output.chunks.join('')).toContain('ready\r\n');
+    expect(output.chunks.join('')).toContain('\u001b[?25hcursor-visible');
+    expect(backend.writes).toEqual(['\u001b', 'echo still-works\r']);
+
+    terminal?.dispose();
+    expect(output.chunks.at(-1)).toContain('\u001b[?1000l');
+    expect(output.chunks.at(-1)).toContain('\u001b[?1006l');
     session.dispose();
   });
 });

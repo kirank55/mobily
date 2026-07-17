@@ -24,13 +24,19 @@ import {
   workstationTerminalSize,
   type WorkstationShutdownCause,
 } from './workstationTerminal.js';
-import { createSessionBackend, killTmuxSession, validateSessionName } from './mux/factory.js';
+import {
+  createSessionBackend,
+  hideCurrentQrPanel,
+  killTmuxSession,
+  validateSessionName,
+} from './mux/factory.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
 
 export async function main(): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
     options: {
       tunnel: { type: 'string' },
       'allow-insecure-local': { type: 'boolean', default: false },
@@ -42,6 +48,16 @@ export async function main(): Promise<void> {
       'kill-session': { type: 'string' },
     },
   });
+
+  if (positionals[0] === 'qr') {
+    const action = positionals[1];
+    if (action !== 'hide' && action !== 'clear') {
+      throw new UserFacingError("Use 'mobily qr hide' or 'mobily qr clear'.");
+    }
+    if (!hideCurrentQrPanel()) throw new UserFacingError('No Mobily QR panel is visible.');
+    if (action === 'clear') process.stdout.write('\u001b[2J\u001b[3J\u001b[H');
+    return;
+  }
 
   if (values['kill-session']) {
     const name = validateSessionName(values['kill-session']);
@@ -105,7 +121,13 @@ export async function main(): Promise<void> {
     allowInsecureLocal: values['allow-insecure-local'],
   });
   const cwd = process.cwd();
-  const workstationSize = workstationTerminalSize(process.stdout);
+  const hasInteractiveWorkstation = Boolean(
+    process.stdin.isTTY && process.stdout.isTTY && typeof process.stdin.setRawMode === 'function',
+  );
+  const detectedWorkstationSize = workstationTerminalSize(process.stdout);
+  const workstationSize = hasInteractiveWorkstation
+    ? detectedWorkstationSize
+    : { cols: 120, rows: 40 };
   const sessionBackend = createSessionBackend({
     cols: workstationSize.cols,
     rows: workstationSize.rows,
@@ -114,8 +136,16 @@ export async function main(): Promise<void> {
   });
   const session = new Session({
     backend: sessionBackend,
+    cols: workstationSize.cols,
+    rows: workstationSize.rows,
     auth,
     rpc: new RpcRouter(new GitService(cwd)),
+  });
+  let clientAuthenticated = false;
+  let beginWorkstation: (() => void) | undefined;
+  const authenticatedSubscription = session.onAuthenticatedClient(() => {
+    clientAuthenticated = true;
+    beginWorkstation?.();
   });
   const server = await startServer({
     session,
@@ -145,6 +175,7 @@ export async function main(): Promise<void> {
     workstationTerminal = null;
     sessionExitSubscription?.dispose();
     sessionExitSubscription = null;
+    authenticatedSubscription.dispose();
     console.log(`${reason}; shutting down…`);
     try {
       session.dispose();
@@ -159,10 +190,6 @@ export async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT received'));
   process.on('SIGTERM', () => void shutdown('SIGTERM received'));
   sessionExitSubscription = session.onExit(() => void shutdown('Session exited'));
-
-  const hasInteractiveWorkstation = Boolean(
-    process.stdin.isTTY && process.stdout.isTTY && typeof process.stdin.setRawMode === 'function',
-  );
 
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
@@ -185,11 +212,12 @@ export async function main(): Promise<void> {
   console.log();
   console.log('  Scan this QR with the Mobily app to pair your device:');
   console.log();
+  let renderedQr = '';
   try {
-    const qr = await renderTerminalQr(pairingPayload);
+    renderedQr = await renderTerminalQr(pairingPayload);
     const indent = '  ';
     console.log(
-      qr
+      renderedQr
         .split('\n')
         .map((line) => `${indent}${line}`)
         .join('\n'),
@@ -207,6 +235,23 @@ export async function main(): Promise<void> {
   console.log('  Or enter this code in the Mobily app to pair your device.');
   console.log();
 
+  const pairingPanel = [
+    `mobily v${pkg.version}`,
+    `Tunnel:  ${connection.url}`,
+    `Session: ${sessionBackend.kind}${sessionBackend.sessionName ? ` (${sessionBackend.sessionName})` : ''}`,
+    '',
+    'Scan this QR with the Mobily app:',
+    renderedQr || '(QR unavailable; use the pairing code below)',
+    `Pairing code: ${pairingCode}`,
+    '',
+    'mobily qr hide   Hide this panel',
+    'mobily qr clear  Hide it and clear the whole terminal',
+  ].join('\n');
+  sessionBackend.showPairingPanel?.(
+    pairingPanel,
+    Math.min(pairingPanel.split('\n').length, Math.max(50, workstationSize.rows - 1)),
+  );
+
   const smokePath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '..',
@@ -222,10 +267,19 @@ export async function main(): Promise<void> {
   }
   if (hasInteractiveWorkstation) {
     console.log('Controls:     Ctrl+C exits Mobily; Ctrl+X interrupts the shared session.');
+    console.log(
+      'Waiting for the Android app to authenticate; this terminal will continue automatically.',
+    );
     console.log();
-    workstationTerminal = attachWorkstationTerminal(session, {
-      onShutdown: (reason) => void shutdown(workstationShutdownMessage(reason)),
-    });
+    let workstationStarted = false;
+    beginWorkstation = () => {
+      if (workstationStarted) return;
+      workstationStarted = true;
+      workstationTerminal = attachWorkstationTerminal(session, {
+        onShutdown: (reason) => void shutdown(workstationShutdownMessage(reason)),
+      });
+    };
+    if (clientAuthenticated) beginWorkstation();
   } else {
     console.log('Press Ctrl+C to exit.');
   }

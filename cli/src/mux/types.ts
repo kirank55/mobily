@@ -12,5 +12,7 @@ export interface SessionBackend {
   onData(listener: (data: string) => void): IDisposable;
   onExit(listener: (event: ExitEvent) => void): IDisposable;
   readScrollback(maxLines?: number): string;
+  /** Pin pairing details above the shell for the next workstation attachment. */
+  showPairingPanel?(content: string, height: number): void;
   dispose(): void;
 }

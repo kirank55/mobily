@@ -2,6 +2,7 @@ export type TerminalBridgeMessage =
   | { readonly type: 'ready' }
   | { readonly type: 'input'; readonly data: string; readonly latencyTag: string }
   | { readonly type: 'resize'; readonly cols: number; readonly rows: number }
+  | { readonly type: 'copy'; readonly data: string }
   | {
       readonly type: 'latency-stats';
       readonly n: number;
@@ -32,6 +33,10 @@ export function parseTerminalBridgeMessage(raw: string): TerminalBridgeMessage |
     case 'resize':
       return isDimension(message['cols']) && isDimension(message['rows'])
         ? { type: 'resize', cols: message['cols'], rows: message['rows'] }
+        : null;
+    case 'copy':
+      return typeof message['data'] === 'string' && message['data'].length <= 1_000_000
+        ? { type: 'copy', data: message['data'] }
         : null;
     case 'latency-stats':
       return isNonNegativeNumber(message['n']) &&

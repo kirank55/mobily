@@ -22,6 +22,12 @@ export interface TerminalViewHandle {
   write(data: string, latencyTags?: readonly string[]): void;
   /** Request the terminal to resize to the given dimensions. */
   resize(cols: number, rows: number): void;
+  fit(): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  setSelectionMode(enabled: boolean): void;
+  copySelection(): void;
+  paste(data: string): void;
   /** Query current P50/P95 latency stats (result arrives via onLatencyStats). */
   getLatencyStats(): void;
 }
@@ -33,6 +39,7 @@ export interface TerminalViewProps {
   onInput?: (data: string, latencyTag: string) => void;
   /** Called when the terminal reports its dimensions (after fit). */
   onResize?: (cols: number, rows: number) => void;
+  onCopy?: (data: string) => void;
   /** Called with latency stats (P50/P95 in ms). */
   onLatencyStats?: (n: number, p50: number, p95: number) => void;
 }
@@ -56,7 +63,7 @@ export const TERMINAL_HTML_CONTENT = buildTerminalDocument({
 });
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
-  { onReady, onInput, onResize, onLatencyStats },
+  { onReady, onInput, onResize, onCopy, onLatencyStats },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
@@ -75,6 +82,24 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       },
       resize(cols: number, rows: number) {
         postToWebView({ type: 'resize', cols, rows });
+      },
+      fit() {
+        postToWebView({ type: 'fit' });
+      },
+      zoomIn() {
+        postToWebView({ type: 'zoom', delta: 0.15 });
+      },
+      zoomOut() {
+        postToWebView({ type: 'zoom', delta: -0.15 });
+      },
+      setSelectionMode(enabled: boolean) {
+        postToWebView({ type: 'selection-mode', enabled });
+      },
+      copySelection() {
+        postToWebView({ type: 'copy-selection' });
+      },
+      paste(data: string) {
+        postToWebView({ type: 'paste', data });
       },
       getLatencyStats() {
         postToWebView({ type: 'get-latency-stats' });
@@ -97,12 +122,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         case 'resize':
           onResize?.(msg.cols, msg.rows);
           break;
+        case 'copy':
+          onCopy?.(msg.data);
+          break;
         case 'latency-stats':
           onLatencyStats?.(msg.n, msg.p50, msg.p95);
           break;
       }
     },
-    [onReady, onInput, onResize, onLatencyStats],
+    [onReady, onInput, onResize, onCopy, onLatencyStats],
   );
 
   const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;

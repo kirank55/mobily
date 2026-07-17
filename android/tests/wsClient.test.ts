@@ -44,6 +44,7 @@ function createClient() {
   const errors: ErrorKind[] = [];
   const outputs: Array<{ data: string; tags?: readonly string[] }> = [];
   const alerts: string[] = [];
+  const resizes: Array<[number, number]> = [];
   const client = new WsClient({
     url: 'wss://station.example.devtunnels.ms',
     deviceBindingId: 'binding_AAAAAAAAAAAAAAAAAAAAAA',
@@ -52,8 +53,9 @@ function createClient() {
     onError: (_message, kind) => errors.push(kind ?? 'generic'),
     onOutput: (data, tags) => outputs.push({ data, tags }),
     onAlert: (message) => alerts.push(message),
+    onResize: (cols, rows) => resizes.push([cols, rows]),
   });
-  return { client, states, errors, outputs, alerts };
+  return { client, states, errors, outputs, alerts, resizes };
 }
 
 beforeEach(() => {
@@ -64,7 +66,7 @@ beforeEach(() => {
 
 describe('WsClient', () => {
   it('completes version negotiation and Device Key authentication before terminal I/O', async () => {
-    const { client, states, outputs } = createClient();
+    const { client, states, outputs, resizes } = createClient();
     client.connect();
     const socket = FakeWebSocket.instances[0]!;
     socket.open();
@@ -83,10 +85,13 @@ describe('WsClient', () => {
     });
 
     socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 160, rows: 48 });
     socket.receive({ type: 'output', data: 'ready', latencyTags: ['lat-12345678'] });
 
     expect(states.at(-1)).toBe('connected');
     expect(outputs).toEqual([{ data: 'ready', tags: ['lat-12345678'] }]);
+    expect(resizes).toEqual([[160, 48]]);
+    expect(socket.readyState).toBe(FakeWebSocket.OPEN);
   });
 
   it('distinguishes a Device Key signing failure from biometric cancellation', async () => {

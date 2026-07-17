@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
 import { deleteKey } from '@/auth/deviceKey';
 import { loadPairing, clearPairing } from '@/auth/storage';
@@ -33,14 +34,16 @@ export default function TerminalRoute() {
     disconnect,
     retry,
     sendInput,
-    sendResize,
     subscribeOutput,
+    subscribeResize,
   } = useStationConnection();
   const stationName = pairing?.stationName ?? 'Station';
   const [termReady, setTermReady] = useState(false);
   const [latencyStats, setLatencyStats] = useState<{ n: number; p50: number; p95: number } | null>(
     null,
   );
+  const [selectionMode, setSelectionMode] = useState(false);
+  const authoritativeSize = useRef({ cols: 120, rows: 40 });
 
   const termRef = useRef<TerminalViewHandle | null>(null);
 
@@ -81,13 +84,31 @@ export default function TerminalRoute() {
     });
   }, [subscribeOutput]);
 
+  useEffect(() => {
+    return subscribeResize((cols, rows) => {
+      authoritativeSize.current = { cols, rows };
+      termRef.current?.resize(cols, rows);
+    });
+  }, [subscribeResize]);
+
   // ── Terminal resize → send to WS ────────────────────────────────────────
-  const handleTermResize = useCallback(
-    (cols: number, rows: number) => {
-      sendResize(cols, rows);
-    },
-    [sendResize],
-  );
+  const handleTerminalReady = useCallback(() => {
+    setTermReady(true);
+    termRef.current?.resize(authoritativeSize.current.cols, authoritativeSize.current.rows);
+  }, []);
+
+  const toggleSelection = useCallback(() => {
+    setSelectionMode((enabled) => {
+      termRef.current?.setSelectionMode(!enabled);
+      return !enabled;
+    });
+  }, []);
+
+  const pasteClipboard = useCallback(() => {
+    void Clipboard.getStringAsync().then((data) => {
+      if (data) termRef.current?.paste(data);
+    });
+  }, []);
 
   // ── Terminal input → send to WS ─────────────────────────────────────────
   const handleTermInput = useCallback(
@@ -198,11 +219,31 @@ export default function TerminalRoute() {
 
       {/* Terminal WebView (always mounted; overlay shown on top when not connected) */}
       <View style={styles.terminalWrapper}>
+        <View style={styles.viewControls}>
+          <TouchableOpacity onPress={() => termRef.current?.fit()}>
+            <Text style={styles.controlText}>Fit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => termRef.current?.zoomOut()}>
+            <Text style={styles.controlText}>−</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => termRef.current?.zoomIn()}>
+            <Text style={styles.controlText}>+</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleSelection}>
+            <Text style={[styles.controlText, selectionMode && styles.controlActive]}>Select</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => termRef.current?.copySelection()}>
+            <Text style={styles.controlText}>Copy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={pasteClipboard}>
+            <Text style={styles.controlText}>Paste</Text>
+          </TouchableOpacity>
+        </View>
         <TerminalView
           ref={termRef}
-          onReady={() => setTermReady(true)}
+          onReady={handleTerminalReady}
           onInput={handleTermInput}
-          onResize={handleTermResize}
+          onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
             console.log(`[mobily latency] n=${n} P50=${p50}ms P95=${p95}ms`);
             setLatencyStats({ n, p50, p95 });
@@ -270,6 +311,25 @@ const styles = StyleSheet.create({
   terminalWrapper: {
     flex: 1,
     position: 'relative',
+  },
+  viewControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    minHeight: 38,
+    backgroundColor: '#111820',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#30363d',
+  },
+  controlText: {
+    color: '#c9d1d9',
+    fontSize: 13,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  controlActive: {
+    color: '#58a6ff',
+    fontWeight: '700',
   },
   overlay: {
     ...StyleSheet.absoluteFill,

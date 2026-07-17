@@ -31,6 +31,7 @@ import {
   type AlertFrame,
   type Frame,
   type OutputFrame,
+  type ResizeFrame,
 } from '@mobily/shared';
 import type { ExitEvent, IDisposable, SpawnOptions } from './pty/node-pty.js';
 import type { AuthManager } from './auth.js';
@@ -97,7 +98,10 @@ export class Session {
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
   private readonly exitListeners = new Set<(event: ExitEvent) => void>();
+  private readonly authenticatedListeners = new Set<() => void>();
   private localTerminal?: LocalTerminalState;
+  private currentCols: number;
+  private currentRows: number;
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
@@ -111,13 +115,17 @@ export class Session {
       runtime,
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
+      cols = 120,
+      rows = 40,
       ...spawnOpts
     } = opts;
     this.auth = auth;
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
-    this.backend = backend ?? new BareBackend(spawnOpts, runtime);
+    this.currentCols = cols;
+    this.currentRows = rows;
+    this.backend = backend ?? new BareBackend({ ...spawnOpts, cols, rows }, runtime);
     this.alertDetector = new TerminalAlertDetector((message) =>
       this.broadcast({ type: 'alert', message }),
     );
@@ -179,7 +187,7 @@ export class Session {
         if (active && !this.exited) this.backend.write(data);
       },
       resize: (cols, rows) => {
-        if (active && !this.exited) this.backend.resize(cols, rows);
+        if (active && !this.exited) this.applyResize(cols, rows);
       },
       dispose: () => {
         if (!active) return;
@@ -197,6 +205,12 @@ export class Session {
     }
     this.exitListeners.add(listener);
     return { dispose: () => this.exitListeners.delete(listener) };
+  }
+
+  /** Observe a phone completing authentication and becoming ready for terminal I/O. */
+  onAuthenticatedClient(listener: () => void): IDisposable {
+    this.authenticatedListeners.add(listener);
+    return { dispose: () => this.authenticatedListeners.delete(listener) };
   }
 
   // -------------------------------------------------------------------------
@@ -317,6 +331,7 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private attachAuthenticated(ws: WebSocket): void {
+    this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
     const replay = this.backend.readScrollback();
     if (replay.length > 0) this.sendTo(ws, { type: 'output', data: replay });
     this.subscribers.add(ws);
@@ -331,6 +346,13 @@ export class Session {
     };
     ws.on('close', detach);
     ws.on('error', detach);
+    for (const listener of [...this.authenticatedListeners]) {
+      try {
+        listener();
+      } catch {
+        // Connection readiness must not depend on an observer.
+      }
+    }
   }
 
   private handleMessage(ws: WebSocket, data: RawData): void {
@@ -360,7 +382,7 @@ export class Session {
       case 'resize':
         if (this.localTerminal) break;
         try {
-          this.backend.resize(frame.cols, frame.rows);
+          this.applyResize(frame.cols, frame.rows);
         } catch (err) {
           this.sendTo(ws, {
             type: 'output',
@@ -428,7 +450,7 @@ export class Session {
   // Outbound: PTY → clients
   // -------------------------------------------------------------------------
 
-  private broadcast(frame: OutputFrame | AlertFrame): void {
+  private broadcast(frame: OutputFrame | AlertFrame | ResizeFrame): void {
     if (frame.type === 'output' && this.localTerminal) {
       const state = this.localTerminal;
       try {
@@ -451,6 +473,13 @@ export class Session {
         this.sendRaw(ws, encodeFrame(frame));
       }
     }
+  }
+
+  private applyResize(cols: number, rows: number): void {
+    this.backend.resize(cols, rows);
+    this.currentCols = cols;
+    this.currentRows = rows;
+    this.broadcast({ type: 'resize', cols, rows });
   }
 
   private sendTo(ws: WebSocket, frame: Frame): void {
@@ -488,6 +517,7 @@ export class Session {
     }
     const exitListeners = [...this.exitListeners];
     this.exitListeners.clear();
+    this.authenticatedListeners.clear();
     for (const listener of exitListeners) {
       try {
         listener(event);

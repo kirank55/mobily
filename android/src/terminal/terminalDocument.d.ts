@@ -7,4 +7,27 @@ export interface TerminalDocumentAssets {
 
 export function buildTerminalDocument(assets: TerminalDocumentAssets): string;
 
+export function clampTerminalScale(value: number): number;
+export function fitTerminalScale(
+  viewportWidth: number,
+  viewportHeight: number,
+  terminalWidth: number,
+  terminalHeight: number,
+): number;
+export function pinchTerminalScale(
+  initialScale: number,
+  initialDistance: number,
+  currentDistance: number,
+): number;
+export function stripTerminalMouseControls(data: string): string;
 
+export interface TerminalCell {
+  readonly col: number;
+  readonly row: number;
+}
+
+export function terminalSelectionRange(
+  start: TerminalCell,
+  end: TerminalCell,
+  cols: number,
+): { readonly column: number; readonly row: number; readonly length: number };

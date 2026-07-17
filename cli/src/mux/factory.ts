@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import type { SpawnOptions } from '../pty/node-pty.js';
 import { BareBackend } from './bare.js';
 import { defaultSessionRuntime, type SessionRuntime } from './runtime.js';
-import { TmuxBackend } from './tmux.js';
+import { removePairingPanel, TmuxBackend } from './tmux.js';
 import type { SessionBackend } from './types.js';
 
 const SESSION_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -41,11 +41,12 @@ export function defaultSessionName(
   canonicalize: (path: string) => string = defaultSessionRuntime.canonicalize,
 ): string {
   const canonical = canonicalize(cwd);
-  const slug = basename(canonical)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32) || 'session';
+  const slug =
+    basename(canonical)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'session';
   const hash = createHash('sha256').update(canonical).digest('hex').slice(0, 8);
   return `mobily-${slug}-${hash}`;
 }
@@ -64,4 +65,15 @@ export function killTmuxSession(
   runtime: SessionRuntime = defaultSessionRuntime,
 ): void {
   runtime.execFile('tmux', ['kill-session', '-t', validateSessionName(name)]);
+}
+
+/** Remove the QR pane from the tmux session containing the current shell. */
+export function hideCurrentQrPanel(runtime: SessionRuntime = defaultSessionRuntime): boolean {
+  let session: string;
+  try {
+    session = validateSessionName(runtime.execFile('tmux', ['display-message', '-p', '#S']).trim());
+  } catch {
+    return false;
+  }
+  return removePairingPanel(session, runtime);
 }

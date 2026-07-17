@@ -50,6 +50,8 @@ export interface WsClientOptions {
   onStateChange?: (state: ConnectionState, detail?: string) => void;
   /** Callback for output frames (PTY data). */
   onOutput?: (data: string, latencyTags?: readonly string[]) => void;
+  /** Callback when the Station publishes its authoritative terminal grid. */
+  onResize?: (cols: number, rows: number) => void;
   /** Callback when the Station detects terminal output that needs attention. */
   onAlert?: (message: string) => void;
   /** Callback for structured RPC responses after authentication. */
@@ -383,8 +385,14 @@ export class WsClient {
       case 'hello':
       case 'auth-response':
       case 'input':
-      case 'resize':
         socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
+        break;
+      case 'resize':
+        if (this.handshakeState !== 'ready') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'resize before authentication');
+          return;
+        }
+        this.opts.onResize?.(frame.cols, frame.rows);
         break;
     }
   }

@@ -17,6 +17,7 @@ import { RpcClient } from './rpcClient';
 import { ForegroundConnectionController } from '@/foreground/controller';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
+type ResizeListener = (cols: number, rows: number) => void;
 
 interface StationConnectionValue {
   pairing: PairingRecord | null;
@@ -30,6 +31,7 @@ interface StationConnectionValue {
   sendInput(data: string, latencyTag?: string): void;
   sendResize(cols: number, rows: number): void;
   subscribeOutput(listener: OutputListener): () => void;
+  subscribeResize(listener: ResizeListener): () => void;
 }
 
 const StationConnectionContext = createContext<StationConnectionValue | null>(null);
@@ -44,6 +46,8 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const rpcRef = useRef<RpcClient | null>(null);
   const pairingRef = useRef<PairingRecord | null>(null);
   const outputListeners = useRef(new Set<OutputListener>());
+  const resizeListeners = useRef(new Set<ResizeListener>());
+  const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
 
   const disconnect = useCallback(() => {
@@ -52,6 +56,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     clientRef.current = null;
     rpcRef.current = null;
     pairingRef.current = null;
+    latestResize.current = null;
     setRpc(null);
     setPairing(null);
     setState('disconnected');
@@ -69,6 +74,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
 
     rpcRef.current?.disconnect();
     clientRef.current?.disconnect();
+    latestResize.current = null;
     let client!: WsClient;
     const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
     client = new WsClient({
@@ -96,6 +102,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       onOutput: (data, latencyTags) => {
         foreground.current.recordOutput(data);
         for (const listener of outputListeners.current) listener(data, latencyTags);
+      },
+      onResize: (cols, rows) => {
+        latestResize.current = { cols, rows };
+        for (const listener of resizeListeners.current) listener(cols, rows);
       },
       onAlert: (message) => void foreground.current.alert(message),
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
@@ -133,6 +143,12 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     outputListeners.current.add(listener);
     return () => outputListeners.current.delete(listener);
   }, []);
+  const subscribeResize = useCallback((listener: ResizeListener) => {
+    resizeListeners.current.add(listener);
+    const current = latestResize.current;
+    if (current) listener(current.cols, current.rows);
+    return () => resizeListeners.current.delete(listener);
+  }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -164,6 +180,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendInput,
       sendResize,
       subscribeOutput,
+      subscribeResize,
     }),
     [
       pairing,
@@ -177,6 +194,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendInput,
       sendResize,
       subscribeOutput,
+      subscribeResize,
     ],
   );
   return (

@@ -15,6 +15,9 @@ describe('parseTerminalBridgeMessage()', () => {
       rows: 24,
     });
     expect(parseTerminalBridgeMessage('{"type":"ready"}')).toEqual({ type: 'ready' });
+    expect(
+      parseTerminalBridgeMessage(JSON.stringify({ type: 'copy', data: 'selected text' })),
+    ).toEqual({ type: 'copy', data: 'selected text' });
   });
 
   it('rejects malformed, oversized, and unknown bridge messages', () => {

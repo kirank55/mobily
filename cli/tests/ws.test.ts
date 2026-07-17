@@ -256,13 +256,23 @@ describe('WebSocket → PTY round-trip', () => {
   it('applies resize frames to the PTY', async () => {
     const backend = new RecordingBackend();
     const session = new Session({ backend });
+    const authenticated = vi.fn();
+    session.onAuthenticatedClient(authenticated);
     sessions.push(session);
     const server = await startServer({ session });
     servers.push(server);
 
     const ws = new WebSocket(server.url);
+    const initialResize = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw: RawData) => {
+        const frame = JSON.parse(toText(raw)) as Record<string, unknown>;
+        if (frame['type'] === 'resize') resolve(frame);
+      });
+    });
     await waitForOpen(ws);
     conns.push(ws);
+    await vi.waitFor(() => expect(authenticated).toHaveBeenCalledOnce());
+    await expect(initialResize).resolves.toEqual({ type: 'resize', cols: 120, rows: 40 });
 
     sendFrame(ws, { type: 'resize', cols: 120, rows: 36 });
 

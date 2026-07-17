@@ -1,4 +1,7 @@
 import type { IDisposable, PtyProcess, SpawnOptions } from '../pty/node-pty.js';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { ScrollbackBuffer } from './scrollback.js';
 import { defaultSessionRuntime, type SessionRuntime } from './runtime.js';
 import type { SessionBackend } from './types.js';
@@ -21,23 +24,23 @@ export class TmuxBackend implements SessionBackend {
   private readonly listeners = new Set<(data: string) => void>();
   private readonly dataSubscription: IDisposable;
   private disposed = false;
+  private panelDirectory?: string;
 
-  constructor(options: TmuxBackendOptions, runtime: SessionRuntime = defaultSessionRuntime) {
+  constructor(
+    options: TmuxBackendOptions,
+    private readonly runtime: SessionRuntime = defaultSessionRuntime,
+  ) {
     const { cwd, sessionName, scrollbackBytes, cols, rows, env, terminalName } = options;
     this.sessionName = sessionName;
     this.attachCommand = `tmux attach-session -t ${sessionName}`;
     this.scrollback = new ScrollbackBuffer(scrollbackBytes);
 
-    if (!sessionExists(sessionName, runtime)) {
+    const created = !sessionExists(sessionName, runtime);
+    if (created) {
       runtime.execFile('tmux', ['new-session', '-d', '-s', sessionName, '-c', cwd]);
+      installPromptPrefix(sessionName, runtime);
     }
-    runtime.execFile('tmux', [
-      'set-window-option',
-      '-t',
-      sessionName,
-      'window-size',
-      'largest',
-    ]);
+    runtime.execFile('tmux', ['set-window-option', '-t', sessionName, 'window-size', 'largest']);
     try {
       this.scrollback.append(
         runtime.execFile('tmux', [
@@ -90,13 +93,69 @@ export class TmuxBackend implements SessionBackend {
     return this.scrollback.read(maxLines);
   }
 
+  showPairingPanel(content: string, height: number): void {
+    removePairingPanel(this.sessionName, this.runtime);
+    this.panelDirectory = mkdtempSync(join(tmpdir(), 'mobily-qr-'));
+    const panelFile = join(this.panelDirectory, 'panel.txt');
+    writeFileSync(panelFile, content, { encoding: 'utf8', mode: 0o600 });
+    const shellCommand = `cat -- '${panelFile.replaceAll("'", "'\\''")}'; exec sleep infinity`;
+    const pane = this.runtime
+      .execFile('tmux', [
+        'split-window',
+        '-d',
+        '-v',
+        '-b',
+        '-l',
+        String(Math.max(5, height)),
+        '-P',
+        '-F',
+        '#{pane_id}',
+        '-t',
+        this.sessionName,
+        shellCommand,
+      ])
+      .trim();
+    if (pane) this.runtime.execFile('tmux', ['set-option', '-p', '-t', pane, '@mobily_role', 'qr']);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.dataSubscription.dispose();
     this.listeners.clear();
     this.pty.kill();
+    if (this.panelDirectory) rmSync(this.panelDirectory, { recursive: true, force: true });
   }
+}
+
+function installPromptPrefix(sessionName: string, runtime: SessionRuntime): void {
+  const snippet = `if [ -n "$BASH_VERSION" ]; then case "$PS1" in '[mobily] '*) ;; *) PS1='[mobily] '"$PS1";; esac; elif [ -n "$ZSH_VERSION" ]; then case "$PROMPT" in '[mobily] '*) ;; *) PROMPT='[mobily] '"$PROMPT";; esac; else printf '[mobily] session\\n'; fi; clear`;
+  runtime.execFile('tmux', ['send-keys', '-t', sessionName, '-l', snippet]);
+  runtime.execFile('tmux', ['send-keys', '-t', sessionName, 'Enter']);
+}
+
+export function removePairingPanel(sessionName: string, runtime: SessionRuntime): boolean {
+  let panes = '';
+  try {
+    panes = runtime.execFile('tmux', [
+      'list-panes',
+      '-t',
+      sessionName,
+      '-F',
+      '#{pane_id} #{@mobily_role}',
+    ]);
+  } catch {
+    return false;
+  }
+  let removed = false;
+  for (const line of panes.split('\n')) {
+    const [pane, role] = line.trim().split(/\s+/, 2);
+    if (pane && role === 'qr') {
+      runtime.execFile('tmux', ['kill-pane', '-t', pane]);
+      removed = true;
+    }
+  }
+  return removed;
 }
 
 function sessionExists(name: string, runtime: SessionRuntime): boolean {

@@ -8,6 +8,7 @@ import { BareBackend } from '../src/mux/bare.js';
 import {
   createSessionBackend,
   defaultSessionName,
+  hideCurrentQrPanel,
   isTmuxAvailable,
   killTmuxSession,
   validateSessionName,
@@ -76,10 +77,7 @@ function runtime(overrides: Partial<SessionRuntime> = {}): {
 describe('BareBackend', () => {
   it('provides terminal I/O and bounded trailing-line replay through the backend seam', () => {
     const fake = runtime();
-    const backend = new BareBackend(
-      { cwd: '/workspace', scrollbackBytes: 32 },
-      fake.value,
-    );
+    const backend = new BareBackend({ cwd: '/workspace', scrollbackBytes: 32 }, fake.value);
     const received: string[] = [];
     backend.onData((data) => received.push(data));
 
@@ -107,6 +105,7 @@ describe('TmuxBackend', () => {
         fake.commands.push({ file, args });
         if (args[0] === 'has-session') throw new Error('missing');
         if (args[0] === 'capture-pane') return 'captured\n';
+        if (args[0] === 'split-window') return '%9\n';
         return '';
       }),
     });
@@ -141,10 +140,47 @@ describe('TmuxBackend', () => {
     );
     expect(backend.readScrollback()).toContain('captured');
     expect(backend.attachCommand).toBe('tmux attach-session -t mobily-work-1234');
+    expect(fake.commands.some(({ args }) => args[0] === 'send-keys' && args.includes('-l'))).toBe(
+      true,
+    );
+
+    backend.showPairingPanel('QR AND CODE', 10);
+    expect(fake.commands).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: 'tmux',
+          args: expect.arrayContaining(['split-window', '-l', '10']),
+        }),
+        { file: 'tmux', args: ['set-option', '-p', '-t', '%9', '@mobily_role', 'qr'] },
+      ]),
+    );
 
     backend.dispose();
     expect(fake.pty.killed).toBe(true);
     expect(fake.commands.some(({ args }) => args[0] === 'kill-session')).toBe(false);
+  });
+
+  it('does not rewrite the prompt when resuming an existing session', () => {
+    const fake = runtime();
+    const backend = new TmuxBackend(
+      { cwd: '/workspace', sessionName: 'mobily-existing' },
+      fake.value,
+    );
+    expect(fake.commands.some(({ args }) => args[0] === 'send-keys')).toBe(false);
+    backend.dispose();
+  });
+
+  it('hides the marked QR pane in the current tmux session', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'display-message') return 'mobily-work-1234\n';
+        if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        return '';
+      }),
+    });
+    expect(hideCurrentQrPanel(fake.value)).toBe(true);
+    expect(fake.commands).toContainEqual({ file: 'tmux', args: ['kill-pane', '-t', '%2'] });
   });
 });
 
@@ -229,8 +265,24 @@ describe.skipIf(!tmuxAvailable)('real tmux integration', () => {
 
     killTmuxSession(name);
     names.splice(names.indexOf(name), 1);
-    expect(() =>
-      execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' }),
-    ).toThrow();
+    expect(() => execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' })).toThrow();
   }, 20_000);
+
+  it('pins pairing details in a marked tmux pane', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mobily-tmux-panel-')));
+    directories.push(cwd);
+    const name = `mobily-panel-${process.pid}-${Date.now()}`;
+    names.push(name);
+    const backend = new TmuxBackend({ cwd, sessionName: name });
+
+    backend.showPairingPanel('PAIRING CODE: ABC123', 8);
+
+    const panes = execFileSync(
+      'tmux',
+      ['list-panes', '-t', name, '-F', '#{pane_id} #{@mobily_role}'],
+      { encoding: 'utf8' },
+    );
+    expect(panes).toContain(' qr');
+    backend.dispose();
+  });
 });
