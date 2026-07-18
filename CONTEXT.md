@@ -24,9 +24,21 @@ _Avoid_: Device ID, UUID, fingerprint
 A persistent terminal interaction on the Station. When `tmux` is available, backed by a tmux session (survives CLI crash). When `tmux` is absent, backed by the CLI process's PTY (survives client disconnects, but not CLI crash).
 _Avoid_: Connection (that's the WebSocket link, not the terminal session)
 
+**Terminal Size Owner**:
+The single active viewer whose geometry defines a Session's terminal grid. The Station grants ownership to the most recently foregrounded Android terminal and reclaims it when that terminal leaves or disconnects; other viewers remain interactive but cannot resize the Session.
+_Avoid_: Authoritative grid, primary terminal
+
+**Session Snapshot**:
+An atomic representation of a Session's visible terminal cells, styling, cursor position, and grid dimensions at a point in time. A newly authenticated viewer receives it before live terminal output.
+_Avoid_: Replay, scrollback
+
 **Tunnel**:
 The secure relay that makes the CLI's WebSocket server reachable from the public internet. Pluggable — default is Dev Tunnels (anonymous), but users can swap to Bore, Cloudflare, SSH, or local network via a `TunnelBackend` interface.
 _Avoid_: Proxy, relay (too generic)
+
+**Temporary Tunnel**:
+A Tunnel created and recorded by Mobily for the lifetime of a CLI run. Mobily removes it during orderly shutdown or stale-resource recovery and never treats an unrecorded user-created tunnel as its own.
+_Avoid_: Dev Tunnel, orphaned tunnel
 
 **Pairing Code**:
 A short alphanumeric code (6-8 chars) displayed as a terminal QR code during first-time setup. The phone scans the QR, sends the code to the CLI's HTTPS pairing endpoint, and receives the full connection payload (tunnel URL, key exchange) in response. The code is single-use.
