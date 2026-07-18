@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -104,17 +104,31 @@ export default function TerminalRoute() {
   }, [subscribeSnapshot, termReady]);
 
   useEffect(() => {
-    if (connState === 'connecting' || connState === 'reconnecting') {
+    if (connState === 'connected' && snapshotApplied) {
+      termRef.current?.setConnectionState('live');
+    } else if (connState === 'connecting' || connState === 'reconnecting') {
       setSnapshotApplied(false);
+      termRef.current?.setConnectionState(
+        connState === 'reconnecting' ? 'reconnecting' : 'loading',
+        detail,
+      );
     }
-  }, [connState]);
+  }, [connState, detail, snapshotApplied]);
 
   // ── Terminal resize → send to WS ────────────────────────────────────────
   const handleTerminalReady = useCallback(() => {
     setTermReady(true);
+    termRef.current?.setConnectionState(
+      connState === 'reconnecting' ? 'reconnecting' : 'loading',
+      detail,
+    );
     const snapshot = pendingSnapshot.current;
     if (snapshot) termRef.current?.applySnapshot(snapshot);
     else termRef.current?.resize(sessionSize.current.cols, sessionSize.current.rows);
+  }, [connState, detail]);
+
+  const handleSnapshotApplied = useCallback(() => {
+    setSnapshotApplied(true);
   }, []);
 
   const toggleSelection = useCallback(() => {
@@ -262,7 +276,7 @@ export default function TerminalRoute() {
         <TerminalView
           ref={termRef}
           onReady={handleTerminalReady}
-          onSnapshotApplied={() => setSnapshotApplied(true)}
+          onSnapshotApplied={handleSnapshotApplied}
           onInput={handleTermInput}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
@@ -270,22 +284,6 @@ export default function TerminalRoute() {
             setLatencyStats({ n, p50, p95 });
           }}
         />
-        {/* Connecting / Reconnecting overlay */}
-        {(connState === 'connecting' ||
-          connState === 'reconnecting' ||
-          !termReady ||
-          !snapshotApplied) && (
-          <View style={styles.overlay}>
-            <ActivityIndicator size="large" color="#58a6ff" />
-            <Text style={styles.overlayText}>
-              {connState === 'reconnecting'
-                ? `Reconnecting… (${detail})`
-                : connState === 'connected'
-                  ? 'Loading Session…'
-                  : `Connecting to ${stationName}…`}
-            </Text>
-          </View>
-        )}
       </View>
     </SafeAreaView>
   );
@@ -356,20 +354,6 @@ const styles = StyleSheet.create({
   controlActive: {
     color: '#58a6ff',
     fontWeight: '700',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(13,17,23,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    zIndex: 10,
-  },
-  overlayText: {
-    color: '#8b949e',
-    fontSize: 15,
-    textAlign: 'center',
-    paddingHorizontal: 32,
   },
   center: {
     flex: 1,

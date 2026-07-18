@@ -415,7 +415,13 @@ export class WsClient {
           socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'resize before authentication');
           return;
         }
-        if (this.handshakeState === 'awaiting-snapshot') this.receivedInitialSize = true;
+        if (this.handshakeState === 'awaiting-snapshot') {
+          // The complete snapshot carries these dimensions. Publishing
+          // handshake geometry would resize a retained reconnect frame before
+          // its atomic replacement is available.
+          this.receivedInitialSize = true;
+          return;
+        }
         this.opts.onResize?.(frame.cols, frame.rows);
         break;
     }

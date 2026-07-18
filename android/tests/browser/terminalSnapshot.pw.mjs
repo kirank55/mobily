@@ -16,6 +16,12 @@ const terminalHtml = buildTerminalDocument({
   devBridgeJs: `
     window.__mobilyMessages=[];
     window.__mobilyInspectTerminal=function(terminal){window.__mobilyTerminal=terminal;};
+    window.__mobilyTerminalLines=function(){
+      var terminal=window.__mobilyTerminal;
+      return Array.from({length:terminal.rows},function(_,row){
+        return terminal.buffer.active.getLine(row).translateToString(true).trimEnd();
+      });
+    };
     window.ReactNativeWebView={postMessage:function(raw){
       window.__mobilyMessages.push(JSON.parse(raw));
     }};
@@ -136,6 +142,167 @@ test('renders a detailed OpenCode-like Session Snapshot in the production docume
     ),
   ).toBe(true);
 });
+
+test('retains the old frame while reconnecting and atomically replaces it before live output', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await dispatchSnapshot(page, textSnapshot('OLD FRAME'));
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminalLines().join('\n')))
+    .toContain('OLD FRAME');
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'connection-state',
+          state: 'reconnecting',
+          detail: 'attempt 1',
+        }),
+      }),
+    );
+  });
+
+  await expect(page.locator('#connection-overlay')).toContainText('Reconnecting');
+  await expect(page.locator('#connection-overlay')).toHaveAttribute('data-state', 'reconnecting');
+  expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
+    'OLD FRAME',
+  );
+
+  await page.evaluate((nextSnapshot) => {
+    window.__mobilyMessages = [];
+    window.__observedTerminalFrames = [];
+    const sample = () => {
+      window.__observedTerminalFrames.push(window.__mobilyTerminalLines().join('\n'));
+    };
+    sample();
+    requestAnimationFrame(sample);
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session-snapshot', snapshot: nextSnapshot }),
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: '\r\nLIVE ONCE' }),
+      }),
+    );
+    requestAnimationFrame(() => requestAnimationFrame(sample));
+  }, textSnapshot('FRESH FRAME'));
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.some((message) => message.type === 'snapshot-applied'),
+      ),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'connection-state', state: 'live' }),
+      }),
+    );
+  });
+  await expect(page.locator('#connection-overlay')).toHaveAttribute('data-state', 'live');
+
+  const result = await page.evaluate(() => ({
+    rendered: window.__mobilyTerminalLines().join('\n'),
+    observed: window.__observedTerminalFrames,
+  }));
+  expect(result.rendered).toContain('FRESH FRAME');
+  expect(result.rendered.match(/LIVE ONCE/g)).toHaveLength(1);
+  for (const frame of result.observed) {
+    expect(frame.includes('OLD FRAME') && frame.includes('FRESH FRAME')).toBe(false);
+  }
+});
+
+test('does not let a stale snapshot completion hide a newer reconnect state', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+  await dispatchSnapshot(page, textSnapshot('OLD FRAME'));
+
+  await page.evaluate((nextSnapshot) => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session-snapshot', snapshot: nextSnapshot }),
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'connection-state',
+          state: 'reconnecting',
+          detail: 'attempt 2',
+        }),
+      }),
+    );
+  }, textSnapshot('FRESH FRAME'));
+
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
+      ),
+  );
+  expect(
+    await page.evaluate(() =>
+      window.__mobilyMessages.some((message) => message.type === 'snapshot-applied'),
+    ),
+  ).toBe(false);
+  await expect(page.locator('#connection-overlay')).toHaveAttribute('data-state', 'reconnecting');
+  await expect(page.locator('#connection-overlay')).toContainText('attempt 2');
+  expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
+    'OLD FRAME',
+  );
+});
+
+async function dispatchSnapshot(page, snapshot) {
+  await page.evaluate((nextSnapshot) => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session-snapshot', snapshot: nextSnapshot }),
+      }),
+    );
+  }, snapshot);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.some((message) => message.type === 'snapshot-applied'),
+      ),
+    )
+    .toBe(true);
+}
+
+function textSnapshot(text) {
+  const cols = 20;
+  const rows = 3;
+  const grid = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => ({ chars: ' ', width: 1 })),
+  );
+  writeRow(grid[0], text);
+  return {
+    type: 'session-snapshot',
+    cols,
+    rows,
+    activeScreen: 'normal',
+    cursor: { col: 0, row: 1, visible: true, style: 'block', blink: false },
+    grid,
+  };
+}
 
 function openCodeSnapshot() {
   const cols = 40;

@@ -493,22 +493,54 @@ describe('pairing endpoint error cases', () => {
 });
 
 describe('reconnect after disconnect', () => {
-  it('a second WS connection with the same device succeeds and the PTY is still alive', async () => {
-    const { server, privateKeyPem, deviceId } = await setupPairedSession();
+  it('replaces from a fresh snapshot before delivering buffered output exactly once', async () => {
+    const { server, session, privateKeyPem, deviceId } = await setupPairedSession();
+    let workstationOutput = '';
+    const workstation = session.attachLocalTerminal({
+      onOutput: (data) => {
+        workstationOutput += data;
+      },
+    });
 
     // Client A: connect, authenticate, drive the shell.
     const { ws: a } = await connectAndHandshake(server, privateKeyPem, deviceId);
     sendFrame(a, { type: 'input', data: `echo RECONNECT_A${eol()}` });
     await collectOutput(a, (b) => b.includes('RECONNECT_A'));
+    await vi.waitFor(() => expect(workstationOutput).toContain('RECONNECT_A'));
 
     // Disconnect A.
     a.close();
     await waitForClose(a);
 
-    // Client B: reconnect with the same device.
-    const { ws: b } = await connectAndHandshake(server, privateKeyPem, deviceId);
-    sendFrame(b, { type: 'input', data: `echo RECONNECT_B${eol()}` });
-    const out = await collectOutput(b, (b2) => b2.includes('RECONNECT_B'));
-    expect(out).toContain('RECONNECT_B');
+    // Client B reconnects. Output produced after authentication is queued
+    // behind its capture boundary and must follow the complete fresh snapshot.
+    const { frames } = await connectAndHandshake(server, privateKeyPem, deviceId);
+    workstationOutput = '';
+    workstation.input(`printf BUFFER_ONE; printf BUFFER_TWO${eol()}`);
+
+    await vi.waitFor(() => {
+      const streamed = frames
+        .filter((frame) => frame['type'] === 'output')
+        .map((frame) => String(frame['data']))
+        .join('');
+      expect(streamed).toContain('BUFFER_ONE');
+      expect(streamed).toContain('BUFFER_TWO');
+      expect(streamed).toBe(workstationOutput);
+    });
+
+    const snapshotIndex = frames.findIndex((frame) => frame['type'] === 'session-snapshot');
+    const firstOutputIndex = frames.findIndex((frame) => frame['type'] === 'output');
+    expect(snapshotIndex).toBeGreaterThan(-1);
+    expect(firstOutputIndex).toBeGreaterThan(snapshotIndex);
+    const snapshot = frames[snapshotIndex] as {
+      grid: Array<Array<{ chars: string }>>;
+    };
+    expect(
+      snapshot.grid
+        .flat()
+        .map((cell) => cell.chars)
+        .join(''),
+    ).toContain('RECONNECT_A');
+    workstation.dispose();
   }, 25000);
 });

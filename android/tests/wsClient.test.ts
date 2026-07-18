@@ -46,6 +46,7 @@ class FakeWebSocket {
 }
 
 function createClient() {
+  const terminalEvents: string[] = [];
   const states: ConnectionState[] = [];
   const errors: ErrorKind[] = [];
   const outputs: Array<{ data: string; tags?: readonly string[] }> = [];
@@ -58,12 +59,21 @@ function createClient() {
     protocolVersion: PROTOCOL_VERSION,
     onStateChange: (state) => states.push(state),
     onError: (_message, kind) => errors.push(kind ?? 'generic'),
-    onOutput: (data, tags) => outputs.push({ data, tags }),
+    onOutput: (data, tags) => {
+      outputs.push({ data, tags });
+      terminalEvents.push(`output:${data}`);
+    },
     onAlert: (message) => alerts.push(message),
-    onResize: (cols, rows) => resizes.push([cols, rows]),
-    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onResize: (cols, rows) => {
+      resizes.push([cols, rows]);
+      terminalEvents.push(`resize:${cols}x${rows}`);
+    },
+    onSnapshot: (snapshot) => {
+      snapshots.push(snapshot);
+      terminalEvents.push(`snapshot:${snapshot.grid[0]?.map((cell) => cell.chars).join('')}`);
+    },
   });
-  return { client, states, errors, outputs, alerts, resizes, snapshots };
+  return { client, states, errors, outputs, alerts, resizes, snapshots, terminalEvents };
 }
 
 function snapshot(chars = 'ready'): SessionSnapshotFrame {
@@ -112,7 +122,7 @@ describe('WsClient', () => {
     expect(states.at(-1)).toBe('connected');
     expect(snapshots).toEqual([snapshot()]);
     expect(outputs).toEqual([{ data: 'ready', tags: ['lat-12345678'] }]);
-    expect(resizes).toEqual([[160, 48]]);
+    expect(resizes).toEqual([]);
     expect(socket.readyState).toBe(FakeWebSocket.OPEN);
   });
 
@@ -248,6 +258,57 @@ describe('WsClient', () => {
       expect(FakeWebSocket.instances).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(1);
       expect(FakeWebSocket.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains the current frame until reconnect snapshot replacement and ignores superseded sockets', async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, outputs, resizes, snapshots, terminalEvents } = createClient();
+      client.connect();
+      const first = FakeWebSocket.instances[0]!;
+      first.open();
+      first.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+      first.receive({ type: 'auth-challenge', nonce: 'first-challenge' });
+      await vi.waitFor(() => expect(first.sent).toHaveLength(2));
+      first.receive({ type: 'auth-ok' });
+      first.receive({ type: 'resize', cols: 3, rows: 1 });
+      first.receive(snapshot('old'));
+      first.receive({ type: 'output', data: '!' });
+
+      first.close(1006, 'transient');
+      await vi.advanceTimersByTimeAsync(1000);
+      const second = FakeWebSocket.instances[1]!;
+      second.open();
+      second.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+      second.receive({ type: 'auth-challenge', nonce: 'second-challenge' });
+      await vi.waitFor(() => expect(second.sent).toHaveLength(2));
+      second.receive({ type: 'auth-ok' });
+      second.receive({ type: 'resize', cols: 5, rows: 1 });
+
+      // The reconnect's dimensions are handshake metadata. They must not
+      // resize the retained frame before its complete replacement arrives.
+      expect(resizes).toEqual([]);
+      expect(snapshots).toEqual([snapshot('old')]);
+
+      // A delayed frame from the superseded socket cannot reach the terminal.
+      first.receive({ type: 'output', data: 'stale' });
+
+      second.receive(snapshot('fresh'));
+      second.receive({ type: 'output', data: '+live' });
+
+      expect(outputs).toEqual([
+        { data: '!', tags: undefined },
+        { data: '+live', tags: undefined },
+      ]);
+      expect(terminalEvents).toEqual([
+        'snapshot:old',
+        'output:!',
+        'snapshot:fresh',
+        'output:+live',
+      ]);
     } finally {
       vi.useRealTimers();
     }

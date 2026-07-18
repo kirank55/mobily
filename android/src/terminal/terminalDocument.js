@@ -203,8 +203,24 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
     .key-btn.armed { background: #1e3a5f; color: #58a6ff; }
     #viewport { flex: 1; min-height: 0; overflow: auto; position: relative; overscroll-behavior: contain; }
     #stage { position: relative; min-width: 100%; min-height: 100%; }
-    #tc { position: absolute; left: 0; top: 0; padding: 4px; transform-origin: 0 0; }
-    #tc .xterm { height: 100%; }
+    .terminal-surface { position: absolute; left: 0; top: 0; padding: 4px; transform-origin: 0 0; }
+    .terminal-surface .xterm { height: 100%; }
+    #connection-overlay {
+      position: absolute; inset: 0; z-index: 20; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+      color: #c9d1d9; font: 600 14px system-ui, sans-serif;
+    }
+    #connection-overlay[data-state="loading"] { background: rgba(13,17,23,0.92); }
+    #connection-overlay[data-state="reconnecting"] {
+      align-items: flex-start; justify-content: center; padding-top: 12px;
+      background: linear-gradient(rgba(13,17,23,0.38), transparent 30%);
+    }
+    #connection-overlay[data-state="reconnecting"] #connection-status {
+      border: 1px solid #6e5b16; border-radius: 999px; padding: 7px 12px;
+      color: #f2cc60; background: rgba(13,17,23,0.9);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    }
+    #connection-overlay[data-state="live"] { display: none; }
     body.selecting #viewport { touch-action: none; }
   </style>
 </head>
@@ -224,7 +240,12 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
     <button class="key-btn" data-seq="PGUP">PgUp</button>
     <button class="key-btn" data-seq="PGDN">PgDn</button>
   </div>
-  <div id="viewport"><div id="stage"><div id="tc"></div></div></div>
+  <div id="viewport">
+    <div id="stage"><div id="tc" class="terminal-surface"></div></div>
+    <div id="connection-overlay" data-state="loading">
+      <div id="connection-status">Loading Session&hellip;</div>
+    </div>
+  </div>
 </div>
 <script nonce="mobily-terminal">${XTERM_JS}</script>
 <script nonce="mobily-terminal">${XTERM_FIT_JS}</script>
@@ -235,7 +256,7 @@ ${VIEWPORT_HELPERS}
   'use strict';
   var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',HOME:'\\x1b[H',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
-  var outQ=[],rafPending=false,term=null,fitAddon=null;
+  var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
   var scale=1,selectionMode=false,mouseCarry='',selectionStart=null,pinchDistance=0,pinchScale=1;
 
   function setArmed(mod,v){
@@ -261,10 +282,14 @@ ${VIEWPORT_HELPERS}
   }
   function enqueue(data,tags){
     recordEcho(tags);outQ.push(data);
-    if(!rafPending){rafPending=true;requestAnimationFrame(function(){
-      rafPending=false;if(!outQ.length)return;
-       var chunk=stripMouseModes(outQ.join(''));outQ=[];if(term)term.write(chunk);
-    });}
+    if(!snapshotInFlight)scheduleOutput();
+  }
+  function scheduleOutput(){
+    if(rafPending||snapshotInFlight||!outQ.length)return;
+    rafPending=true;requestAnimationFrame(function(){
+      rafPending=false;if(snapshotInFlight||!outQ.length)return;
+      var chunk=stripMouseModes(outQ.join(''));outQ=[];if(term)term.write(chunk);
+    });
   }
   function sendRN(msg){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(msg));}catch(_){}}
   function sendInput(data){
@@ -279,6 +304,60 @@ ${VIEWPORT_HELPERS}
     var pending=value.match(/\x1b(?:\[|\[\?[0-9;]*)$/);
     if(pending){mouseCarry=pending[0];value=value.slice(0,-pending[0].length);}
     return stripTerminalMouseControls(value);
+  }
+  function terminalOptions(cols,rows){
+    return {allowProposedApi:true,cursorBlink:true,fontSize:14,cols:cols,rows:rows,
+      fontFamily:"'Cascadia Code','JetBrains Mono','Fira Code','Courier New',monospace",
+      theme:{background:'#1a1a1a',foreground:'#e6e6e6',cursor:'#e6e6e6',
+        black:'#1a1a1a',red:'#da3633',green:'#2ea043',yellow:'#e3b341',
+        blue:'#58a6ff',magenta:'#bc8cff',cyan:'#39c5cf',white:'#b1bac4',
+        brightBlack:'#484f58',brightRed:'#f85149',brightGreen:'#56d364',
+        brightYellow:'#e3b341',brightBlue:'#79c0ff',brightMagenta:'#d2a8ff',
+        brightCyan:'#56d4dd',brightWhite:'#f0f6fc'},scrollback:5000,convertEol:false};
+  }
+  function openTerminal(container,cols,rows){
+    var next=new Terminal(terminalOptions(cols,rows));
+    next.loadAddon(new FitAddon.FitAddon());next.open(container);return next;
+  }
+  function bindTerminalInput(target){
+    target.onData(function(d){sendInput(d);});
+  }
+  function setConnectionState(state,detail){
+    if(['loading','reconnecting','live'].indexOf(state)<0)return;
+    if(state==='reconnecting'){
+      // A reconnect transition supersedes every frame and queued output from
+      // the socket that just dropped, including a snapshot still parsing in
+      // the hidden staging terminal.
+      snapshotToken++;snapshotInFlight=false;outQ=[];mouseCarry='';
+    }
+    var overlay=document.getElementById('connection-overlay');
+    var status=document.getElementById('connection-status');
+    overlay.setAttribute('data-state',state);
+    status.textContent=state==='reconnecting'
+      ? 'Reconnecting\u2026'+(detail?' ('+detail+')':'')
+      : state==='loading'?'Loading Session\u2026':'';
+  }
+  function applySnapshot(snapshot){
+    var snapshotAnsi=snapshotToAnsi(snapshot);if(snapshotAnsi===null)return;
+    outQ=[];mouseCarry='';snapshotInFlight=true;
+    var token=++snapshotToken,oldTerm=term;
+    var oldContainer=oldTerm&&oldTerm.element&&oldTerm.element.parentElement;
+    var nextContainer=document.createElement('div');
+    nextContainer.className='terminal-surface';nextContainer.style.visibility='hidden';
+    document.getElementById('stage').appendChild(nextContainer);
+    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows);
+    nextTerm.write(snapshotAnsi,function(){
+      if(token!==snapshotToken){
+        nextTerm.dispose();nextContainer.remove();return;
+      }
+      nextContainer.id='tc';nextContainer.style.visibility='visible';
+      if(oldContainer){oldContainer.removeAttribute('id');oldContainer.remove();}
+      if(oldTerm)oldTerm.dispose();
+      term=nextTerm;bindTerminalInput(term);snapshotInFlight=false;
+      if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
+      scheduleOutput();
+      requestAnimationFrame(fitView);sendRN({type:'snapshot-applied'});
+    });
   }
   function terminalPixels(){
     var screen=term&&term.element&&term.element.querySelector('.xterm-screen');
@@ -314,12 +393,9 @@ ${VIEWPORT_HELPERS}
     if(typeof ev.data!=='string'||ev.data.length>4194304)return;
     var msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
     if(!msg||typeof msg!=='object')return;
-    if(msg.type==='session-snapshot'&&term){
-      var snapshotAnsi=snapshotToAnsi(msg.snapshot);if(snapshotAnsi===null)return;
-      outQ=[];mouseCarry='';term.resize(msg.snapshot.cols,msg.snapshot.rows);
-      term.write(snapshotAnsi,function(){requestAnimationFrame(fitView);sendRN({type:'snapshot-applied'});});
-    }
+    if(msg.type==='session-snapshot'&&term)applySnapshot(msg.snapshot);
     else if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
+    else if(msg.type==='connection-state'&&typeof msg.state==='string'&&(msg.detail===undefined||typeof msg.detail==='string'))setConnectionState(msg.state,msg.detail);
     else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){term.resize(msg.cols,msg.rows);requestAnimationFrame(fitView);}
     else if(msg.type==='fit')fitView();
     else if(msg.type==='zoom'&&typeof msg.delta==='number')applyScale(scale+msg.delta);
@@ -329,19 +405,10 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='get-latency-stats')emitLatStats();
   }
   function init(){
-    term=new Terminal({allowProposedApi:true,cursorBlink:true,fontSize:14,cols:120,rows:40,
-      fontFamily:"'Cascadia Code','JetBrains Mono','Fira Code','Courier New',monospace",
-      theme:{background:'#1a1a1a',foreground:'#e6e6e6',cursor:'#e6e6e6',
-        black:'#1a1a1a',red:'#da3633',green:'#2ea043',yellow:'#e3b341',
-        blue:'#58a6ff',magenta:'#bc8cff',cyan:'#39c5cf',white:'#b1bac4',
-        brightBlack:'#484f58',brightRed:'#f85149',brightGreen:'#56d364',
-        brightYellow:'#e3b341',brightBlue:'#79c0ff',brightMagenta:'#d2a8ff',
-        brightCyan:'#56d4dd',brightWhite:'#f0f6fc'},scrollback:5000,convertEol:false});
-    fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);
-    term.open(document.getElementById('tc'));requestAnimationFrame(fitView);
+    term=openTerminal(document.getElementById('tc'),120,40);requestAnimationFrame(fitView);
     if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
     document.getElementById('key-row').style.display='flex';
-    term.onData(function(d){sendInput(d);});
+    bindTerminalInput(term);
     new ResizeObserver(function(){fitView();}).observe(document.getElementById('viewport'));
     window.addEventListener('message',handleMsg);document.addEventListener('message',handleMsg);
     sendRN({type:'ready'});

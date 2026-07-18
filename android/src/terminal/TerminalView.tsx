@@ -25,6 +25,8 @@ export interface TerminalViewHandle {
   applySnapshot(snapshot: SessionSnapshotFrame): void;
   /** Request the terminal to resize to the given dimensions. */
   resize(cols: number, rows: number): void;
+  /** Show connection status without clearing the rendered terminal frame. */
+  setConnectionState(state: 'loading' | 'reconnecting' | 'live', detail?: string): void;
   fit(): void;
   zoomIn(): void;
   zoomOut(): void;
@@ -90,6 +92,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       },
       resize(cols: number, rows: number) {
         postToWebView({ type: 'resize', cols, rows });
+      },
+      setConnectionState(state: 'loading' | 'reconnecting' | 'live', detail?: string) {
+        postToWebView({ type: 'connection-state', state, detail });
       },
       fit() {
         postToWebView({ type: 'fit' });
