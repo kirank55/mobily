@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { Terminal } from '@xterm/headless';
 
 import {
   buildTerminalDocument,
@@ -8,6 +9,7 @@ import {
   fitTerminalScale,
   pinchTerminalScale,
   stripTerminalMouseControls,
+  snapshotToAnsi,
   terminalSelectionRange,
 } from '../src/terminal/terminalDocument';
 
@@ -45,6 +47,46 @@ describe('terminal document', () => {
   it('preserves generic ANSI output while suppressing terminal mouse ownership', () => {
     const fixture = '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1002;1006h';
     expect(stripTerminalMouseControls(fixture)).toBe('\u001b[2J\u001b[31mwide TUI\u001b[0m');
+  });
+
+  it('reconstructs a styled nonblank first frame in the production terminal parser', async () => {
+    const ansi = snapshotToAnsi({
+      type: 'session-snapshot',
+      cols: 4,
+      rows: 2,
+      activeScreen: 'alternate',
+      cursor: { col: 2, row: 1, visible: false, style: 'bar', blink: false },
+      grid: [
+        [
+          {
+            chars: '界',
+            width: 2,
+            fg: { mode: 'rgb', value: 0x12abef },
+            attrs: 1,
+          },
+          { chars: '', width: 0 },
+          { chars: 'O', width: 1 },
+          { chars: 'K', width: 1 },
+        ],
+        [
+          { chars: '>', width: 1 },
+          { chars: ' ', width: 1 },
+          { chars: ' ', width: 1 },
+          { chars: ' ', width: 1 },
+        ],
+      ],
+    });
+    expect(ansi).not.toBeNull();
+
+    const terminal = new Terminal({ allowProposedApi: true, cols: 4, rows: 2 });
+    await new Promise<void>((resolve) => terminal.write(ansi!, resolve));
+    expect(terminal.buffer.active.type).toBe('alternate');
+    expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('界OK');
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.isBold()).toBeTruthy();
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getFgColor()).toBe(0x12abef);
+    expect(terminal.buffer.active.cursorX).toBe(2);
+    expect(terminal.buffer.active.cursorY).toBe(1);
+    terminal.dispose();
   });
 
   it('normalizes forward and reverse touch selections across terminal rows', () => {

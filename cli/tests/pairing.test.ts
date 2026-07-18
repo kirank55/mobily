@@ -129,6 +129,7 @@ function collectOutput(
 }
 
 function frameBuffer(ws: WebSocket): {
+  readonly frames: Record<string, unknown>[];
   waitFor(type: string, timeoutMs?: number): Promise<Record<string, unknown>>;
 } {
   const frames: Record<string, unknown>[] = [];
@@ -140,6 +141,7 @@ function frameBuffer(ws: WebSocket): {
     }
   });
   return {
+    frames,
     async waitFor(type: string, timeoutMs = 5000): Promise<Record<string, unknown>> {
       await vi.waitFor(
         () => {
@@ -192,6 +194,7 @@ afterEach(async () => {
 async function setupPairedSession(): Promise<{
   server: Server;
   auth: AuthManager;
+  session: Session;
   deviceId: string;
   privateKeyPem: string;
 }> {
@@ -223,14 +226,14 @@ async function setupPairedSession(): Promise<{
   });
   expect(res.status).toBe(200);
 
-  return { server, auth, deviceId, privateKeyPem };
+  return { server, auth, session, deviceId, privateKeyPem };
 }
 
 async function connectAndHandshake(
   server: Server,
   privateKeyPem: string,
   deviceId: string,
-): Promise<WebSocket> {
+): Promise<{ ws: WebSocket; frames: Record<string, unknown>[] }> {
   const ws = new WebSocket(server.url);
   await waitForOpen(ws);
   conns.push(ws);
@@ -244,18 +247,97 @@ async function connectAndHandshake(
   sendFrame(ws, { type: 'auth-response', deviceId, signature });
   await fb.waitFor('auth-ok');
 
-  return ws;
+  return { ws, frames: fb.frames };
 }
 
 describe('pairing flow end-to-end', () => {
   it('pairs via HTTP, then connects via WS and streams PTY output', async () => {
     const { server, privateKeyPem, deviceId } = await setupPairedSession();
 
-    const ws = await connectAndHandshake(server, privateKeyPem, deviceId);
+    const { ws } = await connectAndHandshake(server, privateKeyPem, deviceId);
 
     sendFrame(ws, { type: 'input', data: `echo E2E_OK${eol()}` });
     const out = await collectOutput(ws, (b) => b.includes('E2E_OK'));
     expect(out).toContain('E2E_OK');
+  }, 20000);
+
+  it('sends an idle bare-PTY Session Snapshot before subsequent live output', async () => {
+    const { server, session, privateKeyPem, deviceId } = await setupPairedSession();
+    let workstationOutput = '';
+    const workstation = session.attachLocalTerminal({
+      onOutput(data) {
+        workstationOutput += data;
+      },
+    });
+    workstation.input(
+      `printf '\\033[?1049h\\033[2J\\033[H\\033[1;38;2;18;171;239;44m界IDLE_READY\\033[0m\\033[?25l\\033[6 q'${eol()}`,
+    );
+    await vi.waitFor(() => expect(workstationOutput).toContain('\u001b[?1049h'), {
+      timeout: 5000,
+    });
+    workstation.dispose();
+
+    const { ws, frames } = await connectAndHandshake(server, privateKeyPem, deviceId);
+    await vi.waitFor(
+      () => expect(frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true),
+      { timeout: 5000 },
+    );
+
+    const terminalFrames = frames.filter((frame) =>
+      ['auth-ok', 'resize', 'session-snapshot', 'output'].includes(String(frame['type'])),
+    );
+    expect(terminalFrames.slice(0, 3).map((frame) => frame['type'])).toEqual([
+      'auth-ok',
+      'resize',
+      'session-snapshot',
+    ]);
+    const snapshot = terminalFrames[2] as {
+      grid: Array<Array<{ chars: string }>>;
+      cursor: { col: number; row: number; visible: boolean; style: string; blink: boolean };
+      activeScreen: string;
+      cols: number;
+      rows: number;
+    };
+    expect(
+      snapshot.grid
+        .flat()
+        .map((cell) => cell.chars)
+        .join(''),
+    ).toContain('IDLE_READY');
+    expect(snapshot).toMatchObject({
+      cols: 80,
+      rows: 24,
+      activeScreen: 'alternate',
+      cursor: { visible: false, style: 'bar', blink: false },
+    });
+    expect(snapshot.grid[0]!.slice(0, 2)).toEqual([
+      {
+        chars: '界',
+        width: 2,
+        fg: { mode: 'rgb', value: 0x12abef },
+        bg: { mode: 'palette', value: 4 },
+        attrs: 1,
+      },
+      {
+        chars: '',
+        width: 0,
+        fg: { mode: 'rgb', value: 0x12abef },
+        bg: { mode: 'palette', value: 4 },
+        attrs: 1,
+      },
+    ]);
+
+    const echoDisabled = `ECHO_DISABLED_${Date.now()}`;
+    sendFrame(ws, {
+      type: 'input',
+      data: `stty -echo; printf '%s' '${echoDisabled}'${eol()}`,
+    });
+    await collectOutput(ws, (value) => value.split(echoDisabled).length >= 3);
+
+    const liveMarker = `LIVE_AFTER_SNAPSHOT_${Date.now()}`;
+    sendFrame(ws, { type: 'input', data: `printf '%s' '${liveMarker}'${eol()}` });
+    const out = await collectOutput(ws, (value) => value.includes(liveMarker));
+    expect(out.split(liveMarker)).toHaveLength(2);
   }, 20000);
 
   it('HTTP pairing response includes tunnelUrl, stationName, and protocolVersion', async () => {
@@ -415,7 +497,7 @@ describe('reconnect after disconnect', () => {
     const { server, privateKeyPem, deviceId } = await setupPairedSession();
 
     // Client A: connect, authenticate, drive the shell.
-    const a = await connectAndHandshake(server, privateKeyPem, deviceId);
+    const { ws: a } = await connectAndHandshake(server, privateKeyPem, deviceId);
     sendFrame(a, { type: 'input', data: `echo RECONNECT_A${eol()}` });
     await collectOutput(a, (b) => b.includes('RECONNECT_A'));
 
@@ -424,7 +506,7 @@ describe('reconnect after disconnect', () => {
     await waitForClose(a);
 
     // Client B: reconnect with the same device.
-    const b = await connectAndHandshake(server, privateKeyPem, deviceId);
+    const { ws: b } = await connectAndHandshake(server, privateKeyPem, deviceId);
     sendFrame(b, { type: 'input', data: `echo RECONNECT_B${eol()}` });
     const out = await collectOutput(b, (b2) => b2.includes('RECONNECT_B'));
     expect(out).toContain('RECONNECT_B');

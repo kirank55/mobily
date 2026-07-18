@@ -521,7 +521,7 @@ function frameBuffer(ws: WebSocket): {
 }
 
 describe('handshake: version negotiation + auth', () => {
-  it('replays backend scrollback after authentication before live output', async () => {
+  it('captures backend state in a Session Snapshot before live output', async () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');
     const code = auth.generatePairingCode();
@@ -550,17 +550,28 @@ describe('handshake: version negotiation + auth', () => {
       deviceId: 'device-1',
       signature: signNonce(privateKeyPem, nonce),
     });
-    await vi.waitFor(() => expect(received.some((frame) => frame['type'] === 'output')).toBe(true));
+    await vi.waitFor(() =>
+      expect(received.some((frame) => frame['type'] === 'session-snapshot')).toBe(true),
+    );
     backend.emit('live output\r\n');
     await vi.waitFor(() =>
-      expect(received.filter((frame) => frame['type'] === 'output')).toHaveLength(2),
+      expect(received.filter((frame) => frame['type'] === 'output')).toHaveLength(1),
     );
 
-    const terminalFrames = received.filter((frame) => frame['type'] === 'output');
-    expect(terminalFrames.map((frame) => frame['data'])).toEqual([
-      'previous command\r\nprevious output\r\n',
-      'live output\r\n',
+    const snapshot = received.find((frame) => frame['type'] === 'session-snapshot') as {
+      grid: Array<Array<{ chars: string }>>;
+    };
+    expect(snapshot.grid.flat().map((cell) => cell.chars).join('')).toContain('previous output');
+    const terminalFrames = received.filter((frame) =>
+      ['auth-ok', 'resize', 'session-snapshot', 'output'].includes(String(frame['type'])),
+    );
+    expect(terminalFrames.map((frame) => frame['type'])).toEqual([
+      'auth-ok',
+      'resize',
+      'session-snapshot',
+      'output',
     ]);
+    expect(terminalFrames.at(-1)?.['data']).toBe('live output\r\n');
   });
 
   it('broadcasts detected terminal prompts as alert frames', async () => {

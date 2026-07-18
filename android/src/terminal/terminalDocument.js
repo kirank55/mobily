@@ -36,6 +36,126 @@ export function terminalSelectionRange(start, end, cols) {
   };
 }
 
+function terminalCellSgr(cell) {
+  var attrs = Number.isInteger(cell.attrs) ? cell.attrs : 0;
+  var codes = [];
+  if (attrs & 1) codes.push(1);
+  if (attrs & 2) codes.push(2);
+  if (attrs & 4) codes.push(3);
+  if (attrs & 8) codes.push(4);
+  if (attrs & 16) codes.push(5);
+  if (attrs & 32) codes.push(7);
+  if (attrs & 64) codes.push(8);
+  if (attrs & 128) codes.push(9);
+  if (attrs & 256) codes.push(53);
+  if (cell.fg) {
+    if (cell.fg.mode === 'palette') codes.push(38, 5, cell.fg.value);
+    else if (cell.fg.mode === 'rgb')
+      codes.push(
+        38,
+        2,
+        (cell.fg.value >> 16) & 255,
+        (cell.fg.value >> 8) & 255,
+        cell.fg.value & 255,
+      );
+  }
+  if (cell.bg) {
+    if (cell.bg.mode === 'palette') codes.push(48, 5, cell.bg.value);
+    else if (cell.bg.mode === 'rgb')
+      codes.push(
+        48,
+        2,
+        (cell.bg.value >> 16) & 255,
+        (cell.bg.value >> 8) & 255,
+        cell.bg.value & 255,
+      );
+  }
+  return codes.join(';');
+}
+
+/** Convert a validated Session Snapshot into a complete xterm redraw. */
+export function snapshotToAnsi(snapshot) {
+  // Revalidate at the WebView bridge even though the wire decoder validates
+  // first; injected messages are a distinct trust boundary.
+  if (
+    !snapshot ||
+    snapshot.type !== 'session-snapshot' ||
+    !Number.isInteger(snapshot.cols) ||
+    !Number.isInteger(snapshot.rows) ||
+    snapshot.cols < 1 ||
+    snapshot.rows < 1 ||
+    snapshot.cols > 1000 ||
+    snapshot.rows > 1000 ||
+    snapshot.cols * snapshot.rows > 100000 ||
+    (snapshot.activeScreen !== 'normal' && snapshot.activeScreen !== 'alternate') ||
+    !Array.isArray(snapshot.grid) ||
+    snapshot.grid.length !== snapshot.rows ||
+    !snapshot.cursor
+  )
+    return null;
+  var output = '\x1bc';
+  if (snapshot.activeScreen === 'alternate') output += '\x1b[?1049h';
+  var currentStyle = null;
+  for (var row = 0; row < snapshot.rows; row++) {
+    var cells = snapshot.grid[row];
+    if (!Array.isArray(cells) || cells.length !== snapshot.cols) return null;
+    output += '\x1b[' + (row + 1) + ';1H';
+    for (var col = 0; col < snapshot.cols; col++) {
+      var cell = cells[col];
+      if (
+        !cell ||
+        typeof cell.chars !== 'string' ||
+        cell.chars.length > 64 ||
+        (cell.width !== 0 && cell.width !== 1 && cell.width !== 2)
+      )
+        return null;
+      if (cell.width === 0) continue;
+      var style = terminalCellSgr(cell);
+      if (style !== currentStyle) {
+        output += '\x1b[0' + (style ? ';' + style : '') + 'm';
+        currentStyle = style;
+      }
+      output += cell.chars || ' ';
+    }
+  }
+  var cursor = snapshot.cursor;
+  if (
+    !Number.isInteger(cursor.col) ||
+    !Number.isInteger(cursor.row) ||
+    cursor.col < 0 ||
+    cursor.col > snapshot.cols ||
+    cursor.row < 0 ||
+    cursor.row >= snapshot.rows ||
+    typeof cursor.visible !== 'boolean' ||
+    typeof cursor.blink !== 'boolean' ||
+    ['block', 'underline', 'bar'].indexOf(cursor.style) < 0
+  )
+    return null;
+  var cursorCode =
+    cursor.style === 'underline'
+      ? cursor.blink
+        ? 3
+        : 4
+      : cursor.style === 'bar'
+        ? cursor.blink
+          ? 5
+          : 6
+        : cursor.blink
+          ? 1
+          : 2;
+  output +=
+    '\x1b[0m\x1b[' +
+    cursorCode +
+    ' q\x1b[?' +
+    (cursor.visible ? '25h' : '25l') +
+    '\x1b[' +
+    (cursor.row + 1) +
+    ';' +
+    (cursor.col + 1) +
+    'H';
+  return output;
+}
+
 /** Shared production terminal document used by the app and browser harness. */
 export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridgeJs = '' }) {
   const XTERM_CSS = xtermCss;
@@ -48,6 +168,8 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
     pinchTerminalScale,
     stripTerminalMouseControls,
     terminalSelectionRange,
+    terminalCellSgr,
+    snapshotToAnsi,
   ]
     .map((helper) => helper.toString())
     .join('\n');
@@ -189,10 +311,15 @@ ${VIEWPORT_HELPERS}
     term.select(range.column,range.row,range.length);
   }
   function handleMsg(ev){
-    if(typeof ev.data!=='string'||ev.data.length>70000)return;
+    if(typeof ev.data!=='string'||ev.data.length>4194304)return;
     var msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
     if(!msg||typeof msg!=='object')return;
-    if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
+    if(msg.type==='session-snapshot'&&term){
+      var snapshotAnsi=snapshotToAnsi(msg.snapshot);if(snapshotAnsi===null)return;
+      outQ=[];mouseCarry='';term.resize(msg.snapshot.cols,msg.snapshot.rows);
+      term.write(snapshotAnsi,function(){requestAnimationFrame(fitView);sendRN({type:'snapshot-applied'});});
+    }
+    else if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
     else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){term.resize(msg.cols,msg.rows);requestAnimationFrame(fitView);}
     else if(msg.type==='fit')fitView();
     else if(msg.type==='zoom'&&typeof msg.delta==='number')applyScale(scale+msg.delta);
@@ -212,6 +339,7 @@ ${VIEWPORT_HELPERS}
         brightCyan:'#56d4dd',brightWhite:'#f0f6fc'},scrollback:5000,convertEol:false});
     fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);
     term.open(document.getElementById('tc'));requestAnimationFrame(fitView);
+    if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
     document.getElementById('key-row').style.display='flex';
     term.onData(function(d){sendInput(d);});
     new ResizeObserver(function(){fitView();}).observe(document.getElementById('viewport'));

@@ -9,7 +9,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { PROTOCOL_VERSION } from '@mobily/shared';
+import { PROTOCOL_VERSION, type SessionSnapshotFrame } from '@mobily/shared';
 import type { PairingRecord } from '@/auth/storage';
 import { markConnected } from '@/auth/storage';
 import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
@@ -18,6 +18,7 @@ import { ForegroundConnectionController } from '@/foreground/controller';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 type ResizeListener = (cols: number, rows: number) => void;
+type SnapshotListener = (snapshot: SessionSnapshotFrame) => void;
 
 interface StationConnectionValue {
   pairing: PairingRecord | null;
@@ -32,6 +33,7 @@ interface StationConnectionValue {
   sendResize(cols: number, rows: number): void;
   subscribeOutput(listener: OutputListener): () => void;
   subscribeResize(listener: ResizeListener): () => void;
+  subscribeSnapshot(listener: SnapshotListener): () => void;
 }
 
 const StationConnectionContext = createContext<StationConnectionValue | null>(null);
@@ -47,6 +49,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const pairingRef = useRef<PairingRecord | null>(null);
   const outputListeners = useRef(new Set<OutputListener>());
   const resizeListeners = useRef(new Set<ResizeListener>());
+  const snapshotListeners = useRef(new Set<SnapshotListener>());
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
 
@@ -107,6 +110,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         latestResize.current = { cols, rows };
         for (const listener of resizeListeners.current) listener(cols, rows);
       },
+      onSnapshot: (snapshot) => {
+        for (const listener of snapshotListeners.current) listener(snapshot);
+      },
       onAlert: (message) => void foreground.current.alert(message),
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
       onReady: () => {
@@ -149,6 +155,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     if (current) listener(current.cols, current.rows);
     return () => resizeListeners.current.delete(listener);
   }, []);
+  const subscribeSnapshot = useCallback((listener: SnapshotListener) => {
+    snapshotListeners.current.add(listener);
+    return () => snapshotListeners.current.delete(listener);
+  }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -181,6 +191,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendResize,
       subscribeOutput,
       subscribeResize,
+      subscribeSnapshot,
     }),
     [
       pairing,
@@ -195,6 +206,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendResize,
       subscribeOutput,
       subscribeResize,
+      subscribeSnapshot,
     ],
   );
   return (

@@ -1,5 +1,6 @@
 export type TerminalBridgeMessage =
   | { readonly type: 'ready' }
+  | { readonly type: 'snapshot-applied' }
   | { readonly type: 'input'; readonly data: string; readonly latencyTag: string }
   | { readonly type: 'resize'; readonly cols: number; readonly rows: number }
   | { readonly type: 'copy'; readonly data: string }
@@ -23,6 +24,8 @@ export function parseTerminalBridgeMessage(raw: string): TerminalBridgeMessage |
   switch (message['type']) {
     case 'ready':
       return { type: 'ready' };
+    case 'snapshot-applied':
+      return { type: 'snapshot-applied' };
     case 'input':
       return typeof message['data'] === 'string' &&
         message['data'].length <= 32_768 &&

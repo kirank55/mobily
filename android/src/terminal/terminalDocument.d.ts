@@ -20,6 +20,7 @@ export function pinchTerminalScale(
   currentDistance: number,
 ): number;
 export function stripTerminalMouseControls(data: string): string;
+export function snapshotToAnsi(snapshot: SessionSnapshotFrame): string | null;
 
 export interface TerminalCell {
   readonly col: number;
@@ -31,3 +32,4 @@ export function terminalSelectionRange(
   end: TerminalCell,
   cols: number,
 ): { readonly column: number; readonly row: number; readonly length: number };
+import type { SessionSnapshotFrame } from '@mobily/shared';

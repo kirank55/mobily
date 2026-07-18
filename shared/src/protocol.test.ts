@@ -17,6 +17,7 @@ import {
   type RpcResponseFrame,
   type RpcStreamFrame,
   type ResizeFrame,
+  type SessionSnapshotFrame,
 } from './protocol.js';
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,55 @@ describe('round-trip: resize frame', () => {
   });
 });
 
+describe('round-trip: Session Snapshot frame', () => {
+  it('preserves the visible grid, styling, cursor, active screen, and dimensions', () => {
+    const frame: SessionSnapshotFrame = {
+      type: 'session-snapshot',
+      cols: 3,
+      rows: 2,
+      activeScreen: 'alternate',
+      cursor: { col: 2, row: 1, visible: false, style: 'bar', blink: true },
+      grid: [
+        [
+          {
+            chars: '界',
+            width: 2,
+            fg: { mode: 'rgb', value: 0x12abef },
+            bg: { mode: 'palette', value: 4 },
+            attrs: 3,
+          },
+          { chars: '', width: 0 },
+          { chars: ' ', width: 1 },
+        ],
+        [
+          { chars: 'o', width: 1 },
+          { chars: 'k', width: 1 },
+          { chars: ' ', width: 1 },
+        ],
+      ],
+    };
+
+    expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+
+  it('rejects malformed and oversized snapshots', () => {
+    expect(() =>
+      decodeFrame(
+        JSON.stringify({
+          type: 'session-snapshot',
+          cols: 2,
+          rows: 1,
+          activeScreen: 'normal',
+          cursor: { col: 0, row: 0, visible: true, style: 'block', blink: false },
+          grid: [[{ chars: 'missing second cell', width: 1 }]],
+        }),
+      ),
+    ).toThrow(TypeError);
+
+    expect(() => decodeFrame(' '.repeat(2 * 1024 * 1024 + 1))).toThrow(TypeError);
+  });
+});
+
 describe('round-trip: union type narrowing', () => {
   it('returns the correct discriminant for each frame type', () => {
     const frames: Frame[] = [
@@ -90,6 +140,14 @@ describe('round-trip: union type narrowing', () => {
       { type: 'auth-challenge', nonce: 'abc123' },
       { type: 'auth-response', deviceId: 'dev1', signature: 'sig' },
       { type: 'auth-ok' },
+      {
+        type: 'session-snapshot',
+        cols: 1,
+        rows: 1,
+        activeScreen: 'normal',
+        cursor: { col: 0, row: 0, visible: true, style: 'block', blink: false },
+        grid: [[{ chars: 'x', width: 1 }]],
+      },
     ];
 
     for (const f of frames) {
@@ -197,7 +255,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-    expect(PROTOCOL_VERSION).toBe(3);
+    expect(PROTOCOL_VERSION).toBe(4);
   });
 });
 

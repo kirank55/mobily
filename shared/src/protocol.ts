@@ -23,7 +23,10 @@
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
+
+/** Maximum encoded JSON frame size accepted from either peer. */
+export const MAX_ENCODED_FRAME_CHARS = 2 * 1024 * 1024;
 
 /** Stable application-specific WebSocket close codes shared by both peers. */
 export const WS_CLOSE_CODES = {
@@ -47,6 +50,7 @@ export const FRAME_TYPES = [
   'auth-challenge',
   'auth-response',
   'auth-ok',
+  'session-snapshot',
   'rpc',
   'rpc-stream',
   'alert',
@@ -105,6 +109,50 @@ export interface AuthOkFrame {
   type: 'auth-ok';
 }
 
+export type TerminalColor = { mode: 'palette'; value: number } | { mode: 'rgb'; value: number };
+
+export const TERMINAL_CELL_ATTRIBUTES = {
+  BOLD: 1 << 0,
+  DIM: 1 << 1,
+  ITALIC: 1 << 2,
+  UNDERLINE: 1 << 3,
+  BLINK: 1 << 4,
+  INVERSE: 1 << 5,
+  INVISIBLE: 1 << 6,
+  STRIKETHROUGH: 1 << 7,
+  OVERLINE: 1 << 8,
+} as const;
+
+export interface TerminalSnapshotCell {
+  /** Grapheme(s) occupying this cell. Empty means a blank cell. */
+  chars: string;
+  /** Display width; zero marks the continuation cell of a wide grapheme. */
+  width: 0 | 1 | 2;
+  fg?: TerminalColor;
+  bg?: TerminalColor;
+  /** Bit mask composed from {@link TERMINAL_CELL_ATTRIBUTES}. */
+  attrs?: number;
+}
+
+export interface TerminalSnapshotCursor {
+  col: number;
+  row: number;
+  visible: boolean;
+  style: 'block' | 'underline' | 'bar';
+  blink: boolean;
+}
+
+/** CLI → Client: atomic visible state of the Session before live output. */
+export interface SessionSnapshotFrame {
+  type: 'session-snapshot';
+  cols: number;
+  rows: number;
+  activeScreen: 'normal' | 'alternate';
+  cursor: TerminalSnapshotCursor;
+  /** Exactly `rows` rows containing exactly `cols` cells each. */
+  grid: TerminalSnapshotCell[][];
+}
+
 /** Client → CLI: protocol version negotiation. Sent on WS connect. */
 export interface HelloFrame {
   type: 'hello';
@@ -140,8 +188,7 @@ export interface RpcRequestFrame {
 
 /** CLI to client: complete a non-streaming RPC request. */
 export type RpcResponseFrame =
-  | { type: 'rpc'; id: string; result: JsonValue }
-  | { type: 'rpc'; id: string; error: RpcError };
+  { type: 'rpc'; id: string; result: JsonValue } | { type: 'rpc'; id: string; error: RpcError };
 
 /** CLI to client: one bounded chunk or the completion marker for a stream. */
 export interface RpcStreamFrame {
@@ -170,6 +217,7 @@ export type Frame =
   | AuthChallengeFrame
   | AuthResponseFrame
   | AuthOkFrame
+  | SessionSnapshotFrame
   | RpcRequestFrame
   | RpcResponseFrame
   | RpcStreamFrame
@@ -199,6 +247,9 @@ export function encodeFrame(frame: Frame): string {
  * @throws {TypeError}    if the parsed value does not match any known frame.
  */
 export function decodeFrame(raw: string): Frame {
+  if (raw.length > MAX_ENCODED_FRAME_CHARS) {
+    throw new TypeError('mobily/protocol: encoded frame exceeds size limit');
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -227,6 +278,8 @@ export function decodeFrame(raw: string): Frame {
       return validateAuthResponseFrame(obj);
     case 'auth-ok':
       return { type: 'auth-ok' };
+    case 'session-snapshot':
+      return validateSessionSnapshotFrame(obj);
     case 'hello':
       return validateHelloFrame(obj);
     case 'hello-ack':
@@ -337,6 +390,130 @@ function validateAuthResponseFrame(obj: Record<string, unknown>): AuthResponseFr
   return { type: 'auth-response', deviceId: obj['deviceId'], signature: obj['signature'] };
 }
 
+const MAX_SNAPSHOT_CELLS = 100_000;
+const MAX_TERMINAL_ATTRIBUTES = (1 << 9) - 1;
+
+function validateSessionSnapshotFrame(obj: Record<string, unknown>): SessionSnapshotFrame {
+  const cols = obj['cols'];
+  const rows = obj['rows'];
+  if (
+    typeof cols !== 'number' ||
+    !Number.isInteger(cols) ||
+    cols < 1 ||
+    cols > 1000 ||
+    typeof rows !== 'number' ||
+    !Number.isInteger(rows) ||
+    rows < 1 ||
+    rows > 1000 ||
+    cols * rows > MAX_SNAPSHOT_CELLS
+  ) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot dimensions');
+  }
+  if (obj['activeScreen'] !== 'normal' && obj['activeScreen'] !== 'alternate') {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot active screen');
+  }
+  const cursor = validateSnapshotCursor(obj['cursor'], cols, rows);
+  const rawGrid = obj['grid'];
+  if (!Array.isArray(rawGrid) || rawGrid.length !== rows) {
+    throw new TypeError('mobily/protocol: Session Snapshot grid must match its row count');
+  }
+  const grid = rawGrid.map((rawRow) => {
+    if (!Array.isArray(rawRow) || rawRow.length !== cols) {
+      throw new TypeError('mobily/protocol: Session Snapshot row must match its column count');
+    }
+    return rawRow.map(validateSnapshotCell);
+  });
+  return {
+    type: 'session-snapshot',
+    cols,
+    rows,
+    activeScreen: obj['activeScreen'],
+    cursor,
+    grid,
+  };
+}
+
+function validateSnapshotCursor(
+  value: unknown,
+  cols: number,
+  rows: number,
+): TerminalSnapshotCursor {
+  if (!isJsonObject(value)) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot cursor');
+  }
+  const col = value['col'];
+  const row = value['row'];
+  const visible = value['visible'];
+  const style = value['style'];
+  const blink = value['blink'];
+  if (
+    typeof col !== 'number' ||
+    !Number.isInteger(col) ||
+    col < 0 ||
+    col > cols ||
+    typeof row !== 'number' ||
+    !Number.isInteger(row) ||
+    row < 0 ||
+    row >= rows ||
+    typeof visible !== 'boolean' ||
+    (style !== 'block' && style !== 'underline' && style !== 'bar') ||
+    typeof blink !== 'boolean'
+  ) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot cursor');
+  }
+  return { col, row, visible, style, blink };
+}
+
+function validateSnapshotCell(value: unknown): TerminalSnapshotCell {
+  if (!isJsonObject(value)) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot cell');
+  }
+  const chars = value['chars'];
+  const width = value['width'];
+  const attrs = value['attrs'];
+  if (
+    typeof chars !== 'string' ||
+    chars.length > 64 ||
+    (width !== 0 && width !== 1 && width !== 2) ||
+    (width === 0 && chars.length !== 0) ||
+    (attrs !== undefined &&
+      (typeof attrs !== 'number' ||
+        !Number.isInteger(attrs) ||
+        attrs < 0 ||
+        attrs > MAX_TERMINAL_ATTRIBUTES))
+  ) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot cell');
+  }
+  const fg = validateTerminalColor(value['fg']);
+  const bg = validateTerminalColor(value['bg']);
+  return {
+    chars,
+    width,
+    ...(fg === undefined ? {} : { fg }),
+    ...(bg === undefined ? {} : { bg }),
+    ...(attrs === undefined ? {} : { attrs }),
+  };
+}
+
+function validateTerminalColor(value: unknown): TerminalColor | undefined {
+  if (value === undefined) return undefined;
+  if (!isJsonObject(value)) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot color');
+  }
+  const mode = value['mode'];
+  const color = value['value'];
+  if (
+    typeof color !== 'number' ||
+    !Number.isInteger(color) ||
+    (mode === 'palette' && (color < 0 || color > 255)) ||
+    (mode === 'rgb' && (color < 0 || color > 0xffffff)) ||
+    (mode !== 'palette' && mode !== 'rgb')
+  ) {
+    throw new TypeError('mobily/protocol: invalid Session Snapshot color');
+  }
+  return { mode, value: color };
+}
+
 function validateHelloFrame(obj: Record<string, unknown>): HelloFrame {
   const v = obj['protocolVersion'];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
@@ -409,7 +586,10 @@ function validateRpcStreamFrame(obj: Record<string, unknown>): RpcStreamFrame {
   const truncated = obj['truncated'];
   const nextCursor = obj['nextCursor'];
   const error = obj['error'];
-  if (!obj['done'] && (truncated !== undefined || nextCursor !== undefined || error !== undefined)) {
+  if (
+    !obj['done'] &&
+    (truncated !== undefined || nextCursor !== undefined || error !== undefined)
+  ) {
     throw new TypeError('mobily/protocol: stream completion metadata requires done=true');
   }
   if (truncated !== undefined && typeof truncated !== 'boolean') {

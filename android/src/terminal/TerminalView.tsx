@@ -13,6 +13,7 @@
 import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, View } from 'react-native';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
+import type { SessionSnapshotFrame } from '@mobily/shared';
 import { XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
 import { parseTerminalBridgeMessage } from './bridge';
 import { buildTerminalDocument } from './terminalDocument';
@@ -20,6 +21,8 @@ import { buildTerminalDocument } from './terminalDocument';
 export interface TerminalViewHandle {
   /** Write raw PTY data (ANSI/UTF-8) to the terminal. */
   write(data: string, latencyTags?: readonly string[]): void;
+  /** Atomically replace the visible terminal with a Session Snapshot. */
+  applySnapshot(snapshot: SessionSnapshotFrame): void;
   /** Request the terminal to resize to the given dimensions. */
   resize(cols: number, rows: number): void;
   fit(): void;
@@ -35,6 +38,8 @@ export interface TerminalViewHandle {
 export interface TerminalViewProps {
   /** Called when the WebView terminal signals it is ready. */
   onReady?: () => void;
+  /** Called after xterm has parsed the first Session Snapshot. */
+  onSnapshotApplied?: () => void;
   /** Called when the user types or pastes in the terminal. */
   onInput?: (data: string, latencyTag: string) => void;
   /** Called when the terminal reports its dimensions (after fit). */
@@ -63,7 +68,7 @@ export const TERMINAL_HTML_CONTENT = buildTerminalDocument({
 });
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
-  { onReady, onInput, onResize, onCopy, onLatencyStats },
+  { onReady, onSnapshotApplied, onInput, onResize, onCopy, onLatencyStats },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
@@ -79,6 +84,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     () => ({
       write(data: string, latencyTags?: readonly string[]) {
         postToWebView({ type: 'write', data, latencyTags });
+      },
+      applySnapshot(snapshot: SessionSnapshotFrame) {
+        postToWebView({ type: 'session-snapshot', snapshot });
       },
       resize(cols: number, rows: number) {
         postToWebView({ type: 'resize', cols, rows });
@@ -116,6 +124,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         case 'ready':
           onReady?.();
           break;
+        case 'snapshot-applied':
+          onSnapshotApplied?.();
+          break;
         case 'input':
           onInput?.(msg.data, msg.latencyTag);
           break;
@@ -130,7 +141,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           break;
       }
     },
-    [onReady, onInput, onResize, onCopy, onLatencyStats],
+    [onReady, onSnapshotApplied, onInput, onResize, onCopy, onLatencyStats],
   );
 
   const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;

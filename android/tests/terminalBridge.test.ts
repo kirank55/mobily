@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { parseTerminalBridgeMessage } from '@/terminal/bridge';
 
 describe('parseTerminalBridgeMessage()', () => {
+  it('accepts the production terminal first-paint acknowledgement', () => {
+    expect(parseTerminalBridgeMessage('{"type":"snapshot-applied"}')).toEqual({
+      type: 'snapshot-applied',
+    });
+  });
+
   it('accepts bounded input, resize, ready, and latency messages', () => {
     expect(
       parseTerminalBridgeMessage(

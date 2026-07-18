@@ -24,6 +24,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm --filter mobily-android exec playwright install --with-deps chromium
       - run: pnpm test
 
   # ---------------------------------------------------------------------------

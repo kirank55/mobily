@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@mobily/shared": "workspace:*",
+    "@xterm/headless": "5.5.0",
     "node-pty": "1.1.0",
     "qrcode": "^1.5.4",
     "selfsigned": "^5.5.0",

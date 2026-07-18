@@ -24,6 +24,7 @@ import {
   type RpcRequestFrame,
   type RpcResponseFrame,
   type RpcStreamFrame,
+  type SessionSnapshotFrame,
 } from '@mobily/shared';
 import { PinnedWebSocket } from './pinnedTransport';
 
@@ -50,8 +51,10 @@ export interface WsClientOptions {
   onStateChange?: (state: ConnectionState, detail?: string) => void;
   /** Callback for output frames (PTY data). */
   onOutput?: (data: string, latencyTags?: readonly string[]) => void;
-  /** Callback when the Station publishes its authoritative terminal grid. */
+  /** Callback when the Station publishes the current Session grid. */
   onResize?: (cols: number, rows: number) => void;
+  /** Callback for the atomic first terminal frame after authentication. */
+  onSnapshot?: (snapshot: SessionSnapshotFrame) => void;
   /** Callback when the Station detects terminal output that needs attention. */
   onAlert?: (message: string) => void;
   /** Callback for structured RPC responses after authentication. */
@@ -102,6 +105,7 @@ type HandshakeState =
   | 'awaiting-challenge'
   | 'signing-challenge'
   | 'awaiting-auth-ok'
+  | 'awaiting-snapshot'
   | 'ready';
 
 export class WsClient {
@@ -115,6 +119,7 @@ export class WsClient {
   private ready = false;
   private socketGeneration = 0;
   private handshakeState: HandshakeState = 'idle';
+  private receivedInitialSize = false;
   /** Set to true when auth is permanently rejected (re-pair required). */
   private authRejected = false;
 
@@ -154,6 +159,7 @@ export class WsClient {
     this.deliberatelyClosed = true;
     this.socketGeneration++;
     this.handshakeState = 'idle';
+    this.receivedInitialSize = false;
     this.ready = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -189,6 +195,7 @@ export class WsClient {
 
   private openSocket(): void {
     this.ready = false;
+    this.receivedInitialSize = false;
     this.reconnectSuppressed = false;
     this.setState(this.retries > 0 ? 'reconnecting' : 'connecting');
 
@@ -345,6 +352,12 @@ export class WsClient {
       }
 
       case 'output':
+        if (this.handshakeState !== 'ready') {
+          // The Station may send a human-readable diagnostic immediately
+          // before closing a failed handshake. Never render it as terminal
+          // state, but let the authoritative close code classify the failure.
+          return;
+        }
         this.opts.onOutput?.(frame.data, frame.latencyTags);
         break;
 
@@ -373,12 +386,22 @@ export class WsClient {
           socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected auth acknowledgement');
           return;
         }
+        this.handshakeState = 'awaiting-snapshot';
+        console.info('[Mobily][Connection] Device Key accepted; awaiting Session Snapshot');
+        break;
+
+      case 'session-snapshot':
+        if (this.handshakeState !== 'awaiting-snapshot' || !this.receivedInitialSize) {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot');
+          return;
+        }
+        this.opts.onSnapshot?.(frame);
         this.handshakeState = 'ready';
         this.ready = true;
         this.retries = 0;
         this.backoff = INITIAL_BACKOFF_MS;
         this.setState('connected');
-        console.info('[Mobily][Connection] Device Key accepted; terminal connected');
+        console.info('[Mobily][Connection] Session Snapshot received; terminal connected');
         this.opts.onReady?.();
         break;
 
@@ -388,10 +411,11 @@ export class WsClient {
         socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
         break;
       case 'resize':
-        if (this.handshakeState !== 'ready') {
+        if (this.handshakeState !== 'ready' && this.handshakeState !== 'awaiting-snapshot') {
           socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'resize before authentication');
           return;
         }
+        if (this.handshakeState === 'awaiting-snapshot') this.receivedInitialSize = true;
         this.opts.onResize?.(frame.cols, frame.rows);
         break;
     }

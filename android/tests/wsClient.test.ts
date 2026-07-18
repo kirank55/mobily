@@ -1,4 +1,10 @@
-import { decodeFrame, encodeFrame, PROTOCOL_VERSION, WS_CLOSE_CODES } from '@mobily/shared';
+import {
+  decodeFrame,
+  encodeFrame,
+  PROTOCOL_VERSION,
+  WS_CLOSE_CODES,
+  type SessionSnapshotFrame,
+} from '@mobily/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deviceKey = vi.hoisted(() => ({ signNonce: vi.fn() }));
@@ -45,6 +51,7 @@ function createClient() {
   const outputs: Array<{ data: string; tags?: readonly string[] }> = [];
   const alerts: string[] = [];
   const resizes: Array<[number, number]> = [];
+  const snapshots: SessionSnapshotFrame[] = [];
   const client = new WsClient({
     url: 'wss://station.example.devtunnels.ms',
     deviceBindingId: 'binding_AAAAAAAAAAAAAAAAAAAAAA',
@@ -54,8 +61,20 @@ function createClient() {
     onOutput: (data, tags) => outputs.push({ data, tags }),
     onAlert: (message) => alerts.push(message),
     onResize: (cols, rows) => resizes.push([cols, rows]),
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
   });
-  return { client, states, errors, outputs, alerts, resizes };
+  return { client, states, errors, outputs, alerts, resizes, snapshots };
+}
+
+function snapshot(chars = 'ready'): SessionSnapshotFrame {
+  return {
+    type: 'session-snapshot',
+    cols: chars.length,
+    rows: 1,
+    activeScreen: 'normal',
+    cursor: { col: chars.length, row: 0, visible: true, style: 'block', blink: true },
+    grid: [Array.from(chars, (char) => ({ chars: char, width: 1 as const }))],
+  };
 }
 
 beforeEach(() => {
@@ -66,7 +85,7 @@ beforeEach(() => {
 
 describe('WsClient', () => {
   it('completes version negotiation and Device Key authentication before terminal I/O', async () => {
-    const { client, states, outputs, resizes } = createClient();
+    const { client, states, outputs, resizes, snapshots } = createClient();
     client.connect();
     const socket = FakeWebSocket.instances[0]!;
     socket.open();
@@ -85,13 +104,45 @@ describe('WsClient', () => {
     });
 
     socket.receive({ type: 'auth-ok' });
+    expect(states.at(-1)).toBe('connecting');
     socket.receive({ type: 'resize', cols: 160, rows: 48 });
+    socket.receive(snapshot());
     socket.receive({ type: 'output', data: 'ready', latencyTags: ['lat-12345678'] });
 
     expect(states.at(-1)).toBe('connected');
+    expect(snapshots).toEqual([snapshot()]);
     expect(outputs).toEqual([{ data: 'ready', tags: ['lat-12345678'] }]);
     expect(resizes).toEqual([[160, 48]]);
     expect(socket.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it('rejects snapshots before authentication, after first paint, or above the frame limit', async () => {
+    const beforeAuth = createClient();
+    beforeAuth.client.connect();
+    const unauthenticatedSocket = FakeWebSocket.instances[0]!;
+    unauthenticatedSocket.open();
+    unauthenticatedSocket.receive(snapshot());
+    expect(unauthenticatedSocket.readyState).toBe(3);
+
+    const authenticated = createClient();
+    authenticated.client.connect();
+    const socket = FakeWebSocket.instances[1]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
+    socket.receive(snapshot());
+    expect(socket.readyState).toBe(3);
+
+    const oversized = createClient();
+    oversized.client.connect();
+    const oversizedSocket = FakeWebSocket.instances[2]!;
+    oversizedSocket.open();
+    oversizedSocket.onmessage?.({ data: ' '.repeat(2 * 1024 * 1024 + 1) });
+    expect(oversizedSocket.readyState).toBe(3);
   });
 
   it('distinguishes a Device Key signing failure from biometric cancellation', async () => {
@@ -165,6 +216,8 @@ describe('WsClient', () => {
     socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
     await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
     socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
 
     socket.receive({ type: 'alert', message: 'Approve the deployment?' });
 

@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { Session } from '../src/session.js';
 import type { SessionBackend } from '../src/mux/types.js';
 import type { ExitEvent, IDisposable } from '../src/pty/node-pty.js';
-import { attachWorkstationTerminal } from '../src/workstationTerminal.js';
+import {
+  attachWorkstationTerminal,
+  shouldEmbedWorkstationTerminal,
+} from '../src/workstationTerminal.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;
@@ -89,6 +92,18 @@ class FakeOutput extends EventEmitter {
 }
 
 describe('attachWorkstationTerminal()', () => {
+  it('keeps the pairing screen visible for a tmux-backed session', () => {
+    expect(
+      shouldEmbedWorkstationTerminal({ kind: 'tmux' }, new FakeInput(), new FakeOutput()),
+    ).toBe(false);
+  });
+
+  it('embeds a bare session when no separate attach command is available', () => {
+    expect(
+      shouldEmbedWorkstationTerminal({ kind: 'bare' }, new FakeInput(), new FakeOutput()),
+    ).toBe(true);
+  });
+
   it('hands the interactive CLI console to the shared terminal and restores it on dispose', () => {
     const backend = new RecordingBackend('\u001b[32mready\u001b[0m\r\n');
     const session = new Session({ backend });

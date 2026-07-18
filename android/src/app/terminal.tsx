@@ -18,6 +18,7 @@ import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import type { SessionSnapshotFrame } from '@mobily/shared';
 
 import { deleteKey } from '@/auth/deviceKey';
 import { loadPairing, clearPairing } from '@/auth/storage';
@@ -36,14 +37,17 @@ export default function TerminalRoute() {
     sendInput,
     subscribeOutput,
     subscribeResize,
+    subscribeSnapshot,
   } = useStationConnection();
   const stationName = pairing?.stationName ?? 'Station';
   const [termReady, setTermReady] = useState(false);
+  const [snapshotApplied, setSnapshotApplied] = useState(false);
   const [latencyStats, setLatencyStats] = useState<{ n: number; p50: number; p95: number } | null>(
     null,
   );
   const [selectionMode, setSelectionMode] = useState(false);
-  const authoritativeSize = useRef({ cols: 120, rows: 40 });
+  const sessionSize = useRef({ cols: 120, rows: 40 });
+  const pendingSnapshot = useRef<SessionSnapshotFrame | null>(null);
 
   const termRef = useRef<TerminalViewHandle | null>(null);
 
@@ -86,15 +90,31 @@ export default function TerminalRoute() {
 
   useEffect(() => {
     return subscribeResize((cols, rows) => {
-      authoritativeSize.current = { cols, rows };
+      sessionSize.current = { cols, rows };
       termRef.current?.resize(cols, rows);
     });
   }, [subscribeResize]);
 
+  useEffect(() => {
+    return subscribeSnapshot((snapshot) => {
+      pendingSnapshot.current = snapshot;
+      setSnapshotApplied(false);
+      if (termReady) termRef.current?.applySnapshot(snapshot);
+    });
+  }, [subscribeSnapshot, termReady]);
+
+  useEffect(() => {
+    if (connState === 'connecting' || connState === 'reconnecting') {
+      setSnapshotApplied(false);
+    }
+  }, [connState]);
+
   // ── Terminal resize → send to WS ────────────────────────────────────────
   const handleTerminalReady = useCallback(() => {
     setTermReady(true);
-    termRef.current?.resize(authoritativeSize.current.cols, authoritativeSize.current.rows);
+    const snapshot = pendingSnapshot.current;
+    if (snapshot) termRef.current?.applySnapshot(snapshot);
+    else termRef.current?.resize(sessionSize.current.cols, sessionSize.current.rows);
   }, []);
 
   const toggleSelection = useCallback(() => {
@@ -242,6 +262,7 @@ export default function TerminalRoute() {
         <TerminalView
           ref={termRef}
           onReady={handleTerminalReady}
+          onSnapshotApplied={() => setSnapshotApplied(true)}
           onInput={handleTermInput}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
@@ -250,13 +271,18 @@ export default function TerminalRoute() {
           }}
         />
         {/* Connecting / Reconnecting overlay */}
-        {(connState === 'connecting' || connState === 'reconnecting' || !termReady) && (
+        {(connState === 'connecting' ||
+          connState === 'reconnecting' ||
+          !termReady ||
+          !snapshotApplied) && (
           <View style={styles.overlay}>
             <ActivityIndicator size="large" color="#58a6ff" />
             <Text style={styles.overlayText}>
               {connState === 'reconnecting'
                 ? `Reconnecting… (${detail})`
-                : `Connecting to ${stationName}…`}
+                : connState === 'connected'
+                  ? 'Loading Session…'
+                  : `Connecting to ${stationName}…`}
             </Text>
           </View>
         )}

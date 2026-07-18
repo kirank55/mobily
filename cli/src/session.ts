@@ -40,6 +40,7 @@ import { BareBackend } from './mux/bare.js';
 import type { SessionBackend } from './mux/types.js';
 import type { SessionRuntime } from './mux/runtime.js';
 import { TerminalAlertDetector, type AlertDetector } from './alerts/detector.js';
+import { CanonicalTerminalScreen } from './terminal/screen.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
@@ -89,6 +90,7 @@ interface LocalTerminalState {
  */
 export class Session {
   private readonly backend: SessionBackend;
+  private readonly screen: CanonicalTerminalScreen;
   private readonly alertDetector: AlertDetector;
   private readonly auth?: AuthManager;
   private readonly rpc?: Pick<RpcRouter, 'handle'>;
@@ -126,13 +128,19 @@ export class Session {
     this.currentCols = cols;
     this.currentRows = rows;
     this.backend = backend ?? new BareBackend({ ...spawnOpts, cols, rows }, runtime);
+    this.screen = new CanonicalTerminalScreen(cols, rows);
     this.alertDetector = new TerminalAlertDetector((message) =>
       this.broadcast({ type: 'alert', message }),
     );
 
+    const initialOutput = this.backend.readScrollback();
+    if (initialOutput.length > 0) this.screen.write(initialOutput);
     this.onDataDisposable = this.backend.onData((data) => {
-      this.broadcast({ type: 'output', data });
-      this.alertDetector.push(data);
+      this.deliverLocalOutput(data);
+      this.screen.write(data, () => {
+        this.broadcast({ type: 'output', data });
+        this.alertDetector.push(data);
+      });
     });
 
     this.onExitDisposable = this.backend.onExit((event) => this.handleExit(event));
@@ -332,13 +340,12 @@ export class Session {
 
   private attachAuthenticated(ws: WebSocket): void {
     this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
-    const replay = this.backend.readScrollback();
-    if (replay.length > 0) this.sendTo(ws, { type: 'output', data: replay });
-    this.subscribers.add(ws);
     this.pendingLatencyTags.set(ws, []);
     this.activeRpcRequests.set(ws, new Map());
     ws.on('message', (data) => this.handleMessage(ws, data));
+    let detached = false;
     const detach = (): void => {
+      detached = true;
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
       for (const controller of this.activeRpcRequests.get(ws)?.values() ?? []) controller.abort();
@@ -346,13 +353,18 @@ export class Session {
     };
     ws.on('close', detach);
     ws.on('error', detach);
-    for (const listener of [...this.authenticatedListeners]) {
-      try {
-        listener();
-      } catch {
-        // Connection readiness must not depend on an observer.
+    this.screen.capture((snapshot) => {
+      if (detached || ws.readyState !== READY_STATE_OPEN) return;
+      this.sendTo(ws, snapshot);
+      this.subscribers.add(ws);
+      for (const listener of [...this.authenticatedListeners]) {
+        try {
+          listener();
+        } catch {
+          // Connection readiness must not depend on an observer.
+        }
       }
-    }
+    });
   }
 
   private handleMessage(ws: WebSocket, data: RawData): void {
@@ -399,6 +411,9 @@ export class Session {
         break;
       case 'alert':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected alert frame');
+        break;
+      case 'session-snapshot':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot');
         break;
       case 'output':
         break;
@@ -451,20 +466,6 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private broadcast(frame: OutputFrame | AlertFrame | ResizeFrame): void {
-    if (frame.type === 'output' && this.localTerminal) {
-      const state = this.localTerminal;
-      try {
-        state.sink.onOutput(frame.data);
-      } catch (error) {
-        state.deactivate();
-        if (this.localTerminal === state) this.localTerminal = undefined;
-        try {
-          state.sink.onError?.(error);
-        } catch {
-          // A failed local sink must not interrupt remote clients.
-        }
-      }
-    }
     for (const ws of [...this.subscribers]) {
       if (frame.type === 'output') {
         const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
@@ -475,11 +476,27 @@ export class Session {
     }
   }
 
+  private deliverLocalOutput(data: string): void {
+    if (!this.localTerminal) return;
+    const state = this.localTerminal;
+    try {
+      state.sink.onOutput(data);
+    } catch (error) {
+      state.deactivate();
+      if (this.localTerminal === state) this.localTerminal = undefined;
+      try {
+        state.sink.onError?.(error);
+      } catch {
+        // A failed local sink must not interrupt remote clients.
+      }
+    }
+  }
+
   private applyResize(cols: number, rows: number): void {
+    this.screen.resize(cols, rows, () => this.broadcast({ type: 'resize', cols, rows }));
     this.backend.resize(cols, rows);
     this.currentCols = cols;
     this.currentRows = rows;
-    this.broadcast({ type: 'resize', cols, rows });
   }
 
   private sendTo(ws: WebSocket, frame: Frame): void {
@@ -540,6 +557,7 @@ export class Session {
     this.onDataDisposable.dispose();
     this.onExitDisposable.dispose();
     this.alertDetector.dispose();
+    this.screen.dispose();
     for (const ws of this.subscribers) {
       try {
         ws.close(1001, 'session disposed');
