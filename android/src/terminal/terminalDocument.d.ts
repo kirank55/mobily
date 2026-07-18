@@ -21,6 +21,11 @@ export function pinchTerminalScale(
 ): number;
 export function stripTerminalMouseControls(data: string): string;
 export function snapshotToAnsi(snapshot: SessionSnapshotFrame): string | null;
+export function scrollbackAndSnapshotToAnsi(
+  scrollback: string,
+  snapshot: SessionSnapshotFrame,
+  liveOutput?: string,
+): string | null;
 
 export interface TerminalCell {
   readonly col: number;

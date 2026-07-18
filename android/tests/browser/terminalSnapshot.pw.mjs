@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { MAX_SESSION_SCROLLBACK_CHARS } from '@mobily/shared';
 
 import { buildTerminalDocument } from '../../src/terminal/terminalDocument.js';
 
@@ -267,6 +268,80 @@ test('does not let a stale snapshot completion hide a newer reconnect state', as
   expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
     'OLD FRAME',
   );
+});
+
+test('keeps the first paint visible while maximum scrollback starts loading', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const snapshot = textSnapshot('CURRENT SCREEN');
+  await dispatchSnapshot(page, snapshot);
+  expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
+    'CURRENT SCREEN',
+  );
+
+  const visibleHistory = `${'bounded history\r\n'.repeat(100)}FINAL HISTORY\r\n`;
+  const history =
+    '\0'.repeat(MAX_SESSION_SCROLLBACK_CHARS - visibleHistory.length) + visibleHistory;
+  expect(history).toHaveLength(MAX_SESSION_SCROLLBACK_CHARS);
+  await page.evaluate(
+    ({ data, currentSnapshot }) => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: 'session-scrollback',
+            data,
+            snapshot: currentSnapshot,
+            liveOutput: '',
+          }),
+        }),
+      );
+    },
+    { data: history, currentSnapshot: snapshot },
+  );
+
+  expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
+    'CURRENT SCREEN',
+  );
+});
+
+test('does not duplicate live output queued when scrollback rebuild begins', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+  const snapshot = textSnapshot('CURRENT SCREEN');
+  await dispatchSnapshot(page, snapshot);
+
+  await page.evaluate((currentSnapshot) => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: '\r\nLIVE ONCE' }),
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'session-scrollback',
+          data: 'older output\r\n',
+          snapshot: currentSnapshot,
+          liveOutput: '\r\nLIVE ONCE',
+        }),
+      }),
+    );
+  }, snapshot);
+
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminalLines().join('\n')))
+    .toContain('LIVE ONCE');
+  const rendered = await page.evaluate(() => window.__mobilyTerminalLines().join('\n'));
+  expect(rendered.match(/LIVE ONCE/g)).toHaveLength(1);
 });
 
 async function dispatchSnapshot(page, snapshot) {

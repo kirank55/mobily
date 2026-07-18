@@ -23,10 +23,14 @@
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Maximum encoded JSON frame size accepted from either peer. */
 export const MAX_ENCODED_FRAME_CHARS = 2 * 1024 * 1024;
+/** Maximum complete Session history accepted by Android. */
+export const MAX_SESSION_SCROLLBACK_CHARS = 512 * 1024;
+/** Maximum data carried by one Session history frame. */
+export const MAX_SESSION_SCROLLBACK_CHUNK_CHARS = 64 * 1024;
 
 /** Stable application-specific WebSocket close codes shared by both peers. */
 export const WS_CLOSE_CODES = {
@@ -51,6 +55,8 @@ export const FRAME_TYPES = [
   'auth-response',
   'auth-ok',
   'session-snapshot',
+  'session-snapshot-applied',
+  'session-scrollback',
   'rpc',
   'rpc-stream',
   'alert',
@@ -153,6 +159,20 @@ export interface SessionSnapshotFrame {
   grid: TerminalSnapshotCell[][];
 }
 
+/** Android → CLI: the current Session Snapshot has reached first paint. */
+export interface SessionSnapshotAppliedFrame {
+  type: 'session-snapshot-applied';
+}
+
+/** CLI → Android: one ordered chunk of a bounded, frozen Session history. */
+export interface SessionScrollbackFrame {
+  type: 'session-scrollback';
+  transferId: string;
+  sequence: number;
+  data: string;
+  done: boolean;
+}
+
 /** Client → CLI: protocol version negotiation. Sent on WS connect. */
 export interface HelloFrame {
   type: 'hello';
@@ -218,6 +238,8 @@ export type Frame =
   | AuthResponseFrame
   | AuthOkFrame
   | SessionSnapshotFrame
+  | SessionSnapshotAppliedFrame
+  | SessionScrollbackFrame
   | RpcRequestFrame
   | RpcResponseFrame
   | RpcStreamFrame
@@ -280,6 +302,10 @@ export function decodeFrame(raw: string): Frame {
       return { type: 'auth-ok' };
     case 'session-snapshot':
       return validateSessionSnapshotFrame(obj);
+    case 'session-snapshot-applied':
+      return { type: 'session-snapshot-applied' };
+    case 'session-scrollback':
+      return validateSessionScrollbackFrame(obj);
     case 'hello':
       return validateHelloFrame(obj);
     case 'hello-ack':
@@ -431,6 +457,33 @@ function validateSessionSnapshotFrame(obj: Record<string, unknown>): SessionSnap
     cursor,
     grid,
   };
+}
+
+const SCROLLBACK_TRANSFER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function validateSessionScrollbackFrame(obj: Record<string, unknown>): SessionScrollbackFrame {
+  const transferId = obj['transferId'];
+  const sequence = obj['sequence'];
+  const data = obj['data'];
+  const done = obj['done'];
+  if (typeof transferId !== 'string' || !SCROLLBACK_TRANSFER_ID_PATTERN.test(transferId)) {
+    throw new TypeError('mobily/protocol: invalid Session scrollback transfer identifier');
+  }
+  if (
+    typeof sequence !== 'number' ||
+    !Number.isInteger(sequence) ||
+    sequence < 0 ||
+    sequence > 1_000_000
+  ) {
+    throw new TypeError('mobily/protocol: invalid Session scrollback sequence');
+  }
+  if (typeof data !== 'string' || data.length > MAX_SESSION_SCROLLBACK_CHUNK_CHARS) {
+    throw new TypeError('mobily/protocol: Session scrollback chunk exceeds size limit');
+  }
+  if (typeof done !== 'boolean') {
+    throw new TypeError('mobily/protocol: Session scrollback completion must be a boolean');
+  }
+  return { type: 'session-scrollback', transferId, sequence, data, done };
 }
 
 function validateSnapshotCursor(

@@ -35,9 +35,11 @@ export default function TerminalRoute() {
     disconnect,
     retry,
     sendInput,
+    acknowledgeSnapshotApplied,
     subscribeOutput,
     subscribeResize,
     subscribeSnapshot,
+    subscribeScrollback,
   } = useStationConnection();
   const stationName = pairing?.stationName ?? 'Station';
   const [termReady, setTermReady] = useState(false);
@@ -48,6 +50,8 @@ export default function TerminalRoute() {
   const [selectionMode, setSelectionMode] = useState(false);
   const sessionSize = useRef({ cols: 120, rows: 40 });
   const pendingSnapshot = useRef<SessionSnapshotFrame | null>(null);
+  const liveOutputSinceSnapshot = useRef<string[]>([]);
+  const awaitingScrollback = useRef(false);
 
   const termRef = useRef<TerminalViewHandle | null>(null);
 
@@ -84,6 +88,7 @@ export default function TerminalRoute() {
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {
     return subscribeOutput((data, latencyTags) => {
+      if (awaitingScrollback.current) liveOutputSinceSnapshot.current.push(data);
       termRef.current?.write(data, latencyTags);
     });
   }, [subscribeOutput]);
@@ -98,16 +103,29 @@ export default function TerminalRoute() {
   useEffect(() => {
     return subscribeSnapshot((snapshot) => {
       pendingSnapshot.current = snapshot;
+      liveOutputSinceSnapshot.current = [];
+      awaitingScrollback.current = true;
       setSnapshotApplied(false);
       if (termReady) termRef.current?.applySnapshot(snapshot);
     });
   }, [subscribeSnapshot, termReady]);
 
   useEffect(() => {
+    return subscribeScrollback((data) => {
+      const snapshot = pendingSnapshot.current;
+      if (snapshot) {
+        const liveOutput = liveOutputSinceSnapshot.current.join('');
+        liveOutputSinceSnapshot.current = [];
+        awaitingScrollback.current = false;
+        termRef.current?.applyScrollback(data, snapshot, liveOutput);
+      }
+    });
+  }, [subscribeScrollback]);
+
+  useEffect(() => {
     if (connState === 'connected' && snapshotApplied) {
       termRef.current?.setConnectionState('live');
     } else if (connState === 'connecting' || connState === 'reconnecting') {
-      setSnapshotApplied(false);
       termRef.current?.setConnectionState(
         connState === 'reconnecting' ? 'reconnecting' : 'loading',
         detail,
@@ -129,7 +147,8 @@ export default function TerminalRoute() {
 
   const handleSnapshotApplied = useCallback(() => {
     setSnapshotApplied(true);
-  }, []);
+    acknowledgeSnapshotApplied();
+  }, [acknowledgeSnapshotApplied]);
 
   const toggleSelection = useCallback(() => {
     setSelectionMode((enabled) => {

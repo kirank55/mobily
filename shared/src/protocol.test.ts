@@ -129,6 +129,67 @@ describe('round-trip: Session Snapshot frame', () => {
   });
 });
 
+describe('round-trip: bounded Session scrollback frames', () => {
+  it('preserves the painted acknowledgement and ordered history chunks', () => {
+    expect(decodeFrame(encodeFrame({ type: 'session-snapshot-applied' }))).toEqual({
+      type: 'session-snapshot-applied',
+    });
+    expect(
+      decodeFrame(
+        encodeFrame({
+          type: 'session-scrollback',
+          transferId: 'history-1',
+          sequence: 0,
+          data: 'older output\r\n',
+          done: false,
+        }),
+      ),
+    ).toEqual({
+      type: 'session-scrollback',
+      transferId: 'history-1',
+      sequence: 0,
+      data: 'older output\r\n',
+      done: false,
+    });
+  });
+
+  it('rejects malformed or oversized history chunks', () => {
+    expect(() =>
+      decodeFrame(
+        JSON.stringify({
+          type: 'session-scrollback',
+          transferId: '../history',
+          sequence: 0,
+          data: '',
+          done: true,
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      decodeFrame(
+        JSON.stringify({
+          type: 'session-scrollback',
+          transferId: 'history-1',
+          sequence: -1,
+          data: '',
+          done: true,
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      decodeFrame(
+        JSON.stringify({
+          type: 'session-scrollback',
+          transferId: 'history-1',
+          sequence: 0,
+          data: 'x'.repeat(64 * 1024 + 1),
+          done: false,
+        }),
+      ),
+    ).toThrow(TypeError);
+  });
+});
+
 describe('round-trip: union type narrowing', () => {
   it('returns the correct discriminant for each frame type', () => {
     const frames: Frame[] = [
@@ -255,7 +316,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-    expect(PROTOCOL_VERSION).toBe(4);
+    expect(PROTOCOL_VERSION).toBe(5);
   });
 });
 

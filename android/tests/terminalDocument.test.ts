@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Terminal } from '@xterm/headless';
+import { MAX_SESSION_SCROLLBACK_CHARS, type SessionSnapshotFrame } from '@mobily/shared';
 
 import {
   buildTerminalDocument,
@@ -10,6 +11,7 @@ import {
   pinchTerminalScale,
   stripTerminalMouseControls,
   snapshotToAnsi,
+  scrollbackAndSnapshotToAnsi,
   terminalSelectionRange,
 } from '../src/terminal/terminalDocument';
 
@@ -88,6 +90,38 @@ describe('terminal document', () => {
     expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getFgColor()).toBe(0x12abef);
     expect(terminal.buffer.active.cursorX).toBe(2);
     expect(terminal.buffer.active.cursorY).toBe(1);
+    terminal.dispose();
+  });
+
+  it('loads maximum scrollback behind the already-painted current screen', async () => {
+    const current: SessionSnapshotFrame = {
+      type: 'session-snapshot',
+      cols: 8,
+      rows: 2,
+      activeScreen: 'normal',
+      cursor: { col: 7, row: 1, visible: true, style: 'block', blink: false },
+      grid: [
+        Array.from('CURRENT ', (chars) => ({ chars, width: 1 as const })),
+        Array.from('SCREEN  ', (chars) => ({ chars, width: 1 as const })),
+      ],
+    };
+    const history = `${'history line\r\n'.repeat(50_000)}FINAL HISTORY\r\n`.slice(
+      -MAX_SESSION_SCROLLBACK_CHARS,
+    );
+    expect(history).toHaveLength(MAX_SESSION_SCROLLBACK_CHARS);
+    const ansi = scrollbackAndSnapshotToAnsi(history, current, '\r\nLIVE AFTER PAINT');
+    expect(ansi).not.toBeNull();
+
+    const terminal = new Terminal({ allowProposedApi: true, cols: 8, rows: 2, scrollback: 5_000 });
+    await new Promise<void>((resolve) => terminal.write(ansi!, resolve));
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+    expect(
+      Array.from({ length: terminal.rows }, (_, row) =>
+        terminal.buffer.active
+          .getLine(terminal.buffer.active.viewportY + row)
+          ?.translateToString(true),
+      ).join(''),
+    ).toContain('LIVE AFTER PAINT');
     terminal.dispose();
   });
 

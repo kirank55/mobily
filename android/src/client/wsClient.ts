@@ -19,6 +19,7 @@ import {
   decodeFrame,
   encodeFrame,
   isSecureWebSocketUrl,
+  MAX_SESSION_SCROLLBACK_CHARS,
   WS_CLOSE_CODES,
   type Frame,
   type RpcRequestFrame,
@@ -55,6 +56,8 @@ export interface WsClientOptions {
   onResize?: (cols: number, rows: number) => void;
   /** Callback for the atomic first terminal frame after authentication. */
   onSnapshot?: (snapshot: SessionSnapshotFrame) => void;
+  /** Callback after one complete, validated Session history transfer. */
+  onScrollback?: (data: string) => void;
   /** Callback when the Station detects terminal output that needs attention. */
   onAlert?: (message: string) => void;
   /** Callback for structured RPC responses after authentication. */
@@ -120,6 +123,10 @@ export class WsClient {
   private socketGeneration = 0;
   private handshakeState: HandshakeState = 'idle';
   private receivedInitialSize = false;
+  private snapshotPaintAcknowledged = false;
+  private scrollbackTransfer:
+    { transferId: string; nextSequence: number; chunks: string[]; chars: number } | undefined;
+  private completedScrollbackTransferId: string | undefined;
   /** Set to true when auth is permanently rejected (re-pair required). */
   private authRejected = false;
 
@@ -160,6 +167,7 @@ export class WsClient {
     this.socketGeneration++;
     this.handshakeState = 'idle';
     this.receivedInitialSize = false;
+    this.resetScrollbackState();
     this.ready = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -182,6 +190,13 @@ export class WsClient {
     if (this.ready) this.send({ type: 'resize', cols, rows });
   }
 
+  /** Confirm first paint so the Station may begin the bounded history transfer. */
+  acknowledgeSnapshotApplied(): void {
+    if (!this.ready || this.snapshotPaintAcknowledged) return;
+    this.snapshotPaintAcknowledged = true;
+    this.send({ type: 'session-snapshot-applied' });
+  }
+
   /** Send a structured request after authentication. */
   sendRpc(frame: RpcRequestFrame): boolean {
     if (!this.ready) return false;
@@ -196,6 +211,7 @@ export class WsClient {
   private openSocket(): void {
     this.ready = false;
     this.receivedInitialSize = false;
+    this.resetScrollbackState();
     this.reconnectSuppressed = false;
     this.setState(this.retries > 0 ? 'reconnecting' : 'connecting');
 
@@ -405,9 +421,56 @@ export class WsClient {
         this.opts.onReady?.();
         break;
 
+      case 'session-scrollback': {
+        if (this.handshakeState !== 'ready' || !this.snapshotPaintAcknowledged) {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'scrollback before Session Snapshot paint');
+          return;
+        }
+        if (
+          frame.transferId === this.completedScrollbackTransferId &&
+          this.scrollbackTransfer === undefined
+        ) {
+          return;
+        }
+        const transfer =
+          this.scrollbackTransfer ??
+          (frame.sequence === 0
+            ? {
+                transferId: frame.transferId,
+                nextSequence: 0,
+                chunks: [],
+                chars: 0,
+              }
+            : undefined);
+        if (
+          !transfer ||
+          transfer.transferId !== frame.transferId ||
+          transfer.nextSequence !== frame.sequence
+        ) {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'out-of-order Session scrollback');
+          return;
+        }
+        const chars = transfer.chars + frame.data.length;
+        if (chars > MAX_SESSION_SCROLLBACK_CHARS) {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'Session scrollback exceeds size limit');
+          return;
+        }
+        transfer.chunks.push(frame.data);
+        transfer.chars = chars;
+        transfer.nextSequence++;
+        this.scrollbackTransfer = transfer;
+        if (frame.done) {
+          this.completedScrollbackTransferId = transfer.transferId;
+          this.scrollbackTransfer = undefined;
+          this.opts.onScrollback?.(transfer.chunks.join(''));
+        }
+        break;
+      }
+
       case 'hello':
       case 'auth-response':
       case 'input':
+      case 'session-snapshot-applied':
         socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
         break;
       case 'resize':
@@ -467,5 +530,11 @@ export class WsClient {
 
   private emitError(message: string, kind: ErrorKind = 'generic'): void {
     this.opts.onError?.(message, kind);
+  }
+
+  private resetScrollbackState(): void {
+    this.snapshotPaintAcknowledged = false;
+    this.scrollbackTransfer = undefined;
+    this.completedScrollbackTransferId = undefined;
   }
 }

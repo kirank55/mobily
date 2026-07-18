@@ -23,12 +23,13 @@ receives frames in this order:
 2. the Session dimensions
 3. one atomic `session-snapshot`
 4. live `output` frames
+5. after Android acknowledges first paint, ordered `session-scrollback` frames
 
 The snapshot contains the exact visible rows and cells, Unicode cell widths,
 foreground and background colors, text attributes, active normal/alternate
 screen, cursor position, cursor visibility and cursor style. Snapshot frames
 are bounded and validated by the shared protocol. This contract advances the
-wire protocol to version 4; older peers fail version negotiation rather than
+wire protocol to version 5; older peers fail version negotiation rather than
 silently reverting to transcript replay.
 
 Snapshot capture and terminal parsing use one ordered queue. Output received
@@ -45,6 +46,22 @@ Android keeps its loading or reconnecting overlay visible until its production
 xterm instance confirms that it parsed the snapshot. Live output queued after
 the snapshot is then applied in wire order.
 
+That first-paint confirmation is also the release boundary for bounded
+scrollback. The CLI freezes the backend-neutral history at the snapshot
+boundary and does not begin its transfer until it receives
+`session-snapshot-applied`. History uses one identified sequence of bounded
+chunks. Android rejects a transfer that starts early, changes identity, skips
+a sequence, or exceeds the complete-transfer limit; a repeated completed
+transfer is ignored.
+
+Android builds the history in a hidden production xterm instance, restores the
+visible Session Snapshot on top of it, and then applies live output accumulated
+during the rebuild. The completed terminal replaces the painted terminal in
+one DOM swap and remains scrolled to the current screen. This makes recent
+history available without delaying first paint, exposing an intermediate
+replay, moving the viewer away from the current screen, or overwriting newer
+output.
+
 ## Consequences
 
 - An idle bare-PTY prompt is visible on first Android connection even when the
@@ -53,8 +70,8 @@ the snapshot is then applied in wire order.
   an unbounded terminal transcript.
 - Reattaching to an idle persisted tmux Session reconstructs its current
   attributed pane even if the attach client emits no timely redraw.
-- Bounded replay remains available to workstation attachments but is never
-  treated as an atomic Session Snapshot.
+- Bounded history is available to workstation and Android attachments but is
+  never treated as an atomic Session Snapshot.
 - Local workstation output is delayed only until the canonical parser has
   consumed the corresponding PTY chunk.
 - The Station and Android use matching xterm semantics, at the cost of a

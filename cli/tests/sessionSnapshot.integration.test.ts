@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket, type RawData } from 'ws';
-import type { SessionSnapshotFrame } from '@mobily/shared';
+import type { SessionScrollbackFrame, SessionSnapshotFrame } from '@mobily/shared';
 import { BareBackend } from '../src/mux/bare.js';
 import { TmuxBackend } from '../src/mux/tmux.js';
 import { defaultSessionRuntime } from '../src/mux/runtime.js';
@@ -82,6 +82,21 @@ describe('full-screen Session Snapshot integration', () => {
       expect(normalizeVisibleSnapshot(recoveredTmuxSnapshot)).toEqual(
         normalizeVisibleSnapshot(bareSnapshot),
       );
+    },
+    20_000,
+  );
+
+  it.skipIf(!tmuxAvailable)(
+    'transfers bounded history from a real tmux Session only after snapshot paint',
+    async () => {
+      const backend = await createExistingTmuxBackend();
+      const session = new Session({ backend, cols: COLS, rows: ROWS });
+      sessions.push(session);
+
+      const history = await captureSessionScrollback(session);
+
+      expect(history).toContain('READY redraw');
+      expect(history.length).toBeLessThanOrEqual(512 * 1024);
     },
     20_000,
   );
@@ -189,6 +204,33 @@ async function captureSessionSnapshot(session: Session): Promise<SessionSnapshot
       if (frame.type !== 'session-snapshot') return;
       clearTimeout(timeout);
       resolve(frame);
+    });
+    socket.on('error', reject);
+  });
+}
+
+async function captureSessionScrollback(session: Session): Promise<string> {
+  const server = await startServer({ session });
+  servers.push(server);
+  const socket = new WebSocket(server.url);
+  sockets.push(socket);
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Session scrollback timed out')), 10_000);
+    const chunks: string[] = [];
+    socket.on('message', (raw: RawData) => {
+      const frame = JSON.parse(raw.toString()) as { type?: unknown };
+      if (frame.type === 'session-snapshot') {
+        expect(chunks).toEqual([]);
+        socket.send(JSON.stringify({ type: 'session-snapshot-applied' }));
+        return;
+      }
+      if (frame.type !== 'session-scrollback') return;
+      const scrollback = frame as SessionScrollbackFrame;
+      chunks.push(scrollback.data);
+      if (!scrollback.done) return;
+      clearTimeout(timeout);
+      resolve(chunks.join(''));
     });
     socket.on('error', reject);
   });

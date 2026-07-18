@@ -340,6 +340,49 @@ describe('pairing flow end-to-end', () => {
     expect(out.split(liveMarker)).toHaveLength(2);
   }, 20000);
 
+  it('starts one bounded ordered scrollback transfer only after snapshot paint', async () => {
+    const { server, session, privateKeyPem, deviceId } = await setupPairedSession();
+    let workstationOutput = '';
+    const workstation = session.attachLocalTerminal({
+      onOutput: (data) => {
+        workstationOutput += data;
+      },
+    });
+    const historyCommand =
+      os.platform() === 'win32'
+        ? 'for /L %i in (0,1,5999) do @echo HISTORY_%i'
+        : 'i=0; while [ $i -lt 6000 ]; do printf \'HISTORY_%s\\n\' "$i"; i=$((i+1)); done';
+    workstation.input(`${historyCommand}${eol()}`);
+    await vi.waitFor(() => expect(workstationOutput).toContain('HISTORY_5999'), {
+      timeout: 20_000,
+    });
+
+    const { ws, frames } = await connectAndHandshake(server, privateKeyPem, deviceId);
+    await vi.waitFor(() =>
+      expect(frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true),
+    );
+    expect(frames.some((frame) => frame['type'] === 'session-scrollback')).toBe(false);
+
+    sendFrame(ws, { type: 'session-snapshot-applied' });
+    await vi.waitFor(() =>
+      expect(
+        frames.some((frame) => frame['type'] === 'session-scrollback' && frame['done'] === true),
+      ).toBe(true),
+    );
+
+    const snapshotIndex = frames.findIndex((frame) => frame['type'] === 'session-snapshot');
+    const historyFrames = frames.filter((frame) => frame['type'] === 'session-scrollback');
+    expect(frames.indexOf(historyFrames[0]!)).toBeGreaterThan(snapshotIndex);
+    expect(historyFrames.map((frame) => frame['sequence'])).toEqual(
+      historyFrames.map((_frame, index) => index),
+    );
+    expect(new Set(historyFrames.map((frame) => frame['transferId'])).size).toBe(1);
+    const history = historyFrames.map((frame) => String(frame['data'])).join('');
+    expect(history.length).toBeLessThanOrEqual(512 * 1024);
+    expect(history).toContain('HISTORY_5999');
+    workstation.dispose();
+  }, 30000);
+
   it('HTTP pairing response includes tunnelUrl, stationName, and protocolVersion', async () => {
     const auth = new AuthManager('my-station');
     const code = auth.generatePairingCode();

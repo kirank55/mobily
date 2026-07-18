@@ -23,6 +23,8 @@ export interface TerminalViewHandle {
   write(data: string, latencyTags?: readonly string[]): void;
   /** Atomically replace the visible terminal with a Session Snapshot. */
   applySnapshot(snapshot: SessionSnapshotFrame): void;
+  /** Load bounded history behind the current screen without disturbing live output. */
+  applyScrollback(data: string, snapshot: SessionSnapshotFrame, liveOutput: string): void;
   /** Request the terminal to resize to the given dimensions. */
   resize(cols: number, rows: number): void;
   /** Show connection status without clearing the rendered terminal frame. */
@@ -89,6 +91,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       },
       applySnapshot(snapshot: SessionSnapshotFrame) {
         postToWebView({ type: 'session-snapshot', snapshot });
+      },
+      applyScrollback(data: string, snapshot: SessionSnapshotFrame, liveOutput: string) {
+        postToWebView({ type: 'session-scrollback', data, snapshot, liveOutput });
       },
       resize(cols: number, rows: number) {
         postToWebView({ type: 'resize', cols, rows });

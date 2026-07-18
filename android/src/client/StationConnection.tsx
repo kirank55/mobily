@@ -19,6 +19,7 @@ import { ForegroundConnectionController } from '@/foreground/controller';
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 type ResizeListener = (cols: number, rows: number) => void;
 type SnapshotListener = (snapshot: SessionSnapshotFrame) => void;
+type ScrollbackListener = (data: string) => void;
 
 interface StationConnectionValue {
   pairing: PairingRecord | null;
@@ -31,9 +32,11 @@ interface StationConnectionValue {
   retry(): void;
   sendInput(data: string, latencyTag?: string): void;
   sendResize(cols: number, rows: number): void;
+  acknowledgeSnapshotApplied(): void;
   subscribeOutput(listener: OutputListener): () => void;
   subscribeResize(listener: ResizeListener): () => void;
   subscribeSnapshot(listener: SnapshotListener): () => void;
+  subscribeScrollback(listener: ScrollbackListener): () => void;
 }
 
 const StationConnectionContext = createContext<StationConnectionValue | null>(null);
@@ -50,6 +53,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const outputListeners = useRef(new Set<OutputListener>());
   const resizeListeners = useRef(new Set<ResizeListener>());
   const snapshotListeners = useRef(new Set<SnapshotListener>());
+  const scrollbackListeners = useRef(new Set<ScrollbackListener>());
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
 
@@ -113,6 +117,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       onSnapshot: (snapshot) => {
         for (const listener of snapshotListeners.current) listener(snapshot);
       },
+      onScrollback: (data) => {
+        for (const listener of scrollbackListeners.current) listener(data);
+      },
       onAlert: (message) => void foreground.current.alert(message),
       onRpcFrame: (frame) => nextRpc.handleFrame(frame),
       onReady: () => {
@@ -145,6 +152,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const sendResize = useCallback((cols: number, rows: number) => {
     clientRef.current?.sendResize(cols, rows);
   }, []);
+  const acknowledgeSnapshotApplied = useCallback(() => {
+    clientRef.current?.acknowledgeSnapshotApplied();
+  }, []);
   const subscribeOutput = useCallback((listener: OutputListener) => {
     outputListeners.current.add(listener);
     return () => outputListeners.current.delete(listener);
@@ -158,6 +168,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const subscribeSnapshot = useCallback((listener: SnapshotListener) => {
     snapshotListeners.current.add(listener);
     return () => snapshotListeners.current.delete(listener);
+  }, []);
+  const subscribeScrollback = useCallback((listener: ScrollbackListener) => {
+    scrollbackListeners.current.add(listener);
+    return () => scrollbackListeners.current.delete(listener);
   }, []);
 
   useEffect(() => {
@@ -189,9 +203,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       retry,
       sendInput,
       sendResize,
+      acknowledgeSnapshotApplied,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
+      subscribeScrollback,
     }),
     [
       pairing,
@@ -204,9 +220,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       retry,
       sendInput,
       sendResize,
+      acknowledgeSnapshotApplied,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
+      subscribeScrollback,
     ],
   );
   return (

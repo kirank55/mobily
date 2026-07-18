@@ -26,6 +26,8 @@ import {
   decodeFrame,
   encodeFrame,
   GIT_RPC_METHODS,
+  MAX_SESSION_SCROLLBACK_CHARS,
+  MAX_SESSION_SCROLLBACK_CHUNK_CHARS,
   PROTOCOL_VERSION,
   WS_CLOSE_CODES,
   type AlertFrame,
@@ -99,6 +101,7 @@ export class Session {
   private readonly subscribers = new Set<WebSocket>();
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
   private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
+  private readonly pendingScrollback = new Map<WebSocket, string>();
   private readonly exitListeners = new Set<(event: ExitEvent) => void>();
   private readonly authenticatedListeners = new Set<() => void>();
   private localTerminal?: LocalTerminalState;
@@ -108,6 +111,7 @@ export class Session {
   private readonly onExitDisposable: IDisposable;
   private exited = false;
   private exitEvent?: ExitEvent;
+  private scrollbackTransferSequence = 0;
 
   constructor(opts: SessionOptions = {}) {
     const {
@@ -356,6 +360,7 @@ export class Session {
       detached = true;
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
+      this.pendingScrollback.delete(ws);
       for (const controller of this.activeRpcRequests.get(ws)?.values() ?? []) controller.abort();
       this.activeRpcRequests.delete(ws);
     };
@@ -363,6 +368,10 @@ export class Session {
     ws.on('error', detach);
     this.screen.capture((snapshot) => {
       if (detached || ws.readyState !== READY_STATE_OPEN) return;
+      this.pendingScrollback.set(
+        ws,
+        this.backend.readScrollback().slice(-MAX_SESSION_SCROLLBACK_CHARS),
+      );
       this.sendTo(ws, snapshot);
       this.subscribers.add(ws);
       for (const listener of [...this.authenticatedListeners]) {
@@ -423,6 +432,12 @@ export class Session {
       case 'session-snapshot':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot');
         break;
+      case 'session-snapshot-applied':
+        this.sendPendingScrollback(ws);
+        break;
+      case 'session-scrollback':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session scrollback');
+        break;
       case 'output':
         break;
       case 'hello':
@@ -431,6 +446,37 @@ export class Session {
       case 'auth-response':
       case 'auth-ok':
         break;
+    }
+  }
+
+  private sendPendingScrollback(ws: WebSocket): void {
+    const history = this.pendingScrollback.get(ws);
+    if (history === undefined) {
+      ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot acknowledgement');
+      return;
+    }
+    this.pendingScrollback.delete(ws);
+    const transferId = `history-${++this.scrollbackTransferSequence}`;
+    if (history.length === 0) {
+      this.sendTo(ws, {
+        type: 'session-scrollback',
+        transferId,
+        sequence: 0,
+        data: '',
+        done: true,
+      });
+      return;
+    }
+    let sequence = 0;
+    for (let offset = 0; offset < history.length; offset += MAX_SESSION_SCROLLBACK_CHUNK_CHARS) {
+      const data = history.slice(offset, offset + MAX_SESSION_SCROLLBACK_CHUNK_CHARS);
+      this.sendTo(ws, {
+        type: 'session-scrollback',
+        transferId,
+        sequence: sequence++,
+        data,
+        done: offset + data.length >= history.length,
+      });
     }
   }
 

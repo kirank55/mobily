@@ -1,6 +1,6 @@
 # Load bounded scrollback after the visible Session Snapshot
 
-Status: ready-for-agent
+Status: resolved
 
 ## What to build
 

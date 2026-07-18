@@ -156,23 +156,42 @@ export function snapshotToAnsi(snapshot) {
   return output;
 }
 
+/** Rebuild bounded history and then restore the current screen without exposing the rebuild. */
+export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '') {
+  if (typeof scrollback !== 'string' || scrollback.length > MAX_SESSION_SCROLLBACK_CHARS)
+    return null;
+  if (typeof liveOutput !== 'string') return null;
+  const snapshotAnsi = snapshotToAnsi(snapshot);
+  if (snapshotAnsi === null) return null;
+  return (
+    '\x1bc' +
+    stripTerminalMouseControls(scrollback).replace(/\x00/g, '') +
+    '\x1b[?1049l\x1b[0m\x1b[2J\x1b[H' +
+    snapshotAnsi.slice(2) +
+    stripTerminalMouseControls(liveOutput)
+  );
+}
+
 /** Shared production terminal document used by the app and browser harness. */
 export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridgeJs = '' }) {
   const XTERM_CSS = xtermCss;
   const XTERM_JS = xtermJs;
   const XTERM_FIT_JS = xtermFitJs;
   const DEV_BRIDGE_JS = devBridgeJs;
-  const VIEWPORT_HELPERS = [
-    clampTerminalScale,
-    fitTerminalScale,
-    pinchTerminalScale,
-    stripTerminalMouseControls,
-    terminalSelectionRange,
-    terminalCellSgr,
-    snapshotToAnsi,
-  ]
-    .map((helper) => helper.toString())
-    .join('\n');
+  const VIEWPORT_HELPERS =
+    `var MAX_SESSION_SCROLLBACK_CHARS=${MAX_SESSION_SCROLLBACK_CHARS};\n` +
+    [
+      clampTerminalScale,
+      fitTerminalScale,
+      pinchTerminalScale,
+      stripTerminalMouseControls,
+      terminalSelectionRange,
+      terminalCellSgr,
+      snapshotToAnsi,
+      scrollbackAndSnapshotToAnsi,
+    ]
+      .map((helper) => helper.toString())
+      .join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -359,6 +378,28 @@ ${VIEWPORT_HELPERS}
       requestAnimationFrame(fitView);sendRN({type:'snapshot-applied'});
     });
   }
+  function applyScrollback(scrollback,snapshot,liveOutput){
+    var ansi=scrollbackAndSnapshotToAnsi(scrollback,snapshot,liveOutput);if(ansi===null)return;
+    outQ=[];mouseCarry='';snapshotInFlight=true;
+    var token=++snapshotToken,oldTerm=term;
+    var oldContainer=oldTerm&&oldTerm.element&&oldTerm.element.parentElement;
+    var nextContainer=document.createElement('div');
+    nextContainer.className='terminal-surface';nextContainer.style.visibility='hidden';
+    document.getElementById('stage').appendChild(nextContainer);
+    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows);
+    nextTerm.write(ansi,function(){
+      if(token!==snapshotToken){
+        nextTerm.dispose();nextContainer.remove();return;
+      }
+      nextTerm.scrollToBottom();
+      nextContainer.id='tc';nextContainer.style.visibility='visible';
+      if(oldContainer){oldContainer.removeAttribute('id');oldContainer.remove();}
+      if(oldTerm)oldTerm.dispose();
+      term=nextTerm;bindTerminalInput(term);snapshotInFlight=false;
+      if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
+      scheduleOutput();requestAnimationFrame(fitView);
+    });
+  }
   function terminalPixels(){
     var screen=term&&term.element&&term.element.querySelector('.xterm-screen');
     return {width:Math.max(1,(screen&&screen.offsetWidth||term.cols*8)+8),height:Math.max(1,(screen&&screen.offsetHeight||term.rows*16)+8)};
@@ -394,6 +435,7 @@ ${VIEWPORT_HELPERS}
     var msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
     if(!msg||typeof msg!=='object')return;
     if(msg.type==='session-snapshot'&&term)applySnapshot(msg.snapshot);
+    else if(msg.type==='session-scrollback'&&term)applyScrollback(msg.data,msg.snapshot,msg.liveOutput);
     else if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
     else if(msg.type==='connection-state'&&typeof msg.state==='string'&&(msg.detail===undefined||typeof msg.detail==='string'))setConnectionState(msg.state,msg.detail);
     else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){term.resize(msg.cols,msg.rows);requestAnimationFrame(fitView);}
@@ -438,3 +480,4 @@ ${VIEWPORT_HELPERS}
 </body>
 </html>`;
 }
+import { MAX_SESSION_SCROLLBACK_CHARS } from '@mobily/shared';

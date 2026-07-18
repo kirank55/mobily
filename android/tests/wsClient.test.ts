@@ -53,6 +53,7 @@ function createClient() {
   const alerts: string[] = [];
   const resizes: Array<[number, number]> = [];
   const snapshots: SessionSnapshotFrame[] = [];
+  const scrollbacks: string[] = [];
   const client = new WsClient({
     url: 'wss://station.example.devtunnels.ms',
     deviceBindingId: 'binding_AAAAAAAAAAAAAAAAAAAAAA',
@@ -72,8 +73,19 @@ function createClient() {
       snapshots.push(snapshot);
       terminalEvents.push(`snapshot:${snapshot.grid[0]?.map((cell) => cell.chars).join('')}`);
     },
+    onScrollback: (data) => scrollbacks.push(data),
   });
-  return { client, states, errors, outputs, alerts, resizes, snapshots, terminalEvents };
+  return {
+    client,
+    states,
+    errors,
+    outputs,
+    alerts,
+    resizes,
+    snapshots,
+    scrollbacks,
+    terminalEvents,
+  };
 }
 
 function snapshot(chars = 'ready'): SessionSnapshotFrame {
@@ -153,6 +165,91 @@ describe('WsClient', () => {
     oversizedSocket.open();
     oversizedSocket.onmessage?.({ data: ' '.repeat(2 * 1024 * 1024 + 1) });
     expect(oversizedSocket.readyState).toBe(3);
+  });
+
+  it('requests history only after first paint and assembles one ordered bounded transfer', async () => {
+    const { client, scrollbacks } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
+
+    expect(socket.sent.map(decodeFrame)).not.toContainEqual({
+      type: 'session-snapshot-applied',
+    });
+    client.acknowledgeSnapshotApplied();
+    expect(decodeFrame(socket.sent.at(-1)!)).toEqual({ type: 'session-snapshot-applied' });
+
+    socket.receive({
+      type: 'session-scrollback',
+      transferId: 'history-1',
+      sequence: 0,
+      data: 'old ',
+      done: false,
+    });
+    socket.receive({
+      type: 'session-scrollback',
+      transferId: 'history-1',
+      sequence: 1,
+      data: 'lines\r\n',
+      done: true,
+    });
+    expect(scrollbacks).toEqual(['old lines\r\n']);
+
+    socket.receive({
+      type: 'session-scrollback',
+      transferId: 'history-1',
+      sequence: 1,
+      data: 'lines\r\n',
+      done: true,
+    });
+    expect(scrollbacks).toEqual(['old lines\r\n']);
+  });
+
+  it('rejects scrollback before paint, out of order, or above the transfer limit', async () => {
+    const beforePaint = createClient();
+    beforePaint.client.connect();
+    const first = FakeWebSocket.instances[0]!;
+    first.open();
+    first.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    first.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(first.sent).toHaveLength(2));
+    first.receive({ type: 'auth-ok' });
+    first.receive({ type: 'resize', cols: 5, rows: 1 });
+    first.receive(snapshot());
+    first.receive({
+      type: 'session-scrollback',
+      transferId: 'history-1',
+      sequence: 0,
+      data: '',
+      done: true,
+    });
+    expect(first.readyState).toBe(3);
+
+    const outOfOrder = createClient();
+    outOfOrder.client.connect();
+    const second = FakeWebSocket.instances[1]!;
+    second.open();
+    second.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    second.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(second.sent).toHaveLength(2));
+    second.receive({ type: 'auth-ok' });
+    second.receive({ type: 'resize', cols: 5, rows: 1 });
+    second.receive(snapshot());
+    outOfOrder.client.acknowledgeSnapshotApplied();
+    second.receive({
+      type: 'session-scrollback',
+      transferId: 'history-2',
+      sequence: 1,
+      data: '',
+      done: true,
+    });
+    expect(second.readyState).toBe(3);
   });
 
   it('distinguishes a Device Key signing failure from biometric cancellation', async () => {
