@@ -37,6 +37,9 @@ class RecordingBackend implements SessionBackend {
   readScrollback(): string {
     return this.replay;
   }
+  captureVisibleScreen(): string {
+    return this.replay;
+  }
   dispose(): void {}
   emit(data: string): void {
     for (const listener of this.dataListeners) listener(data);

@@ -31,7 +31,10 @@ class RecordingBackend implements SessionBackend {
   readonly dataListeners = new Set<(data: string) => void>();
   readonly exitListeners = new Set<(event: { exitCode: number; signal?: number }) => void>();
 
-  constructor(private readonly replay = '') {}
+  constructor(
+    private readonly replay = '',
+    private readonly onVisibleScreenCapture: () => void = () => undefined,
+  ) {}
 
   write(data: string): void {
     this.writes.push(data);
@@ -48,6 +51,10 @@ class RecordingBackend implements SessionBackend {
     return { dispose: () => this.exitListeners.delete(listener) };
   }
   readScrollback(): string {
+    return this.replay;
+  }
+  captureVisibleScreen(): string {
+    this.onVisibleScreenCapture();
     return this.replay;
   }
   dispose(): void {}
@@ -527,7 +534,10 @@ describe('handshake: version negotiation + auth', () => {
     const code = auth.generatePairingCode();
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
     pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
-    const backend = new RecordingBackend('previous command\r\nprevious output\r\n');
+    let backend: RecordingBackend;
+    backend = new RecordingBackend('previous command\r\nprevious output\r\n', () => {
+      backend.emit('output during initial screen capture\r\n');
+    });
     const session = new Session({ backend, auth });
     sessions.push(session);
     const server = await startServer({ session });
@@ -561,7 +571,18 @@ describe('handshake: version negotiation + auth', () => {
     const snapshot = received.find((frame) => frame['type'] === 'session-snapshot') as {
       grid: Array<Array<{ chars: string }>>;
     };
-    expect(snapshot.grid.flat().map((cell) => cell.chars).join('')).toContain('previous output');
+    expect(
+      snapshot.grid
+        .flat()
+        .map((cell) => cell.chars)
+        .join(''),
+    ).toContain('previous output');
+    expect(
+      snapshot.grid
+        .flat()
+        .map((cell) => cell.chars)
+        .join(''),
+    ).toContain('output during initial screen capture');
     const terminalFrames = received.filter((frame) =>
       ['auth-ok', 'resize', 'session-snapshot', 'output'].includes(String(frame['type'])),
     );

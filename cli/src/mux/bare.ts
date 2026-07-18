@@ -45,6 +45,10 @@ export class BareBackend implements SessionBackend {
     return this.pty.onExit(listener);
   }
 
+  captureVisibleScreen(): string {
+    return this.scrollback.readAll();
+  }
+
   readScrollback(maxLines?: number): string {
     return this.scrollback.read(maxLines);
   }

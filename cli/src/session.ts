@@ -133,15 +133,23 @@ export class Session {
       this.broadcast({ type: 'alert', message }),
     );
 
-    const initialOutput = this.backend.readScrollback();
-    if (initialOutput.length > 0) this.screen.write(initialOutput);
-    this.onDataDisposable = this.backend.onData((data) => {
+    let initializingScreen = true;
+    const pendingInitialOutput: string[] = [];
+    const acceptBackendOutput = (data: string): void => {
       this.deliverLocalOutput(data);
       this.screen.write(data, () => {
         this.broadcast({ type: 'output', data });
         this.alertDetector.push(data);
       });
+    };
+    this.onDataDisposable = this.backend.onData((data) => {
+      if (initializingScreen) pendingInitialOutput.push(data);
+      else acceptBackendOutput(data);
     });
+    const initialOutput = this.backend.captureVisibleScreen();
+    if (initialOutput.length > 0) this.screen.write(initialOutput);
+    initializingScreen = false;
+    for (const data of pendingInitialOutput) acceptBackendOutput(data);
 
     this.onExitDisposable = this.backend.onExit((event) => this.handleExit(event));
   }

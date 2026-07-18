@@ -41,6 +41,7 @@ export class TmuxBackend implements SessionBackend {
       installPromptPrefix(sessionName, runtime);
     }
     runtime.execFile('tmux', ['set-window-option', '-t', sessionName, 'window-size', 'largest']);
+    runtime.execFile('tmux', ['set-option', '-t', sessionName, 'status', 'off']);
     try {
       this.scrollback.append(
         runtime.execFile('tmux', [
@@ -59,7 +60,7 @@ export class TmuxBackend implements SessionBackend {
 
     this.pty = runtime.spawnPty({
       file: 'tmux',
-      args: ['attach-session', '-t', sessionName],
+      args: ['-T', 'RGB', 'attach-session', '-t', sessionName],
       cwd,
       cols,
       rows,
@@ -87,6 +88,34 @@ export class TmuxBackend implements SessionBackend {
 
   onExit(listener: Parameters<PtyProcess['onExit']>[0]): IDisposable {
     return this.pty.onExit(listener);
+  }
+
+  captureVisibleScreen(): string {
+    const contents = this.runtime.execFile('tmux', [
+      'capture-pane',
+      '-p',
+      '-e',
+      '-N',
+      '-t',
+      this.sessionName,
+    ]);
+    const [alternate, cursorX, cursorY, cursorVisible, cursorShape, cursorBlinking] = this.runtime
+      .execFile('tmux', [
+        'display-message',
+        '-p',
+        '-t',
+        this.sessionName,
+        '#{alternate_on}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{cursor_shape}\t#{cursor_blinking}',
+      ])
+      .replace(/\r?\n$/, '')
+      .split('\t');
+    const lines = contents.replace(/\r?\n$/, '').split(/\r?\n/);
+    const screen = lines.map((line, row) => `\u001b[${row + 1};1H${line}`).join('');
+    const activeScreen = alternate === '1' ? '\u001b[?1049h' : '\u001b[?1049l';
+    const cursor = `\u001b[${Number(cursorY) + 1};${Number(cursorX) + 1}H`;
+    const visibility = cursorVisible === '0' ? '\u001b[?25l' : '\u001b[?25h';
+    const style = tmuxCursorStyleControl(cursorShape, cursorBlinking);
+    return `${activeScreen}\u001b[2J\u001b[H${screen}\u001b[0m${style}${cursor}${visibility}`;
   }
 
   readScrollback(maxLines?: number): string {
@@ -126,6 +155,13 @@ export class TmuxBackend implements SessionBackend {
     this.pty.kill();
     if (this.panelDirectory) rmSync(this.panelDirectory, { recursive: true, force: true });
   }
+}
+
+function tmuxCursorStyleControl(shape: string | undefined, blinking: string | undefined): string {
+  const steady = blinking === '0';
+  const code =
+    shape === 'underline' ? (steady ? 4 : 3) : shape === 'bar' ? (steady ? 6 : 5) : steady ? 2 : 1;
+  return `\u001b[${code} q`;
 }
 
 function installPromptPrefix(sessionName: string, runtime: SessionRuntime): void {

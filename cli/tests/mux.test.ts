@@ -96,6 +96,20 @@ describe('BareBackend', () => {
     backend.dispose();
     expect(fake.pty.killed).toBe(true);
   });
+
+  it('captures the full bounded transcript instead of the trailing replay window', () => {
+    const fake = runtime();
+    const backend = new BareBackend({ scrollbackBytes: 64 * 1024 }, fake.value);
+    const transcript =
+      '\u001b[?1049h' +
+      Array.from({ length: 501 }, (_, index) => `visible-state-${index}\n`).join('');
+
+    fake.pty.emit(transcript);
+
+    expect(backend.readScrollback()).not.toContain('\u001b[?1049h');
+    expect(backend.captureVisibleScreen()).toBe(transcript);
+    backend.dispose();
+  });
 });
 
 describe('TmuxBackend', () => {
@@ -105,6 +119,7 @@ describe('TmuxBackend', () => {
         fake.commands.push({ file, args });
         if (args[0] === 'has-session') throw new Error('missing');
         if (args[0] === 'capture-pane') return 'captured\n';
+        if (args[0] === 'display-message') return '1\t4\t6\t0\tbar\t0\n';
         if (args[0] === 'split-window') return '%9\n';
         return '';
       }),
@@ -128,6 +143,10 @@ describe('TmuxBackend', () => {
         },
         {
           file: 'tmux',
+          args: ['set-option', '-t', 'mobily-work-1234', 'status', 'off'],
+        },
+        {
+          file: 'tmux',
           args: ['capture-pane', '-p', '-J', '-S', '-500', '-t', 'mobily-work-1234'],
         },
       ]),
@@ -135,10 +154,13 @@ describe('TmuxBackend', () => {
     expect(fake.value.spawnPty).toHaveBeenCalledWith(
       expect.objectContaining({
         file: 'tmux',
-        args: ['attach-session', '-t', 'mobily-work-1234'],
+        args: ['-T', 'RGB', 'attach-session', '-t', 'mobily-work-1234'],
       }),
     );
     expect(backend.readScrollback()).toContain('captured');
+    expect(backend.captureVisibleScreen()).toContain(
+      '\u001b[?1049h\u001b[2J\u001b[H\u001b[1;1Hcaptured\u001b[0m\u001b[6 q\u001b[7;5H\u001b[?25l',
+    );
     expect(backend.attachCommand).toBe('tmux attach-session -t mobily-work-1234');
     expect(fake.commands.some(({ args }) => args[0] === 'send-keys' && args.includes('-l'))).toBe(
       true,

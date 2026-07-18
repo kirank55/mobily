@@ -45,8 +45,10 @@ describe('terminal document', () => {
   });
 
   it('preserves generic ANSI output while suppressing terminal mouse ownership', () => {
-    const fixture = '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1002;1006h';
-    expect(stripTerminalMouseControls(fixture)).toBe('\u001b[2J\u001b[31mwide TUI\u001b[0m');
+    const fixture = '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1002;1049h';
+    expect(stripTerminalMouseControls(fixture)).toBe(
+      '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1049h',
+    );
   });
 
   it('reconstructs a styled nonblank first frame in the production terminal parser', async () => {

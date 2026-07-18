@@ -21,6 +21,10 @@ export class ScrollbackBuffer {
     this.value = encoded.subarray(start).toString('utf8');
   }
 
+  readAll(): string {
+    return this.value;
+  }
+
   read(maxLines = DEFAULT_REPLAY_LINES): string {
     if (!Number.isInteger(maxLines) || maxLines < 1) {
       throw new RangeError('maxLines must be a positive integer');

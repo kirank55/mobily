@@ -11,6 +11,11 @@ export interface SessionBackend {
   resize(cols: number, rows: number): void;
   onData(listener: (data: string) => void): IDisposable;
   onExit(listener: (event: ExitEvent) => void): IDisposable;
+  /**
+   * Return one ANSI reconstruction of the backend's current visible screen.
+   * This is distinct from scrollback or other replay history.
+   */
+  captureVisibleScreen(): string;
   readScrollback(maxLines?: number): string;
   /** Pin pairing details above the shell for the next workstation attachment. */
   showPairingPanel?(content: string, height: number): void;

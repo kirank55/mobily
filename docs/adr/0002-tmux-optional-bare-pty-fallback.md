@@ -9,11 +9,12 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 **Consequences:**
 
 - The session layer uses a `SessionBackend` seam with two adapters (`TmuxBackend`, `BareBackend`).
-- Both adapters expose bounded scrollback replay; the bare adapter uses an in-process ring buffer and tmux seeds the same buffer with `capture-pane` on startup.
+- Both adapters expose bounded scrollback replay separately from visible-screen initialization. The bare adapter uses its in-process raw-output ring to reconstruct the current screen, while tmux captures only its attributed visible pane and cursor metadata for the initial canonical state.
 - A deterministic working-directory-derived session name is reused across CLI restarts. `--session` overrides it, and `--kill-session` is the only Mobily command that terminates a persisted tmux session.
 - Normal CLI shutdown detaches its tmux client. It never kills the shared session.
 - With tmux, the CLI remains a pairing/control screen so its QR and connection details stay visible; it prints a command for attaching the Session from a second terminal and also pins the pairing details in a managed header pane. Bare mode keeps the pairing details visible until a phone authenticates, then mirrors the backend in the same terminal.
 - Newly created tmux Sessions receive a session-local `[mobily]` Bash/Zsh prompt prefix. Persisted shell configuration and resumed Sessions are never rewritten.
 - The tmux window uses the `largest` sizing policy so an Android resize does not shrink a larger attached workstation terminal.
+- Mobily's tmux attachment advertises RGB support and disables the session-local tmux status row so colors and full-screen grid dimensions match the bare-PTY contract.
 - Embedded workstation rendering suppresses terminal mouse tracking so the containing terminal emulator retains normal text selection semantics.
 - CI tests both paths: tmux on Linux/macOS runners, bare on Windows runner.
