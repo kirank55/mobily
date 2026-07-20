@@ -26,12 +26,14 @@ describe('terminal document', () => {
     expect(production).toContain('xterm-marker');
     expect(production).toContain('fit-marker');
     expect(production).toContain("msg.type==='zoom'");
+    expect(production).toContain("msg.type==='font-delta'");
+    expect(production).toContain("msg.type==='size-ownership'");
     expect(production).toContain("msg.type==='selection-mode'");
     expect(production).toContain('stripMouseModes');
     expect(production).toContain('touchmove');
     expect(production).toContain("msg.type==='paste'");
-    expect(production).toContain('new ResizeObserver(function(){fitView();})');
-    expect(production).not.toContain("sendRN({type:'resize'");
+    expect(production).toContain('proposeOwnerGrid');
+    expect(production).toContain("sendRN({type:'resize'");
     expect(readFileSync(resolve(__dirname, '../dev/term.html'), 'utf8')).toContain(
       '[mobily harness] terminal ready',
     );

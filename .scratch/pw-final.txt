@@ -1,0 +1,6 @@
+START 2026-07-20T16:22:09+00:00
+PID=84105
+KILLING hung playwright PID=84105 after 90s
+PLAYWRIGHT_EXIT=124
+END 2026-07-20T16:23:39+00:00
+your 131072x1 screen size is bogus. expect trouble

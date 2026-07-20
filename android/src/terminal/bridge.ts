@@ -3,6 +3,7 @@ export type TerminalBridgeMessage =
   | { readonly type: 'snapshot-applied' }
   | { readonly type: 'input'; readonly data: string; readonly latencyTag: string }
   | { readonly type: 'resize'; readonly cols: number; readonly rows: number }
+  | { readonly type: 'font-size'; readonly fontSize: number }
   | { readonly type: 'copy'; readonly data: string }
   | {
       readonly type: 'latency-stats';
@@ -37,6 +38,8 @@ export function parseTerminalBridgeMessage(raw: string): TerminalBridgeMessage |
       return isDimension(message['cols']) && isDimension(message['rows'])
         ? { type: 'resize', cols: message['cols'], rows: message['rows'] }
         : null;
+    case 'font-size':
+      return isFontSize(message['fontSize']) ? { type: 'font-size', fontSize: message['fontSize'] } : null;
     case 'copy':
       return typeof message['data'] === 'string' && message['data'].length <= 1_000_000
         ? { type: 'copy', data: message['data'] }
@@ -59,6 +62,10 @@ export function parseTerminalBridgeMessage(raw: string): TerminalBridgeMessage |
 
 function isDimension(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) > 0 && (value as number) <= 1000;
+}
+
+function isFontSize(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 10 && (value as number) <= 28;
 }
 
 function isNonNegativeNumber(value: unknown): value is number {

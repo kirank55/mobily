@@ -24,6 +24,7 @@ import { deleteKey } from '@/auth/deviceKey';
 import { loadPairing, clearPairing } from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
+import { loadTerminalFontSize, saveTerminalFontSize } from '@/terminal/fontPreference';
 
 export default function TerminalRoute() {
   const {
@@ -31,10 +32,12 @@ export default function TerminalRoute() {
     detail,
     errorKind,
     pairing,
+    ownsTerminalSize,
     connect,
     disconnect,
     retry,
     sendInput,
+    sendResize,
     acknowledgeSnapshotApplied,
     setTerminalVisible,
     subscribeOutput,
@@ -49,6 +52,7 @@ export default function TerminalRoute() {
     null,
   );
   const [selectionMode, setSelectionMode] = useState(false);
+  const [fontSize, setFontSize] = useState<number | null>(null);
   const sessionSize = useRef({ cols: 120, rows: 40 });
   const pendingSnapshot = useRef<SessionSnapshotFrame | null>(null);
   const liveOutputSinceSnapshot = useRef<string[]>([]);
@@ -92,6 +96,26 @@ export default function TerminalRoute() {
       return () => setTerminalVisible(false);
     }, [setTerminalVisible]),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTerminalFontSize().then((size) => {
+      if (!cancelled) setFontSize(size);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!termReady || fontSize == null) return;
+    termRef.current?.setFontSize(fontSize);
+  }, [termReady, fontSize]);
+
+  useEffect(() => {
+    if (!termReady) return;
+    termRef.current?.setSizeOwnership(ownsTerminalSize);
+  }, [termReady, ownsTerminalSize]);
 
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {
@@ -157,6 +181,21 @@ export default function TerminalRoute() {
     setSnapshotApplied(true);
     acknowledgeSnapshotApplied();
   }, [acknowledgeSnapshotApplied]);
+
+  const handleOwnerResize = useCallback(
+    (cols: number, rows: number) => {
+      sessionSize.current = { cols, rows };
+      sendResize(cols, rows);
+    },
+    [sendResize],
+  );
+
+  const handleFontSize = useCallback((next: number) => {
+    setFontSize(next);
+    void saveTerminalFontSize(next).catch((error) => {
+      console.warn('[Mobily][Terminal] Failed to persist font size', error);
+    });
+  }, []);
 
   const toggleSelection = useCallback(() => {
     setSelectionMode((enabled) => {
@@ -284,11 +323,17 @@ export default function TerminalRoute() {
           <TouchableOpacity onPress={() => termRef.current?.fit()}>
             <Text style={styles.controlText}>Fit</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => termRef.current?.zoomOut()}>
-            <Text style={styles.controlText}>−</Text>
+          <TouchableOpacity
+            onPress={() => termRef.current?.adjustFontSize(-1)}
+            accessibilityLabel="Decrease font size"
+          >
+            <Text style={styles.controlText}>A−</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => termRef.current?.zoomIn()}>
-            <Text style={styles.controlText}>+</Text>
+          <TouchableOpacity
+            onPress={() => termRef.current?.adjustFontSize(1)}
+            accessibilityLabel="Increase font size"
+          >
+            <Text style={styles.controlText}>A+</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={toggleSelection}>
             <Text style={[styles.controlText, selectionMode && styles.controlActive]}>Select</Text>
@@ -305,6 +350,8 @@ export default function TerminalRoute() {
           onReady={handleTerminalReady}
           onSnapshotApplied={handleSnapshotApplied}
           onInput={handleTermInput}
+          onResize={handleOwnerResize}
+          onFontSize={handleFontSize}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
             console.log(`[mobily latency] n=${n} P50=${p50}ms P95=${p95}ms`);

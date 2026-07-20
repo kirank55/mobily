@@ -28,6 +28,7 @@ interface StationConnectionValue {
   detail: string;
   errorKind: ErrorKind;
   rpc: RpcClient | null;
+  ownsTerminalSize: boolean;
   connect(pairing: PairingRecord): void;
   disconnect(): void;
   retry(): void;
@@ -49,6 +50,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const [detail, setDetail] = useState('');
   const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
   const [rpc, setRpc] = useState<RpcClient | null>(null);
+  const [ownsTerminalSize, setOwnsTerminalSize] = useState(false);
   const clientRef = useRef<WsClient | null>(null);
   const rpcRef = useRef<RpcClient | null>(null);
   const pairingRef = useRef<PairingRecord | null>(null);
@@ -81,6 +83,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     rpcRef.current = null;
     pairingRef.current = null;
     latestResize.current = null;
+    setOwnsTerminalSize(false);
     setRpc(null);
     setPairing(null);
     setState('disconnected');
@@ -100,6 +103,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       rpcRef.current?.disconnect();
       clientRef.current?.disconnect();
       latestResize.current = null;
+      setOwnsTerminalSize(false);
       let client!: WsClient;
       const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
       client = new WsClient({
@@ -110,6 +114,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         protocolVersion: PROTOCOL_VERSION,
         onStateChange: (nextState, nextDetail) => {
           sizeOwnership.setConnected(nextState === 'connected');
+          if (nextState !== 'connected') setOwnsTerminalSize(false);
           setState(nextState);
           setDetail(nextDetail ?? '');
           if (
@@ -138,6 +143,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         },
         onScrollback: (data) => {
           for (const listener of scrollbackListeners.current) listener(data);
+        },
+        onTerminalSizeOwner: (owner) => {
+          setOwnsTerminalSize(owner.ownedByRequester);
         },
         onAlert: (message) => void foreground.current.alert(message),
         onRpcFrame: (frame) => nextRpc.handleFrame(frame),
@@ -227,6 +235,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       detail,
       errorKind,
       rpc,
+      ownsTerminalSize,
       connect,
       disconnect,
       retry,
@@ -245,6 +254,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       detail,
       errorKind,
       rpc,
+      ownsTerminalSize,
       connect,
       disconnect,
       retry,

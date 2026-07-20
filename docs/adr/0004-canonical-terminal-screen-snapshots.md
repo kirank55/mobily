@@ -78,6 +78,15 @@ The Session identifies the owning socket, ignores resize frames from
 non-owners, and broadcasts owner and dimension changes. This makes visibility,
 not mere authentication or WebSocket connectivity, the authority boundary.
 
+While Android owns the size, it derives candidate rows and columns from the
+usable terminal viewport at a readable font size rather than shrinking a
+desktop-sized grid into the phone. System insets, the soft keyboard, and the
+extra key row are outside that usable viewport. Orientation changes and
+explicit font-size adjustments emit debounced owner resize requests and may
+persist the font preference. Pinch zoom remains a visual transform only and
+does not reflow the Session; when visual scale exceeds the viewport the stage
+stays pannable.
+
 ## Consequences
 
 - An idle bare-PTY prompt is visible on first Android connection even when the
@@ -94,6 +103,8 @@ not mere authentication or WebSocket connectivity, the authority boundary.
   headless xterm dependency in the CLI.
 - Foreground Android can select the one shared grid without leaving a stale
   background or disconnected client in control.
+- Owner-selected phone dimensions prioritize readable text over preserving a
+  workstation column count, so full-screen TUIs reflow while Android owns size.
 - Restoring Station ownership may resize a full-screen application back to the
   Station's latest local grid.
 - Snapshot size is proportional to the visible grid and is capped by both

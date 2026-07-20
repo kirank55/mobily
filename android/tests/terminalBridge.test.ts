@@ -20,6 +20,10 @@ describe('parseTerminalBridgeMessage()', () => {
       cols: 80,
       rows: 24,
     });
+    expect(parseTerminalBridgeMessage('{"type":"font-size","fontSize":16}')).toEqual({
+      type: 'font-size',
+      fontSize: 16,
+    });
     expect(parseTerminalBridgeMessage('{"type":"ready"}')).toEqual({ type: 'ready' });
     expect(
       parseTerminalBridgeMessage(JSON.stringify({ type: 'copy', data: 'selected text' })),
@@ -29,6 +33,7 @@ describe('parseTerminalBridgeMessage()', () => {
   it('rejects malformed, oversized, and unknown bridge messages', () => {
     expect(parseTerminalBridgeMessage('{')).toBeNull();
     expect(parseTerminalBridgeMessage('{"type":"resize","cols":0,"rows":24}')).toBeNull();
+    expect(parseTerminalBridgeMessage('{"type":"font-size","fontSize":9}')).toBeNull();
     expect(
       parseTerminalBridgeMessage(
         JSON.stringify({ type: 'input', data: 'x'.repeat(32_769), latencyTag: 'lat-12345678' }),

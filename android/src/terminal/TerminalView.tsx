@@ -29,6 +29,12 @@ export interface TerminalViewHandle {
   resize(cols: number, rows: number): void;
   /** Show connection status without clearing the rendered terminal frame. */
   setConnectionState(state: 'loading' | 'reconnecting' | 'live', detail?: string): void;
+  /** Tell the document whether Android currently owns Session dimensions. */
+  setSizeOwnership(owned: boolean): void;
+  /** Apply a persisted or explicit readable font size (reflows the grid when owning). */
+  setFontSize(fontSize: number): void;
+  /** Nudge the readable font size up or down. */
+  adjustFontSize(delta: number): void;
   fit(): void;
   zoomIn(): void;
   zoomOut(): void;
@@ -46,8 +52,10 @@ export interface TerminalViewProps {
   onSnapshotApplied?: () => void;
   /** Called when the user types or pastes in the terminal. */
   onInput?: (data: string, latencyTag: string) => void;
-  /** Called when the terminal reports its dimensions (after fit). */
+  /** Called when the owning terminal proposes dimensions from the usable viewport. */
   onResize?: (cols: number, rows: number) => void;
+  /** Called when the document changes the readable font size. */
+  onFontSize?: (fontSize: number) => void;
   onCopy?: (data: string) => void;
   /** Called with latency stats (P50/P95 in ms). */
   onLatencyStats?: (n: number, p50: number, p95: number) => void;
@@ -72,7 +80,7 @@ export const TERMINAL_HTML_CONTENT = buildTerminalDocument({
 });
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
-  { onReady, onSnapshotApplied, onInput, onResize, onCopy, onLatencyStats },
+  { onReady, onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
@@ -100,6 +108,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       },
       setConnectionState(state: 'loading' | 'reconnecting' | 'live', detail?: string) {
         postToWebView({ type: 'connection-state', state, detail });
+      },
+      setSizeOwnership(owned: boolean) {
+        postToWebView({ type: 'size-ownership', owned });
+      },
+      setFontSize(fontSize: number) {
+        postToWebView({ type: 'font-size', fontSize });
+      },
+      adjustFontSize(delta: number) {
+        postToWebView({ type: 'font-delta', delta });
       },
       fit() {
         postToWebView({ type: 'fit' });
@@ -143,6 +160,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         case 'resize':
           onResize?.(msg.cols, msg.rows);
           break;
+        case 'font-size':
+          onFontSize?.(msg.fontSize);
+          break;
         case 'copy':
           onCopy?.(msg.data);
           break;
@@ -151,7 +171,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           break;
       }
     },
-    [onReady, onSnapshotApplied, onInput, onResize, onCopy, onLatencyStats],
+    [onReady, onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats],
   );
 
   const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;

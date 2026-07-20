@@ -20,7 +20,7 @@ const terminalHtml = buildTerminalDocument({
     window.__mobilyTerminalLines=function(){
       var terminal=window.__mobilyTerminal;
       return Array.from({length:terminal.rows},function(_,row){
-        return terminal.buffer.active.getLine(row).translateToString(true).trimEnd();
+        return terminal.buffer.active.getLine(terminal.buffer.active.viewportY+row).translateToString(true).trimEnd();
       });
     };
     window.ReactNativeWebView={postMessage:function(raw){
@@ -290,6 +290,7 @@ test('keeps the first paint visible while maximum scrollback starts loading', as
   expect(history).toHaveLength(MAX_SESSION_SCROLLBACK_CHARS);
   await page.evaluate(
     ({ data, currentSnapshot }) => {
+      window.__mobilyMessages = [];
       window.dispatchEvent(
         new MessageEvent('message', {
           data: JSON.stringify({
@@ -304,9 +305,10 @@ test('keeps the first paint visible while maximum scrollback starts loading', as
     { data: history, currentSnapshot: snapshot },
   );
 
-  expect(await page.evaluate(() => window.__mobilyTerminalLines().join('\n'))).toContain(
-    'CURRENT SCREEN',
-  );
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminalLines().join('\n')))
+    .toContain('CURRENT SCREEN');
+  expect(await page.evaluate(() => window.__mobilyTerminal.buffer.active.baseY)).toBeGreaterThan(0);
 });
 
 test('does not duplicate live output queued when scrollback rebuild begins', async ({ page }) => {
@@ -408,12 +410,175 @@ function openCodeSnapshot() {
   };
 }
 
+test('derives readable owner dimensions across phone viewports without pinch reflow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'size-ownership', owned: true }),
+      }),
+    );
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.find((message) => message.type === 'resize'),
+      ),
+    )
+    .toMatchObject({ type: 'resize' });
+
+  const portrait = await page.evaluate(() => {
+    const resize = window.__mobilyMessages.find((message) => message.type === 'resize');
+    return {
+      cols: window.__mobilyTerminal.cols,
+      rows: window.__mobilyTerminal.rows,
+      resize,
+      stageHeight: document.getElementById('stage').style.height,
+    };
+  });
+  expect(portrait.cols).toBeGreaterThanOrEqual(40);
+  expect(portrait.cols).toBeLessThan(90);
+  expect(portrait.rows).toBeGreaterThanOrEqual(20);
+  expect(portrait.rows).toBeLessThan(60);
+  expect(portrait.resize).toEqual({ type: 'resize', cols: portrait.cols, rows: portrait.rows });
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(portrait.cols, portrait.rows));
+  expect(await page.evaluate(() => window.__mobilyTerminalLines()[0])).toContain('OpenCode');
+  expect(await page.evaluate(() => window.__mobilyTerminalLines()[5])).toContain('implement issue');
+
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'font-delta', delta: 2 }),
+      }),
+    );
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.some((message) => message.type === 'font-size'),
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.some((message) => message.type === 'resize'),
+      ),
+    )
+    .toBe(true);
+  const afterFont = await page.evaluate(() => ({
+    fontSize: window.__mobilyMessages.find((message) => message.type === 'font-size')?.fontSize,
+    cols: window.__mobilyTerminal.cols,
+    rows: window.__mobilyTerminal.rows,
+  }));
+  expect(afterFont.fontSize).toBe(16);
+  expect(afterFont.cols).toBeLessThan(portrait.cols);
+  expect(afterFont.rows).toBeLessThan(portrait.rows);
+
+  const beforePinch = afterFont;
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'zoom', delta: 0.5 }),
+      }),
+    );
+  });
+  await page.waitForTimeout(150);
+  const afterPinch = await page.evaluate(() => ({
+    cols: window.__mobilyTerminal.cols,
+    rows: window.__mobilyTerminal.rows,
+    resizeCount: window.__mobilyMessages.filter((message) => message.type === 'resize').length,
+    stageWidth: Number.parseFloat(document.getElementById('stage').style.width),
+    viewportWidth: document.getElementById('viewport').clientWidth,
+  }));
+  expect(afterPinch.cols).toBe(beforePinch.cols);
+  expect(afterPinch.rows).toBe(beforePinch.rows);
+  expect(afterPinch.resizeCount).toBe(0);
+  expect(afterPinch.stageWidth).toBeGreaterThan(afterPinch.viewportWidth);
+
+  await page.setViewportSize({ width: 720, height: 390 });
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.find((message) => message.type === 'resize'),
+      ),
+    )
+    .toMatchObject({ type: 'resize' });
+  const landscape = await page.evaluate(() => ({
+    cols: window.__mobilyTerminal.cols,
+    rows: window.__mobilyTerminal.rows,
+  }));
+  expect(landscape.cols).toBeGreaterThan(portrait.cols);
+  expect(landscape.rows).toBeLessThan(portrait.rows);
+
+  // Keyboard-reduced height keeps readable columns while shrinking rows.
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mobilyMessages.find((message) => message.type === 'resize'),
+      ),
+    )
+    .toMatchObject({ type: 'resize' });
+  const keyboard = await page.evaluate(() => ({
+    cols: window.__mobilyTerminal.cols,
+    rows: window.__mobilyTerminal.rows,
+  }));
+  expect(keyboard.cols).toBeGreaterThanOrEqual(30);
+  expect(keyboard.rows).toBeLessThan(afterFont.rows);
+});
+
+function openCodeSnapshotForGrid(cols, rows) {
+  const grid = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => ({ chars: ' ', width: 1 })),
+  );
+  writeRow(grid[0], ' OpenCode ', {
+    fg: { mode: 'rgb', value: 0x12abef },
+    bg: { mode: 'palette', value: 17 },
+    attrs: 1,
+  });
+  writeRow(grid[1], '┌─ workspace ───────────────────────┐');
+  writeRow(grid[2], '│ model: GPT-5');
+  writeRow(grid[3], '│ ✓ READY redraw');
+  writeRow(grid[4], '│ plan 界 step');
+  writeRow(grid[5], '╰─› implement issue 6');
+  return {
+    type: 'session-snapshot',
+    cols,
+    rows,
+    activeScreen: 'alternate',
+    cursor: { col: 4, row: Math.min(6, rows - 1), visible: false, style: 'bar', blink: false },
+    grid,
+  };
+}
+
 function writeRow(row, text, style = {}, start = 0) {
   let column = start;
   for (const chars of text) {
     const width = chars === '界' ? 2 : 1;
+    if (column >= row.length) break;
     row[column] = { chars, width, ...style };
-    if (width === 2) row[column + 1] = { chars: '', width: 0, ...style };
+    if (width === 2 && column + 1 < row.length) row[column + 1] = { chars: '', width: 0, ...style };
     column += width;
   }
 }

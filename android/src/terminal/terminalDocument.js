@@ -1,5 +1,85 @@
+export const DEFAULT_READABLE_FONT_SIZE = 14;
+export const MIN_READABLE_FONT_SIZE = 10;
+export const MAX_READABLE_FONT_SIZE = 28;
+
 export function clampTerminalScale(value) {
   return Math.max(0.2, Math.min(3, value));
+}
+
+export function clampTerminalFontSize(fontSize) {
+  if (typeof fontSize !== 'number' || !Number.isFinite(fontSize)) return DEFAULT_READABLE_FONT_SIZE;
+  return Math.max(MIN_READABLE_FONT_SIZE, Math.min(MAX_READABLE_FONT_SIZE, Math.round(fontSize)));
+}
+
+/**
+ * Fallback monospace cell metrics used when xterm has not measured yet.
+ * Tuned to Cascadia/Courier-like proportions at the default readable size
+ * (14px → 8.4×16.8).
+ */
+export function estimateTerminalCellSize(fontSize) {
+  var size = clampTerminalFontSize(fontSize);
+  return { width: size * 0.6, height: size * 1.2 };
+}
+
+/** Subtract Mobily chrome and system occupancy from a raw layout box. */
+export function usableTerminalViewport(layout) {
+  if (!layout) return { width: 0, height: 0 };
+  var width = Math.max(0, (layout.width || 0) - (layout.horizontalInset || 0));
+  var height = Math.max(
+    0,
+    (layout.height || 0) -
+      (layout.topInset || 0) -
+      (layout.bottomInset || 0) -
+      (layout.keyboardHeight || 0) -
+      (layout.controlsHeight || 0) -
+      (layout.extraKeyRowHeight || 0),
+  );
+  return { width: width, height: height };
+}
+
+export function deriveReadableTerminalGrid(viewportWidth, viewportHeight, cellWidth, cellHeight) {
+  if (!(viewportWidth > 0) || !(viewportHeight > 0) || !(cellWidth > 0) || !(cellHeight > 0)) {
+    return { cols: 1, rows: 1 };
+  }
+  return {
+    cols: Math.max(1, Math.min(1000, Math.floor(viewportWidth / cellWidth))),
+    rows: Math.max(1, Math.min(1000, Math.floor(viewportHeight / cellHeight))),
+  };
+}
+
+export function createDebouncedGridProposer(emit, debounceMs) {
+  var delay = typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : 100;
+  var timer = null;
+  var pending = null;
+  var lastSent = null;
+  return {
+    propose: function (cols, rows) {
+      if (!Number.isInteger(cols) || !Number.isInteger(rows)) return;
+      if (cols < 1 || rows < 1 || cols > 1000 || rows > 1000) return;
+      if (lastSent && lastSent.cols === cols && lastSent.rows === rows && !pending) return;
+      pending = { cols: cols, rows: rows };
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        timer = null;
+        var next = pending;
+        pending = null;
+        if (!next) return;
+        if (lastSent && lastSent.cols === next.cols && lastSent.rows === next.rows) return;
+        lastSent = next;
+        emit(next.cols, next.rows);
+      }, delay);
+    },
+    acknowledge: function (cols, rows) {
+      if (!Number.isInteger(cols) || !Number.isInteger(rows)) return;
+      lastSent = { cols: cols, rows: rows };
+    },
+    reset: function () {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
+      lastSent = null;
+    },
+  };
 }
 
 export function fitTerminalScale(viewportWidth, viewportHeight, terminalWidth, terminalHeight) {
@@ -180,8 +260,16 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
   const DEV_BRIDGE_JS = devBridgeJs;
   const VIEWPORT_HELPERS =
     `var MAX_SESSION_SCROLLBACK_CHARS=${MAX_SESSION_SCROLLBACK_CHARS};\n` +
+    `var DEFAULT_READABLE_FONT_SIZE=${DEFAULT_READABLE_FONT_SIZE};\n` +
+    `var MIN_READABLE_FONT_SIZE=${MIN_READABLE_FONT_SIZE};\n` +
+    `var MAX_READABLE_FONT_SIZE=${MAX_READABLE_FONT_SIZE};\n` +
     [
       clampTerminalScale,
+      clampTerminalFontSize,
+      estimateTerminalCellSize,
+      usableTerminalViewport,
+      deriveReadableTerminalGrid,
+      createDebouncedGridProposer,
       fitTerminalScale,
       pinchTerminalScale,
       stripTerminalMouseControls,
@@ -277,6 +365,14 @@ ${VIEWPORT_HELPERS}
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
   var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
   var scale=1,selectionMode=false,mouseCarry='',selectionStart=null,pinchDistance=0,pinchScale=1;
+  var fontSize=DEFAULT_READABLE_FONT_SIZE,ownsSize=false,SURFACE_PAD=8;
+  var gridProposer=createDebouncedGridProposer(function(cols,rows){
+    if(!term)return;
+    term.resize(cols,rows);
+    scale=1;
+    applyScale(1);
+    sendRN({type:'resize',cols:cols,rows:rows});
+  },100);
 
   function setArmed(mod,v){
     if(mod==='ctrl'){ctrlArmed=v;var b=document.getElementById('ctrl-btn');if(b)b.classList.toggle('armed',v);}
@@ -325,7 +421,7 @@ ${VIEWPORT_HELPERS}
     return stripTerminalMouseControls(value);
   }
   function terminalOptions(cols,rows){
-    return {allowProposedApi:true,cursorBlink:true,fontSize:14,cols:cols,rows:rows,
+    return {allowProposedApi:true,cursorBlink:true,fontSize:fontSize,cols:cols,rows:rows,
       fontFamily:"'Cascadia Code','JetBrains Mono','Fira Code','Courier New',monospace",
       theme:{background:'#1a1a1a',foreground:'#e6e6e6',cursor:'#e6e6e6',
         black:'#1a1a1a',red:'#da3633',green:'#2ea043',yellow:'#e3b341',
@@ -373,9 +469,11 @@ ${VIEWPORT_HELPERS}
       if(oldContainer){oldContainer.removeAttribute('id');oldContainer.remove();}
       if(oldTerm)oldTerm.dispose();
       term=nextTerm;bindTerminalInput(term);snapshotInFlight=false;
+      gridProposer.acknowledge(snapshot.cols,snapshot.rows);
       if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
       scheduleOutput();
-      requestAnimationFrame(fitView);sendRN({type:'snapshot-applied'});
+      requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
+      sendRN({type:'snapshot-applied'});
     });
   }
   function applyScrollback(scrollback,snapshot,liveOutput){
@@ -396,13 +494,16 @@ ${VIEWPORT_HELPERS}
       if(oldContainer){oldContainer.removeAttribute('id');oldContainer.remove();}
       if(oldTerm)oldTerm.dispose();
       term=nextTerm;bindTerminalInput(term);snapshotInFlight=false;
+      gridProposer.acknowledge(snapshot.cols,snapshot.rows);
       if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
-      scheduleOutput();requestAnimationFrame(fitView);
+      scheduleOutput();
+      requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
     });
   }
   function terminalPixels(){
     var screen=term&&term.element&&term.element.querySelector('.xterm-screen');
-    return {width:Math.max(1,(screen&&screen.offsetWidth||term.cols*8)+8),height:Math.max(1,(screen&&screen.offsetHeight||term.rows*16)+8)};
+    var cell=estimateTerminalCellSize(fontSize);
+    return {width:Math.max(1,(screen&&screen.offsetWidth||term.cols*cell.width)+SURFACE_PAD),height:Math.max(1,(screen&&screen.offsetHeight||term.rows*cell.height)+SURFACE_PAD)};
   }
   function applyScale(next){
     if(!term)return;scale=clampTerminalScale(next);
@@ -415,6 +516,44 @@ ${VIEWPORT_HELPERS}
     if(!term)return;var viewport=document.getElementById('viewport'),px=terminalPixels();
     applyScale(fitTerminalScale(viewport.clientWidth,viewport.clientHeight,px.width,px.height));
     viewport.scrollLeft=0;viewport.scrollTop=0;
+  }
+  function cellMetrics(){
+    try{
+      var dims=term&&term._core&&term._core._renderService&&term._core._renderService.dimensions;
+      if(dims&&dims.css&&dims.css.cell&&dims.css.cell.width>0&&dims.css.cell.height>0){
+        return {width:dims.css.cell.width,height:dims.css.cell.height};
+      }
+    }catch(_){}
+    return estimateTerminalCellSize(fontSize);
+  }
+  function readableGridForViewport(){
+    var viewport=document.getElementById('viewport');
+    var cell=cellMetrics();
+    return deriveReadableTerminalGrid(
+      Math.max(0,viewport.clientWidth-SURFACE_PAD),
+      Math.max(0,viewport.clientHeight-SURFACE_PAD),
+      cell.width,
+      cell.height
+    );
+  }
+  function proposeOwnerGrid(){
+    if(!term||!ownsSize)return;
+    var grid=readableGridForViewport();
+    gridProposer.propose(grid.cols,grid.rows);
+  }
+  function setFontSize(next){
+    var clamped=clampTerminalFontSize(next);
+    if(clamped===fontSize&&term&&term.options.fontSize===clamped)return;
+    fontSize=clamped;
+    if(term)term.options.fontSize=fontSize;
+    sendRN({type:'font-size',fontSize:fontSize});
+    if(ownsSize)proposeOwnerGrid();
+    else requestAnimationFrame(fitView);
+  }
+  function setSizeOwnership(owned){
+    ownsSize=!!owned;
+    if(ownsSize)proposeOwnerGrid();
+    else gridProposer.reset();
   }
   function setSelectionMode(enabled){
     selectionMode=!!enabled;document.body.classList.toggle('selecting',selectionMode);
@@ -438,8 +577,14 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='session-scrollback'&&term)applyScrollback(msg.data,msg.snapshot,msg.liveOutput);
     else if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
     else if(msg.type==='connection-state'&&typeof msg.state==='string'&&(msg.detail===undefined||typeof msg.detail==='string'))setConnectionState(msg.state,msg.detail);
-    else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){term.resize(msg.cols,msg.rows);requestAnimationFrame(fitView);}
-    else if(msg.type==='fit')fitView();
+    else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){
+      term.resize(msg.cols,msg.rows);gridProposer.acknowledge(msg.cols,msg.rows);
+      requestAnimationFrame(function(){if(ownsSize){scale=1;applyScale(1);}else fitView();});
+    }
+    else if(msg.type==='size-ownership')setSizeOwnership(msg.owned);
+    else if(msg.type==='font-size'&&typeof msg.fontSize==='number')setFontSize(msg.fontSize);
+    else if(msg.type==='font-delta'&&typeof msg.delta==='number')setFontSize(fontSize+msg.delta);
+    else if(msg.type==='fit'){if(ownsSize){scale=1;applyScale(1);proposeOwnerGrid();}else fitView();}
     else if(msg.type==='zoom'&&typeof msg.delta==='number')applyScale(scale+msg.delta);
     else if(msg.type==='selection-mode')setSelectionMode(msg.enabled);
     else if(msg.type==='copy-selection'&&term)sendRN({type:'copy',data:term.getSelection()});
@@ -447,11 +592,13 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='get-latency-stats')emitLatStats();
   }
   function init(){
-    term=openTerminal(document.getElementById('tc'),120,40);requestAnimationFrame(fitView);
-    if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
     document.getElementById('key-row').style.display='flex';
+    var grid=readableGridForViewport();
+    term=openTerminal(document.getElementById('tc'),grid.cols,grid.rows);
+    requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
+    if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
     bindTerminalInput(term);
-    new ResizeObserver(function(){fitView();}).observe(document.getElementById('viewport'));
+    new ResizeObserver(function(){if(ownsSize)proposeOwnerGrid();else fitView();}).observe(document.getElementById('viewport'));
     window.addEventListener('message',handleMsg);document.addEventListener('message',handleMsg);
     sendRN({type:'ready'});
   }
