@@ -261,6 +261,69 @@ describe('pairing flow end-to-end', () => {
     expect(out).toContain('E2E_OK');
   }, 20000);
 
+  it.skipIf(os.platform() === 'win32')(
+    'shares owner-selected real PTY dimensions and output, then restores Station dimensions',
+    async () => {
+      const { server, session, privateKeyPem, deviceId } = await setupPairedSession();
+      let workstationOutput = '';
+      const workstation = session.attachLocalTerminal({
+        onOutput(data) {
+          workstationOutput += data;
+        },
+      });
+      workstation.resize(132, 43);
+
+      const { ws, frames } = await connectAndHandshake(server, privateKeyPem, deviceId);
+      await vi.waitFor(
+        () => expect(frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true),
+        { timeout: 5000 },
+      );
+
+      sendFrame(ws, { type: 'terminal-size-claim' });
+      sendFrame(ws, { type: 'resize', cols: 72, rows: 21 });
+      await vi.waitFor(
+        () =>
+          expect(
+            frames.some(
+              (frame) => frame['type'] === 'resize' && frame['cols'] === 72 && frame['rows'] === 21,
+            ),
+          ).toBe(true),
+        { timeout: 5000 },
+      );
+
+      const androidOwnedOutput = collectOutput(ws, (output) =>
+        output.includes('ANDROID_SIZE=21 72'),
+      );
+      sendFrame(ws, {
+        type: 'input',
+        data: `printf 'ANDROID_SIZE='; stty size${eol()}`,
+      });
+      expect(await androidOwnedOutput).toContain('ANDROID_SIZE=21 72');
+      await vi.waitFor(() => expect(workstationOutput).toContain('ANDROID_SIZE=21 72'));
+
+      sendFrame(ws, { type: 'terminal-size-release' });
+      await vi.waitFor(
+        () =>
+          expect(
+            frames.some(
+              (frame) =>
+                frame['type'] === 'resize' && frame['cols'] === 132 && frame['rows'] === 43,
+            ),
+          ).toBe(true),
+        { timeout: 5000 },
+      );
+
+      const stationOwnedOutput = collectOutput(ws, (output) =>
+        output.includes('STATION_SIZE=43 132'),
+      );
+      workstation.input(`printf 'STATION_SIZE='; stty size${eol()}`);
+      expect(await stationOwnedOutput).toContain('STATION_SIZE=43 132');
+      await vi.waitFor(() => expect(workstationOutput).toContain('STATION_SIZE=43 132'));
+      workstation.dispose();
+    },
+    20000,
+  );
+
   it('sends an idle bare-PTY Session Snapshot before subsequent live output', async () => {
     const { server, session, privateKeyPem, deviceId } = await setupPairedSession();
     let workstationOutput = '';
@@ -284,14 +347,21 @@ describe('pairing flow end-to-end', () => {
     );
 
     const terminalFrames = frames.filter((frame) =>
-      ['auth-ok', 'resize', 'session-snapshot', 'output'].includes(String(frame['type'])),
+      ['auth-ok', 'terminal-size-owner', 'resize', 'session-snapshot', 'output'].includes(
+        String(frame['type']),
+      ),
     );
-    expect(terminalFrames.slice(0, 3).map((frame) => frame['type'])).toEqual([
+    expect(terminalFrames.slice(0, 4).map((frame) => frame['type'])).toEqual([
       'auth-ok',
+      'terminal-size-owner',
       'resize',
       'session-snapshot',
     ]);
-    const snapshot = terminalFrames[2] as {
+    expect(terminalFrames[1]).toMatchObject({
+      owner: 'station',
+      ownedByRequester: false,
+    });
+    const snapshot = terminalFrames[3] as {
       grid: Array<Array<{ chars: string }>>;
       cursor: { col: number; row: number; visible: boolean; style: string; blink: boolean };
       activeScreen: string;

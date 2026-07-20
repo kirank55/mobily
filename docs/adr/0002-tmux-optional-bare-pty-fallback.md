@@ -14,7 +14,7 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 - Normal CLI shutdown detaches its tmux client. It never kills the shared session.
 - With tmux, the CLI remains a pairing/control screen so its QR and connection details stay visible; it prints a command for attaching the Session from a second terminal and also pins the pairing details in a managed header pane. Bare mode keeps the pairing details visible until a phone authenticates, then mirrors the backend in the same terminal.
 - Newly created tmux Sessions receive a session-local `[mobily]` Bash/Zsh prompt prefix. Persisted shell configuration and resumed Sessions are never rewritten.
-- The tmux window uses the `largest` sizing policy so an Android resize does not shrink a larger attached workstation terminal.
+- The tmux window uses the `largest` sizing policy for native tmux clients. Mobily's shared Session grid separately follows explicit Terminal Size Ownership: foreground Android may select it temporarily, and releasing ownership restores the Station's current dimensions.
 - Mobily's tmux attachment advertises RGB support and disables the session-local tmux status row so colors and full-screen grid dimensions match the bare-PTY contract.
 - Embedded workstation rendering suppresses terminal mouse tracking so the containing terminal emulator retains normal text selection semantics.
 - CI tests both paths: tmux on Linux/macOS runners, bare on Windows runner.

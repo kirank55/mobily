@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const deviceKey = vi.hoisted(() => ({ signNonce: vi.fn() }));
 vi.mock('@/auth/deviceKey', () => deviceKey);
 
+// eslint-disable-next-line import/first -- register the hoisted native mock before loading WsClient
 import { WsClient, type ConnectionState, type ErrorKind } from '@/client/wsClient';
 
 class FakeWebSocket {
@@ -49,11 +50,12 @@ function createClient() {
   const terminalEvents: string[] = [];
   const states: ConnectionState[] = [];
   const errors: ErrorKind[] = [];
-  const outputs: Array<{ data: string; tags?: readonly string[] }> = [];
+  const outputs: { data: string; tags?: readonly string[] }[] = [];
   const alerts: string[] = [];
-  const resizes: Array<[number, number]> = [];
+  const resizes: [number, number][] = [];
   const snapshots: SessionSnapshotFrame[] = [];
   const scrollbacks: string[] = [];
+  const sizeOwners: { owner: 'station' | 'android'; ownedByRequester: boolean }[] = [];
   const client = new WsClient({
     url: 'wss://station.example.devtunnels.ms',
     deviceBindingId: 'binding_AAAAAAAAAAAAAAAAAAAAAA',
@@ -74,6 +76,7 @@ function createClient() {
       terminalEvents.push(`snapshot:${snapshot.grid[0]?.map((cell) => cell.chars).join('')}`);
     },
     onScrollback: (data) => scrollbacks.push(data),
+    onTerminalSizeOwner: (owner) => sizeOwners.push(owner),
   });
   return {
     client,
@@ -84,6 +87,7 @@ function createClient() {
     resizes,
     snapshots,
     scrollbacks,
+    sizeOwners,
     terminalEvents,
   };
 }
@@ -107,7 +111,7 @@ beforeEach(() => {
 
 describe('WsClient', () => {
   it('completes version negotiation and Device Key authentication before terminal I/O', async () => {
-    const { client, states, outputs, resizes, snapshots } = createClient();
+    const { client, states, outputs, resizes, snapshots, sizeOwners } = createClient();
     client.connect();
     const socket = FakeWebSocket.instances[0]!;
     socket.open();
@@ -127,6 +131,11 @@ describe('WsClient', () => {
 
     socket.receive({ type: 'auth-ok' });
     expect(states.at(-1)).toBe('connecting');
+    socket.receive({
+      type: 'terminal-size-owner',
+      owner: 'station',
+      ownedByRequester: false,
+    });
     socket.receive({ type: 'resize', cols: 160, rows: 48 });
     socket.receive(snapshot());
     socket.receive({ type: 'output', data: 'ready', latencyTags: ['lat-12345678'] });
@@ -135,6 +144,7 @@ describe('WsClient', () => {
     expect(snapshots).toEqual([snapshot()]);
     expect(outputs).toEqual([{ data: 'ready', tags: ['lat-12345678'] }]);
     expect(resizes).toEqual([]);
+    expect(sizeOwners).toEqual([{ owner: 'station', ownedByRequester: false }]);
     expect(socket.readyState).toBe(FakeWebSocket.OPEN);
   });
 
@@ -209,6 +219,32 @@ describe('WsClient', () => {
       done: true,
     });
     expect(scrollbacks).toEqual(['old lines\r\n']);
+  });
+
+  it('claims and releases Terminal Size Ownership only after authentication', async () => {
+    const { client, sizeOwners } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    client.claimTerminalSize();
+    expect(socket.sent.map(decodeFrame)).not.toContainEqual({ type: 'terminal-size-claim' });
+
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
+
+    client.claimTerminalSize();
+    client.releaseTerminalSize();
+    expect(socket.sent.slice(-2).map(decodeFrame)).toEqual([
+      { type: 'terminal-size-claim' },
+      { type: 'terminal-size-release' },
+    ]);
+
+    socket.receive({ type: 'terminal-size-owner', owner: 'android', ownedByRequester: true });
+    expect(sizeOwners).toEqual([{ owner: 'android', ownedByRequester: true }]);
   });
 
   it('rejects scrollback before paint, out of order, or above the transfer limit', async () => {

@@ -66,6 +66,18 @@ class RecordingBackend implements SessionBackend {
   }
 }
 
+class FailingRestoreBackend extends RecordingBackend {
+  failNextResize = false;
+
+  override resize(cols: number, rows: number): void {
+    if (this.failNextResize) {
+      this.failNextResize = false;
+      throw new Error(`resize unavailable at ${cols}x${rows}`);
+    }
+    super.resize(cols, rows);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -260,7 +272,7 @@ describe('WebSocket → PTY round-trip', () => {
     });
   }, 15000);
 
-  it('applies resize frames to the PTY', async () => {
+  it('applies resize frames to the PTY after an explicit size claim', async () => {
     const backend = new RecordingBackend();
     const session = new Session({ backend });
     const authenticated = vi.fn();
@@ -281,6 +293,7 @@ describe('WebSocket → PTY round-trip', () => {
     await vi.waitFor(() => expect(authenticated).toHaveBeenCalledOnce());
     await expect(initialResize).resolves.toEqual({ type: 'resize', cols: 120, rows: 40 });
 
+    sendFrame(ws, { type: 'terminal-size-claim' });
     sendFrame(ws, { type: 'resize', cols: 120, rows: 36 });
 
     await vi.waitFor(
@@ -400,6 +413,144 @@ describe('local workstation terminal attachment', () => {
     expect(backend.resizes).toEqual([[160, 48]]);
   });
 
+  it('transfers size ownership to Android and restores Station dimensions on release', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend, ownershipLeaseMs: 10_000 });
+    sessions.push(session);
+    const workstation = session.attachLocalTerminal({ onOutput() {} });
+    workstation.resize(160, 48);
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    const frames = frameBuffer(ws);
+    await waitForOpen(ws);
+    conns.push(ws);
+    await frames.waitFor('session-snapshot');
+
+    sendFrame(ws, { type: 'resize', cols: 60, rows: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(backend.resizes.at(-1)).toEqual([160, 48]);
+
+    sendFrame(ws, { type: 'terminal-size-claim' });
+    expect(
+      await frames.waitForMatch(
+        'terminal-size-owner',
+        (frame) => frame['owner'] === 'android' && frame['ownedByRequester'] === true,
+      ),
+    ).toMatchObject({
+      owner: 'android',
+      ownedByRequester: true,
+    });
+    sendFrame(ws, { type: 'resize', cols: 60, rows: 20 });
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([60, 20]));
+
+    sendFrame(ws, { type: 'terminal-size-release' });
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([160, 48]));
+    workstation.dispose();
+  });
+
+  it('releases ownership on disconnect and requires a fresh claim after reconnect', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend, ownershipLeaseMs: 10_000 });
+    sessions.push(session);
+    const workstation = session.attachLocalTerminal({ onOutput() {} });
+    workstation.resize(150, 45);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const first = new WebSocket(server.url);
+    const firstFrames = frameBuffer(first);
+    await waitForOpen(first);
+    conns.push(first);
+    await firstFrames.waitFor('session-snapshot');
+    sendFrame(first, { type: 'terminal-size-claim' });
+    sendFrame(first, { type: 'resize', cols: 70, rows: 22 });
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([70, 22]));
+
+    first.close();
+    await waitForClose(first);
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([150, 45]));
+
+    const second = new WebSocket(server.url);
+    const secondFrames = frameBuffer(second);
+    await waitForOpen(second);
+    conns.push(second);
+    await secondFrames.waitFor('session-snapshot');
+    sendFrame(second, { type: 'resize', cols: 60, rows: 18 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(backend.resizes.at(-1)).toEqual([150, 45]);
+
+    sendFrame(second, { type: 'terminal-size-claim' });
+    sendFrame(second, { type: 'resize', cols: 60, rows: 18 });
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([60, 18]));
+    workstation.dispose();
+  });
+
+  it('expires an unrefreshed size ownership lease and restores Station dimensions', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend, ownershipLeaseMs: 50 });
+    sessions.push(session);
+    const workstation = session.attachLocalTerminal({ onOutput() {} });
+    workstation.resize(140, 42);
+    const server = await startServer({ session });
+    servers.push(server);
+    const ws = new WebSocket(server.url);
+    const frames = frameBuffer(ws);
+    await waitForOpen(ws);
+    conns.push(ws);
+    await frames.waitFor('session-snapshot');
+
+    sendFrame(ws, { type: 'terminal-size-claim' });
+    sendFrame(ws, { type: 'resize', cols: 65, rows: 19 });
+    await vi.waitFor(() => expect(backend.resizes).toContainEqual([65, 19]));
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([140, 42]), {
+      timeout: 1_000,
+      interval: 10,
+    });
+    expect(
+      await frames.waitForMatch(
+        'terminal-size-owner',
+        (frame) => frame['owner'] === 'station' && frame['ownedByRequester'] === false,
+      ),
+    ).toBeDefined();
+    workstation.dispose();
+  });
+
+  it('releases ownership and completes disconnect cleanup when Station restoration fails', async () => {
+    const backend = new FailingRestoreBackend();
+    const session = new Session({ backend, ownershipLeaseMs: 10_000 });
+    sessions.push(session);
+    const workstation = session.attachLocalTerminal({ onOutput() {} });
+    workstation.resize(140, 42);
+    const server = await startServer({ session });
+    servers.push(server);
+    const first = new WebSocket(server.url);
+    const firstFrames = frameBuffer(first);
+    await waitForOpen(first);
+    conns.push(first);
+    await firstFrames.waitFor('session-snapshot');
+    sendFrame(first, { type: 'terminal-size-claim' });
+    sendFrame(first, { type: 'resize', cols: 65, rows: 19 });
+    await vi.waitFor(() => expect(backend.resizes.at(-1)).toEqual([65, 19]));
+
+    backend.failNextResize = true;
+    first.close();
+    await waitForClose(first);
+
+    const second = new WebSocket(server.url);
+    const secondFrames = frameBuffer(second);
+    await waitForOpen(second);
+    conns.push(second);
+    await secondFrames.waitFor('session-snapshot');
+    expect(
+      await secondFrames.waitForMatch(
+        'terminal-size-owner',
+        (frame) => frame['owner'] === 'station' && frame['ownedByRequester'] === false,
+      ),
+    ).toBeDefined();
+    workstation.dispose();
+  });
+
   it('shares input and resulting PTY output between Android and the workstation', async () => {
     const backend = new RecordingBackend();
     const session = new Session({ backend });
@@ -498,6 +649,11 @@ function pairDevice(
 /** Collect frames of a specific type. Buffers all messages to avoid races. */
 function frameBuffer(ws: WebSocket): {
   waitFor(type: string, timeoutMs?: number): Promise<Record<string, unknown>>;
+  waitForMatch(
+    type: string,
+    predicate: (frame: Record<string, unknown>) => boolean,
+    timeoutMs?: number,
+  ): Promise<Record<string, unknown>>;
   getNonce(): string;
 } {
   const frames: Record<string, unknown>[] = [];
@@ -520,6 +676,19 @@ function frameBuffer(ws: WebSocket): {
       const frame = frames.find((f) => f['type'] === type)!;
       return frame;
     },
+    async waitForMatch(
+      type: string,
+      predicate: (frame: Record<string, unknown>) => boolean,
+      timeoutMs = 5000,
+    ): Promise<Record<string, unknown>> {
+      await vi.waitFor(
+        () => {
+          expect(frames.some((frame) => frame['type'] === type && predicate(frame))).toBe(true);
+        },
+        { timeout: timeoutMs, interval: 50 },
+      );
+      return frames.find((frame) => frame['type'] === type && predicate(frame))!;
+    },
     getNonce(): string {
       const challenge = frames.find((f) => f['type'] === 'auth-challenge');
       return challenge?.['nonce'] as string;
@@ -534,8 +703,7 @@ describe('handshake: version negotiation + auth', () => {
     const code = auth.generatePairingCode();
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
     pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
-    let backend: RecordingBackend;
-    backend = new RecordingBackend('previous command\r\nprevious output\r\n', () => {
+    const backend = new RecordingBackend('previous command\r\nprevious output\r\n', () => {
       backend.emit('output during initial screen capture\r\n');
     });
     const session = new Session({ backend, auth });
@@ -584,14 +752,21 @@ describe('handshake: version negotiation + auth', () => {
         .join(''),
     ).toContain('output during initial screen capture');
     const terminalFrames = received.filter((frame) =>
-      ['auth-ok', 'resize', 'session-snapshot', 'output'].includes(String(frame['type'])),
+      ['auth-ok', 'terminal-size-owner', 'resize', 'session-snapshot', 'output'].includes(
+        String(frame['type']),
+      ),
     );
     expect(terminalFrames.map((frame) => frame['type'])).toEqual([
       'auth-ok',
+      'terminal-size-owner',
       'resize',
       'session-snapshot',
       'output',
     ]);
+    expect(terminalFrames[1]).toMatchObject({
+      owner: 'station',
+      ownedByRequester: false,
+    });
     expect(terminalFrames.at(-1)?.['data']).toBe('live output\r\n');
   });
 

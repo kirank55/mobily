@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import type { SessionSnapshotFrame } from '@mobily/shared';
 
@@ -36,6 +36,7 @@ export default function TerminalRoute() {
     retry,
     sendInput,
     acknowledgeSnapshotApplied,
+    setTerminalVisible,
     subscribeOutput,
     subscribeResize,
     subscribeSnapshot,
@@ -84,6 +85,13 @@ export default function TerminalRoute() {
       cancelled = true;
     };
   }, [connect]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setTerminalVisible(true);
+      return () => setTerminalVisible(false);
+    }, [setTerminalVisible]),
+  );
 
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {

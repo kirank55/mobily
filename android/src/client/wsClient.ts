@@ -26,6 +26,7 @@ import {
   type RpcResponseFrame,
   type RpcStreamFrame,
   type SessionSnapshotFrame,
+  type TerminalSizeOwnerFrame,
 } from '@mobily/shared';
 import { PinnedWebSocket } from './pinnedTransport';
 
@@ -58,6 +59,8 @@ export interface WsClientOptions {
   onSnapshot?: (snapshot: SessionSnapshotFrame) => void;
   /** Callback after one complete, validated Session history transfer. */
   onScrollback?: (data: string) => void;
+  /** Callback for Terminal Size Ownership grant and restoration state. */
+  onTerminalSizeOwner?: (state: Omit<TerminalSizeOwnerFrame, 'type'>) => void;
   /** Callback when the Station detects terminal output that needs attention. */
   onAlert?: (message: string) => void;
   /** Callback for structured RPC responses after authentication. */
@@ -188,6 +191,14 @@ export class WsClient {
   /** Send a resize frame. */
   sendResize(cols: number, rows: number): void {
     if (this.ready) this.send({ type: 'resize', cols, rows });
+  }
+
+  claimTerminalSize(): void {
+    if (this.ready) this.send({ type: 'terminal-size-claim' });
+  }
+
+  releaseTerminalSize(): void {
+    if (this.ready) this.send({ type: 'terminal-size-release' });
   }
 
   /** Confirm first paint so the Station may begin the bounded history transfer. */
@@ -467,10 +478,23 @@ export class WsClient {
         break;
       }
 
+      case 'terminal-size-owner':
+        if (this.handshakeState !== 'ready' && this.handshakeState !== 'awaiting-snapshot') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'ownership state before authentication');
+          return;
+        }
+        this.opts.onTerminalSizeOwner?.({
+          owner: frame.owner,
+          ownedByRequester: frame.ownedByRequester,
+        });
+        break;
+
       case 'hello':
       case 'auth-response':
       case 'input':
       case 'session-snapshot-applied':
+      case 'terminal-size-claim':
+      case 'terminal-size-release':
         socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
         break;
       case 'resize':

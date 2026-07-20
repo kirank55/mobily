@@ -20,16 +20,17 @@ After protocol negotiation and Device Key authentication, a new Android viewer
 receives frames in this order:
 
 1. `auth-ok`
-2. the Session dimensions
-3. one atomic `session-snapshot`
-4. live `output` frames
-5. after Android acknowledges first paint, ordered `session-scrollback` frames
+2. the requester-specific Terminal Size Owner state
+3. the Session dimensions
+4. one atomic `session-snapshot`
+5. live `output` frames
+6. after Android acknowledges first paint, ordered `session-scrollback` frames
 
 The snapshot contains the exact visible rows and cells, Unicode cell widths,
 foreground and background colors, text attributes, active normal/alternate
 screen, cursor position, cursor visibility and cursor style. Snapshot frames
 are bounded and validated by the shared protocol. This contract advances the
-wire protocol to version 5; older peers fail version negotiation rather than
+wire protocol to version 6; older peers fail version negotiation rather than
 silently reverting to transcript replay.
 
 Snapshot capture and terminal parsing use one ordered queue. Output received
@@ -62,6 +63,21 @@ history available without delaying first paint, exposing an intermediate
 replay, moving the viewer away from the current screen, or overwriting newer
 output.
 
+Terminal dimensions are governed by explicit Terminal Size Ownership rather
+than connection lifetime. The Station owns dimensions by default. An
+authenticated Android terminal claims ownership only while its terminal route
+is visible and the app is foregrounded; accepted Android resize frames then
+resize the shared Session grid seen by every viewer. Leaving the route or
+backgrounding the app releases ownership after a short debounce. Disconnect
+and lease expiry release it immediately on the Station, and the Station's most
+recent local dimensions are restored. Reconnection never inherits an earlier
+socket's claim.
+
+Android refreshes the bounded lease while it remains the foreground terminal.
+The Session identifies the owning socket, ignores resize frames from
+non-owners, and broadcasts owner and dimension changes. This makes visibility,
+not mere authentication or WebSocket connectivity, the authority boundary.
+
 ## Consequences
 
 - An idle bare-PTY prompt is visible on first Android connection even when the
@@ -76,5 +92,9 @@ output.
   consumed the corresponding PTY chunk.
 - The Station and Android use matching xterm semantics, at the cost of a
   headless xterm dependency in the CLI.
+- Foreground Android can select the one shared grid without leaving a stale
+  background or disconnected client in control.
+- Restoring Station ownership may resize a full-screen application back to the
+  Station's latest local grid.
 - Snapshot size is proportional to the visible grid and is capped by both
   frame-size and cell-count limits.

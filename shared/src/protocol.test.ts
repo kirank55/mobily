@@ -190,6 +190,42 @@ describe('round-trip: bounded Session scrollback frames', () => {
   });
 });
 
+describe('round-trip: Terminal Size Ownership frames', () => {
+  it('preserves explicit claims, releases, and Station acknowledgements', () => {
+    expect(decodeFrame(encodeFrame({ type: 'terminal-size-claim' }))).toEqual({
+      type: 'terminal-size-claim',
+    });
+    expect(decodeFrame(encodeFrame({ type: 'terminal-size-release' }))).toEqual({
+      type: 'terminal-size-release',
+    });
+    expect(
+      decodeFrame(
+        encodeFrame({
+          type: 'terminal-size-owner',
+          owner: 'android',
+          ownedByRequester: true,
+        }),
+      ),
+    ).toEqual({
+      type: 'terminal-size-owner',
+      owner: 'android',
+      ownedByRequester: true,
+    });
+  });
+
+  it('rejects malformed ownership state', () => {
+    expect(() =>
+      decodeFrame(
+        JSON.stringify({
+          type: 'terminal-size-owner',
+          owner: 'phone',
+          ownedByRequester: true,
+        }),
+      ),
+    ).toThrow(TypeError);
+  });
+});
+
 describe('round-trip: union type narrowing', () => {
   it('returns the correct discriminant for each frame type', () => {
     const frames: Frame[] = [
@@ -316,7 +352,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-    expect(PROTOCOL_VERSION).toBe(5);
+    expect(PROTOCOL_VERSION).toBe(6);
   });
 });
 

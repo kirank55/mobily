@@ -23,7 +23,7 @@
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Maximum encoded JSON frame size accepted from either peer. */
 export const MAX_ENCODED_FRAME_CHARS = 2 * 1024 * 1024;
@@ -57,6 +57,9 @@ export const FRAME_TYPES = [
   'session-snapshot',
   'session-snapshot-applied',
   'session-scrollback',
+  'terminal-size-claim',
+  'terminal-size-release',
+  'terminal-size-owner',
   'rpc',
   'rpc-stream',
   'alert',
@@ -173,6 +176,23 @@ export interface SessionScrollbackFrame {
   done: boolean;
 }
 
+/** Android → CLI: the foreground terminal requests Terminal Size Ownership. */
+export interface TerminalSizeClaimFrame {
+  type: 'terminal-size-claim';
+}
+
+/** Android → CLI: the terminal no longer needs Terminal Size Ownership. */
+export interface TerminalSizeReleaseFrame {
+  type: 'terminal-size-release';
+}
+
+/** CLI → viewer: current Terminal Size Owner and requester-specific claim result. */
+export interface TerminalSizeOwnerFrame {
+  type: 'terminal-size-owner';
+  owner: 'station' | 'android';
+  ownedByRequester: boolean;
+}
+
 /** Client → CLI: protocol version negotiation. Sent on WS connect. */
 export interface HelloFrame {
   type: 'hello';
@@ -240,6 +260,9 @@ export type Frame =
   | SessionSnapshotFrame
   | SessionSnapshotAppliedFrame
   | SessionScrollbackFrame
+  | TerminalSizeClaimFrame
+  | TerminalSizeReleaseFrame
+  | TerminalSizeOwnerFrame
   | RpcRequestFrame
   | RpcResponseFrame
   | RpcStreamFrame
@@ -306,6 +329,12 @@ export function decodeFrame(raw: string): Frame {
       return { type: 'session-snapshot-applied' };
     case 'session-scrollback':
       return validateSessionScrollbackFrame(obj);
+    case 'terminal-size-claim':
+      return { type: 'terminal-size-claim' };
+    case 'terminal-size-release':
+      return { type: 'terminal-size-release' };
+    case 'terminal-size-owner':
+      return validateTerminalSizeOwnerFrame(obj);
     case 'hello':
       return validateHelloFrame(obj);
     case 'hello-ack':
@@ -484,6 +513,19 @@ function validateSessionScrollbackFrame(obj: Record<string, unknown>): SessionSc
     throw new TypeError('mobily/protocol: Session scrollback completion must be a boolean');
   }
   return { type: 'session-scrollback', transferId, sequence, data, done };
+}
+
+function validateTerminalSizeOwnerFrame(obj: Record<string, unknown>): TerminalSizeOwnerFrame {
+  const owner = obj['owner'];
+  const ownedByRequester = obj['ownedByRequester'];
+  if (
+    (owner !== 'station' && owner !== 'android') ||
+    typeof ownedByRequester !== 'boolean' ||
+    (owner === 'station' && ownedByRequester)
+  ) {
+    throw new TypeError('mobily/protocol: invalid Terminal Size Owner state');
+  }
+  return { type: 'terminal-size-owner', owner, ownedByRequester };
 }
 
 function validateSnapshotCursor(

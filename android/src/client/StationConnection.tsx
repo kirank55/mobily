@@ -15,6 +15,7 @@ import { markConnected } from '@/auth/storage';
 import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
 import { RpcClient } from './rpcClient';
 import { ForegroundConnectionController } from '@/foreground/controller';
+import { TerminalSizeOwnershipController } from '@/terminal/sizeOwnership';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 type ResizeListener = (cols: number, rows: number) => void;
@@ -33,6 +34,7 @@ interface StationConnectionValue {
   sendInput(data: string, latencyTag?: string): void;
   sendResize(cols: number, rows: number): void;
   acknowledgeSnapshotApplied(): void;
+  setTerminalVisible(visible: boolean): void;
   subscribeOutput(listener: OutputListener): () => void;
   subscribeResize(listener: ResizeListener): () => void;
   subscribeSnapshot(listener: SnapshotListener): () => void;
@@ -56,8 +58,23 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const scrollbackListeners = useRef(new Set<ScrollbackListener>());
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
+  const [sizeOwnership] = useState(
+    () =>
+      new TerminalSizeOwnershipController({
+        claim() {},
+        release() {},
+      }),
+  );
+
+  useEffect(() => {
+    sizeOwnership.setActions({
+      claim: () => clientRef.current?.claimTerminalSize(),
+      release: () => clientRef.current?.releaseTerminalSize(),
+    });
+  }, [sizeOwnership]);
 
   const disconnect = useCallback(() => {
+    sizeOwnership.setConnected(false);
     rpcRef.current?.disconnect();
     clientRef.current?.disconnect();
     clientRef.current = null;
@@ -68,79 +85,83 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     setPairing(null);
     setState('disconnected');
     void foreground.current.disconnect();
-  }, []);
+  }, [sizeOwnership]);
 
-  const connect = useCallback((nextPairing: PairingRecord) => {
-    if (
-      pairingRef.current?.deviceBindingId === nextPairing.deviceBindingId &&
-      clientRef.current &&
-      clientRef.current.currentState !== 'failed'
-    ) {
-      return;
-    }
+  const connect = useCallback(
+    (nextPairing: PairingRecord) => {
+      if (
+        pairingRef.current?.deviceBindingId === nextPairing.deviceBindingId &&
+        clientRef.current &&
+        clientRef.current.currentState !== 'failed'
+      ) {
+        return;
+      }
 
-    rpcRef.current?.disconnect();
-    clientRef.current?.disconnect();
-    latestResize.current = null;
-    let client!: WsClient;
-    const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
-    client = new WsClient({
-      url: nextPairing.tunnelUrl,
-      deviceBindingId: nextPairing.deviceBindingId,
-      keyAlias: nextPairing.keyAlias,
-      certificatePin: nextPairing.certificatePin,
-      protocolVersion: PROTOCOL_VERSION,
-      onStateChange: (nextState, nextDetail) => {
-        setState(nextState);
-        setDetail(nextDetail ?? '');
-        if (
-          nextState === 'reconnecting' ||
-          nextState === 'failed' ||
-          nextState === 'disconnected'
-        ) {
-          nextRpc.disconnect();
-        }
-        if (nextState === 'failed' || nextState === 'disconnected') {
-          void foreground.current.disconnect();
-        } else {
-          void foreground.current.updateState(nextState);
-        }
-      },
-      onOutput: (data, latencyTags) => {
-        foreground.current.recordOutput(data);
-        for (const listener of outputListeners.current) listener(data, latencyTags);
-      },
-      onResize: (cols, rows) => {
-        latestResize.current = { cols, rows };
-        for (const listener of resizeListeners.current) listener(cols, rows);
-      },
-      onSnapshot: (snapshot) => {
-        for (const listener of snapshotListeners.current) listener(snapshot);
-      },
-      onScrollback: (data) => {
-        for (const listener of scrollbackListeners.current) listener(data);
-      },
-      onAlert: (message) => void foreground.current.alert(message),
-      onRpcFrame: (frame) => nextRpc.handleFrame(frame),
-      onReady: () => {
-        void markConnected(nextPairing.deviceBindingId).catch((error) => {
-          console.warn('[Mobily][Connection] Failed to update last-connected metadata', error);
-        });
-      },
-      onError: (message, kind) => {
-        setDetail(message);
-        setErrorKind(kind ?? 'generic');
-      },
-    });
-    pairingRef.current = nextPairing;
-    clientRef.current = client;
-    rpcRef.current = nextRpc;
-    setPairing(nextPairing);
-    setRpc(nextRpc);
-    setErrorKind('generic');
-    void foreground.current.connect(nextPairing.stationName);
-    client.connect();
-  }, []);
+      rpcRef.current?.disconnect();
+      clientRef.current?.disconnect();
+      latestResize.current = null;
+      let client!: WsClient;
+      const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
+      client = new WsClient({
+        url: nextPairing.tunnelUrl,
+        deviceBindingId: nextPairing.deviceBindingId,
+        keyAlias: nextPairing.keyAlias,
+        certificatePin: nextPairing.certificatePin,
+        protocolVersion: PROTOCOL_VERSION,
+        onStateChange: (nextState, nextDetail) => {
+          sizeOwnership.setConnected(nextState === 'connected');
+          setState(nextState);
+          setDetail(nextDetail ?? '');
+          if (
+            nextState === 'reconnecting' ||
+            nextState === 'failed' ||
+            nextState === 'disconnected'
+          ) {
+            nextRpc.disconnect();
+          }
+          if (nextState === 'failed' || nextState === 'disconnected') {
+            void foreground.current.disconnect();
+          } else {
+            void foreground.current.updateState(nextState);
+          }
+        },
+        onOutput: (data, latencyTags) => {
+          foreground.current.recordOutput(data);
+          for (const listener of outputListeners.current) listener(data, latencyTags);
+        },
+        onResize: (cols, rows) => {
+          latestResize.current = { cols, rows };
+          for (const listener of resizeListeners.current) listener(cols, rows);
+        },
+        onSnapshot: (snapshot) => {
+          for (const listener of snapshotListeners.current) listener(snapshot);
+        },
+        onScrollback: (data) => {
+          for (const listener of scrollbackListeners.current) listener(data);
+        },
+        onAlert: (message) => void foreground.current.alert(message),
+        onRpcFrame: (frame) => nextRpc.handleFrame(frame),
+        onReady: () => {
+          void markConnected(nextPairing.deviceBindingId).catch((error) => {
+            console.warn('[Mobily][Connection] Failed to update last-connected metadata', error);
+          });
+        },
+        onError: (message, kind) => {
+          setDetail(message);
+          setErrorKind(kind ?? 'generic');
+        },
+      });
+      pairingRef.current = nextPairing;
+      clientRef.current = client;
+      rpcRef.current = nextRpc;
+      setPairing(nextPairing);
+      setRpc(nextRpc);
+      setErrorKind('generic');
+      void foreground.current.connect(nextPairing.stationName);
+      client.connect();
+    },
+    [sizeOwnership],
+  );
 
   const retry = useCallback(() => {
     if (pairingRef.current) void foreground.current.connect(pairingRef.current.stationName);
@@ -155,6 +176,12 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const acknowledgeSnapshotApplied = useCallback(() => {
     clientRef.current?.acknowledgeSnapshotApplied();
   }, []);
+  const setTerminalVisible = useCallback(
+    (visible: boolean) => {
+      sizeOwnership.setTerminalVisible(visible);
+    },
+    [sizeOwnership],
+  );
   const subscribeOutput = useCallback((listener: OutputListener) => {
     outputListeners.current.add(listener);
     return () => outputListeners.current.delete(listener);
@@ -175,7 +202,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
+    sizeOwnership.setAppActive(AppState.currentState === 'active');
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      sizeOwnership.setAppActive(nextState === 'active');
       if (nextState !== 'active' || !clientRef.current) return;
       const current = clientRef.current.currentState;
       if (
@@ -187,7 +216,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       }
     });
     return () => subscription.remove();
-  }, [errorKind]);
+  }, [errorKind, sizeOwnership]);
 
   useEffect(() => () => disconnect(), [disconnect]);
 
@@ -204,6 +233,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendInput,
       sendResize,
       acknowledgeSnapshotApplied,
+      setTerminalVisible,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
@@ -221,6 +251,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       sendInput,
       sendResize,
       acknowledgeSnapshotApplied,
+      setTerminalVisible,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,

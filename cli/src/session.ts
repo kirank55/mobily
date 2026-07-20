@@ -61,6 +61,8 @@ export interface SessionOptions extends SpawnOptions {
   rpc?: Pick<RpcRouter, 'handle'>;
   /** Maximum concurrent structured requests per authenticated connection. @default 4 */
   maxActiveRpcRequests?: number;
+  /** Terminal Size Ownership lease duration. @default 15000 */
+  ownershipLeaseMs?: number;
   /**
    * Override the session runtime used to spawn the PTY process.
    * Intended for testing: inject a fake runtime to control which shell is
@@ -107,6 +109,11 @@ export class Session {
   private localTerminal?: LocalTerminalState;
   private currentCols: number;
   private currentRows: number;
+  private stationCols: number;
+  private stationRows: number;
+  private sizeOwner?: WebSocket;
+  private sizeOwnershipLeaseTimer?: ReturnType<typeof setTimeout>;
+  private readonly ownershipLeaseMs: number;
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
   private exited = false;
@@ -121,6 +128,7 @@ export class Session {
       runtime,
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
+      ownershipLeaseMs = 15_000,
       cols = 120,
       rows = 40,
       ...spawnOpts
@@ -129,8 +137,14 @@ export class Session {
     this.rpc = rpc;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
     this.maxActiveRpcRequests = maxActiveRpcRequests;
+    if (!Number.isInteger(ownershipLeaseMs) || ownershipLeaseMs < 1) {
+      throw new RangeError('ownershipLeaseMs must be a positive integer');
+    }
+    this.ownershipLeaseMs = ownershipLeaseMs;
     this.currentCols = cols;
     this.currentRows = rows;
+    this.stationCols = cols;
+    this.stationRows = rows;
     this.backend = backend ?? new BareBackend({ ...spawnOpts, cols, rows }, runtime);
     this.screen = new CanonicalTerminalScreen(cols, rows);
     this.alertDetector = new TerminalAlertDetector((message) =>
@@ -207,7 +221,7 @@ export class Session {
         if (active && !this.exited) this.backend.write(data);
       },
       resize: (cols, rows) => {
-        if (active && !this.exited) this.applyResize(cols, rows);
+        if (active && !this.exited) this.applyStationResize(cols, rows);
       },
       dispose: () => {
         if (!active) return;
@@ -351,13 +365,16 @@ export class Session {
   // -------------------------------------------------------------------------
 
   private attachAuthenticated(ws: WebSocket): void {
+    this.sendSizeOwnershipState(ws);
     this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
     this.pendingLatencyTags.set(ws, []);
     this.activeRpcRequests.set(ws, new Map());
     ws.on('message', (data) => this.handleMessage(ws, data));
     let detached = false;
     const detach = (): void => {
+      if (detached) return;
       detached = true;
+      if (this.sizeOwner === ws) this.releaseSizeOwnership(ws);
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
       this.pendingScrollback.delete(ws);
@@ -409,9 +426,13 @@ export class Session {
         this.backend.write(frame.data);
         break;
       case 'resize':
-        if (this.localTerminal) break;
+        if (this.sizeOwner !== ws) {
+          this.sendSizeOwnershipState(ws);
+          break;
+        }
         try {
           this.applyResize(frame.cols, frame.rows);
+          this.renewSizeOwnershipLease(ws);
         } catch (err) {
           this.sendTo(ws, {
             type: 'output',
@@ -437,6 +458,15 @@ export class Session {
         break;
       case 'session-scrollback':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session scrollback');
+        break;
+      case 'terminal-size-claim':
+        this.claimSizeOwnership(ws);
+        break;
+      case 'terminal-size-release':
+        this.releaseSizeOwnership(ws);
+        break;
+      case 'terminal-size-owner':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Terminal Size Owner state');
         break;
       case 'output':
         break;
@@ -478,6 +508,53 @@ export class Session {
         done: offset + data.length >= history.length,
       });
     }
+  }
+
+  private claimSizeOwnership(ws: WebSocket): void {
+    this.sizeOwner = ws;
+    this.renewSizeOwnershipLease(ws);
+    this.broadcastSizeOwnershipState();
+  }
+
+  private renewSizeOwnershipLease(ws: WebSocket): void {
+    if (this.sizeOwner !== ws) return;
+    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
+    this.sizeOwnershipLeaseTimer = setTimeout(
+      () => this.releaseSizeOwnership(ws),
+      this.ownershipLeaseMs,
+    );
+    this.sizeOwnershipLeaseTimer.unref?.();
+  }
+
+  private releaseSizeOwnership(ws: WebSocket): void {
+    if (this.sizeOwner !== ws) return;
+    this.sizeOwner = undefined;
+    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
+    this.sizeOwnershipLeaseTimer = undefined;
+    try {
+      if (this.currentCols !== this.stationCols || this.currentRows !== this.stationRows) {
+        this.applyResize(this.stationCols, this.stationRows);
+      }
+    } catch (error) {
+      this.broadcast({
+        type: 'output',
+        data: `mobily: failed to restore Station dimensions — ${errorText(error)}\r\n`,
+      });
+    } finally {
+      this.broadcastSizeOwnershipState();
+    }
+  }
+
+  private broadcastSizeOwnershipState(): void {
+    for (const viewer of this.subscribers) this.sendSizeOwnershipState(viewer);
+  }
+
+  private sendSizeOwnershipState(ws: WebSocket): void {
+    this.sendTo(ws, {
+      type: 'terminal-size-owner',
+      owner: this.sizeOwner ? 'android' : 'station',
+      ownedByRequester: this.sizeOwner === ws,
+    });
   }
 
   private handleRpc(ws: WebSocket, frame: Extract<Frame, { type: 'rpc'; method: string }>): void {
@@ -547,10 +624,16 @@ export class Session {
   }
 
   private applyResize(cols: number, rows: number): void {
-    this.screen.resize(cols, rows, () => this.broadcast({ type: 'resize', cols, rows }));
     this.backend.resize(cols, rows);
+    this.screen.resize(cols, rows, () => this.broadcast({ type: 'resize', cols, rows }));
     this.currentCols = cols;
     this.currentRows = rows;
+  }
+
+  private applyStationResize(cols: number, rows: number): void {
+    this.stationCols = cols;
+    this.stationRows = rows;
+    if (!this.sizeOwner) this.applyResize(cols, rows);
   }
 
   private sendTo(ws: WebSocket, frame: Frame): void {
@@ -578,6 +661,9 @@ export class Session {
   private handleExit(event: ExitEvent): void {
     this.exited = true;
     this.exitEvent = event;
+    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
+    this.sizeOwnershipLeaseTimer = undefined;
+    this.sizeOwner = undefined;
     const localTerminal = this.localTerminal;
     this.localTerminal = undefined;
     localTerminal?.deactivate();
@@ -628,6 +714,9 @@ export class Session {
       for (const controller of active.values()) controller.abort();
     }
     this.activeRpcRequests.clear();
+    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
+    this.sizeOwnershipLeaseTimer = undefined;
+    this.sizeOwner = undefined;
     try {
       this.backend.dispose();
     } catch {
