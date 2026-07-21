@@ -87,6 +87,11 @@ interface LocalTerminalState {
   deactivate(): void;
 }
 
+interface SizeClaimant {
+  readonly sequence: number;
+  leaseTimer?: ReturnType<typeof setTimeout>;
+}
+
 /**
  * A live terminal session: one backend plus the WebSocket clients currently
  * streaming its output. Create one, attach clients as they connect, and call
@@ -112,7 +117,8 @@ export class Session {
   private stationCols: number;
   private stationRows: number;
   private sizeOwner?: WebSocket;
-  private sizeOwnershipLeaseTimer?: ReturnType<typeof setTimeout>;
+  private readonly sizeClaimants = new Map<WebSocket, SizeClaimant>();
+  private sizeClaimSequence = 0;
   private readonly ownershipLeaseMs: number;
   private readonly onDataDisposable: IDisposable;
   private readonly onExitDisposable: IDisposable;
@@ -374,7 +380,7 @@ export class Session {
     const detach = (): void => {
       if (detached) return;
       detached = true;
-      if (this.sizeOwner === ws) this.releaseSizeOwnership(ws);
+      this.releaseSizeClaim(ws);
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
       this.pendingScrollback.delete(ws);
@@ -463,7 +469,7 @@ export class Session {
         this.claimSizeOwnership(ws);
         break;
       case 'terminal-size-release':
-        this.releaseSizeOwnership(ws);
+        this.releaseSizeClaim(ws);
         break;
       case 'terminal-size-owner':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Terminal Size Owner state');
@@ -511,26 +517,39 @@ export class Session {
   }
 
   private claimSizeOwnership(ws: WebSocket): void {
+    const existing = this.sizeClaimants.get(ws);
+    if (existing) {
+      this.renewSizeOwnershipLease(ws, existing);
+      return;
+    }
+    const claimant: SizeClaimant = {
+      sequence: ++this.sizeClaimSequence,
+    };
+    this.sizeClaimants.set(ws, claimant);
     this.sizeOwner = ws;
-    this.renewSizeOwnershipLease(ws);
+    this.renewSizeOwnershipLease(ws, claimant);
     this.broadcastSizeOwnershipState();
   }
 
-  private renewSizeOwnershipLease(ws: WebSocket): void {
-    if (this.sizeOwner !== ws) return;
-    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
-    this.sizeOwnershipLeaseTimer = setTimeout(
-      () => this.releaseSizeOwnership(ws),
-      this.ownershipLeaseMs,
-    );
-    this.sizeOwnershipLeaseTimer.unref?.();
+  private renewSizeOwnershipLease(ws: WebSocket, claimant = this.sizeClaimants.get(ws)): void {
+    if (!claimant) return;
+    clearTimeout(claimant.leaseTimer);
+    claimant.leaseTimer = setTimeout(() => this.releaseSizeClaim(ws), this.ownershipLeaseMs);
+    claimant.leaseTimer.unref?.();
   }
 
-  private releaseSizeOwnership(ws: WebSocket): void {
+  private releaseSizeClaim(ws: WebSocket): void {
+    const claimant = this.sizeClaimants.get(ws);
+    if (!claimant) return;
+    clearTimeout(claimant.leaseTimer);
+    this.sizeClaimants.delete(ws);
     if (this.sizeOwner !== ws) return;
-    this.sizeOwner = undefined;
-    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
-    this.sizeOwnershipLeaseTimer = undefined;
+
+    this.sizeOwner = this.mostRecentSizeClaimant();
+    if (this.sizeOwner) {
+      this.broadcastSizeOwnershipState();
+      return;
+    }
     try {
       if (this.currentCols !== this.stationCols || this.currentRows !== this.stationRows) {
         this.applyResize(this.stationCols, this.stationRows);
@@ -545,8 +564,18 @@ export class Session {
     }
   }
 
+  private mostRecentSizeClaimant(): WebSocket | undefined {
+    let newest: { ws: WebSocket; sequence: number } | undefined;
+    for (const [ws, claimant] of this.sizeClaimants) {
+      if (!newest || claimant.sequence > newest.sequence) {
+        newest = { ws, sequence: claimant.sequence };
+      }
+    }
+    return newest?.ws;
+  }
+
   private broadcastSizeOwnershipState(): void {
-    for (const viewer of this.subscribers) this.sendSizeOwnershipState(viewer);
+    for (const viewer of this.pendingLatencyTags.keys()) this.sendSizeOwnershipState(viewer);
   }
 
   private sendSizeOwnershipState(ws: WebSocket): void {
@@ -661,8 +690,7 @@ export class Session {
   private handleExit(event: ExitEvent): void {
     this.exited = true;
     this.exitEvent = event;
-    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
-    this.sizeOwnershipLeaseTimer = undefined;
+    this.clearSizeClaimants();
     this.sizeOwner = undefined;
     const localTerminal = this.localTerminal;
     this.localTerminal = undefined;
@@ -714,14 +742,18 @@ export class Session {
       for (const controller of active.values()) controller.abort();
     }
     this.activeRpcRequests.clear();
-    if (this.sizeOwnershipLeaseTimer) clearTimeout(this.sizeOwnershipLeaseTimer);
-    this.sizeOwnershipLeaseTimer = undefined;
+    this.clearSizeClaimants();
     this.sizeOwner = undefined;
     try {
       this.backend.dispose();
     } catch {
       // Already dead — ignore.
     }
+  }
+
+  private clearSizeClaimants(): void {
+    for (const claimant of this.sizeClaimants.values()) clearTimeout(claimant.leaseTimer);
+    this.sizeClaimants.clear();
   }
 }
 

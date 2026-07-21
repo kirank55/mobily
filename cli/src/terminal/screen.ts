@@ -1,4 +1,5 @@
-import { Terminal, type IBufferCell } from '@xterm/headless';
+import xtermHeadless from '@xterm/headless';
+import type { IBufferCell, Terminal } from '@xterm/headless';
 import {
   TERMINAL_CELL_ATTRIBUTES,
   type SessionSnapshotFrame,
@@ -6,6 +7,7 @@ import {
   type TerminalSnapshotCell,
 } from '@mobily/shared';
 
+const { Terminal: HeadlessTerminal } = xtermHeadless;
 /**
  * Backend-neutral canonical visible terminal state.
  *
@@ -21,7 +23,7 @@ export class CanonicalTerminalScreen {
   private disposed = false;
 
   constructor(cols: number, rows: number) {
-    this.terminal = new Terminal({
+    this.terminal = new HeadlessTerminal({
       allowProposedApi: true,
       cols,
       rows,

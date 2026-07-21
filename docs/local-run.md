@@ -62,10 +62,17 @@ Ctrl+C shuts down the Station.
 ## 4. Start Expo web (Terminal B)
 
 ```bash
+pnpm install   # once after React version alignment / pull
 pnpm --filter mobily-android web
 ```
 
 Metro opens the app in the browser (or print a localhost URL — open it in Chrome).
+
+If the browser shows a blank page or a React `useEffect` null error, clear Metro cache and retry:
+
+```bash
+pnpm --filter mobily-android exec expo start --web -c
+```
 
 On the web pair screen:
 

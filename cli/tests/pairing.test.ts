@@ -191,7 +191,7 @@ afterEach(async () => {
   sessions.length = 0;
 });
 
-async function setupPairedSession(): Promise<{
+async function setupPairedSession(options: { ownershipLeaseMs?: number } = {}): Promise<{
   server: Server;
   auth: AuthManager;
   session: Session;
@@ -203,7 +203,13 @@ async function setupPairedSession(): Promise<{
   const { publicKeyPem, privateKeyPem } = generateKeyPair();
   const deviceId = 'device-e2e';
 
-  const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
+  const session = new Session({
+    cols: 80,
+    rows: 24,
+    auth,
+    runtime: testRuntime,
+    ownershipLeaseMs: options.ownershipLeaseMs,
+  });
   sessions.push(session);
 
   const server = await startServer({
@@ -322,6 +328,141 @@ describe('pairing flow end-to-end', () => {
       workstation.dispose();
     },
     20000,
+  );
+
+  it.skipIf(os.platform() === 'win32')(
+    'arbitrates authenticated viewers by foreground recency and claimant leases',
+    async () => {
+      const { server, session, privateKeyPem, deviceId } = await setupPairedSession({
+        ownershipLeaseMs: 1_000,
+      });
+      const workstation = session.attachLocalTerminal({ onOutput() {} });
+      workstation.resize(132, 43);
+
+      const first = await connectAndHandshake(server, privateKeyPem, deviceId);
+      const second = await connectAndHandshake(server, privateKeyPem, deviceId);
+      await vi.waitFor(() => {
+        expect(first.frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true);
+        expect(second.frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true);
+      });
+
+      sendFrame(first.ws, { type: 'terminal-size-claim' });
+      sendFrame(first.ws, { type: 'resize', cols: 72, rows: 21 });
+      await vi.waitFor(() =>
+        expect(
+          first.frames.some(
+            (frame) => frame['type'] === 'resize' && frame['cols'] === 72 && frame['rows'] === 21,
+          ),
+        ).toBe(true),
+      );
+
+      sendFrame(second.ws, { type: 'terminal-size-claim' });
+      sendFrame(second.ws, { type: 'resize', cols: 80, rows: 25 });
+      await vi.waitFor(() => {
+        expect(
+          first.frames.some(
+            (frame) =>
+              frame['type'] === 'terminal-size-owner' &&
+              frame['owner'] === 'android' &&
+              frame['ownedByRequester'] === false,
+          ),
+        ).toBe(true);
+        expect(
+          second.frames.some(
+            (frame) =>
+              frame['type'] === 'terminal-size-owner' &&
+              frame['owner'] === 'android' &&
+              frame['ownedByRequester'] === true,
+          ),
+        ).toBe(true);
+        expect(
+          second.frames.some(
+            (frame) => frame['type'] === 'resize' && frame['cols'] === 80 && frame['rows'] === 25,
+          ),
+        ).toBe(true);
+      });
+
+      const sharedOutputAtSecondSize = collectOutput(second.ws, (output) =>
+        output.includes('NON_OWNER_INTERACTIVE=25 80'),
+      );
+      sendFrame(first.ws, { type: 'resize', cols: 60, rows: 18 });
+      sendFrame(first.ws, {
+        type: 'input',
+        data: `printf 'NON_OWNER_INTERACTIVE='; stty size${eol()}`,
+      });
+      expect(await sharedOutputAtSecondSize).toContain('NON_OWNER_INTERACTIVE=25 80');
+
+      const firstOwnerFramesBeforeRelease = first.frames.filter(
+        (frame) =>
+          frame['type'] === 'terminal-size-owner' &&
+          frame['owner'] === 'android' &&
+          frame['ownedByRequester'] === true,
+      ).length;
+      sendFrame(first.ws, { type: 'terminal-size-claim' });
+      sendFrame(second.ws, { type: 'terminal-size-release' });
+      await vi.waitFor(() => {
+        expect(
+          first.frames.filter(
+            (frame) =>
+              frame['type'] === 'terminal-size-owner' &&
+              frame['owner'] === 'android' &&
+              frame['ownedByRequester'] === true,
+          ),
+        ).toHaveLength(firstOwnerFramesBeforeRelease + 1);
+      });
+
+      sendFrame(second.ws, { type: 'terminal-size-claim' });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      sendFrame(first.ws, { type: 'terminal-size-claim' });
+      const firstOwnerFramesBeforeExpiry = first.frames.filter(
+        (frame) =>
+          frame['type'] === 'terminal-size-owner' &&
+          frame['owner'] === 'android' &&
+          frame['ownedByRequester'] === true,
+      ).length;
+      await vi.waitFor(
+        () => {
+          expect(
+            first.frames.filter(
+              (frame) =>
+                frame['type'] === 'terminal-size-owner' &&
+                frame['owner'] === 'android' &&
+                frame['ownedByRequester'] === true,
+            ),
+          ).toHaveLength(firstOwnerFramesBeforeExpiry + 1);
+        },
+        { timeout: 2_000, interval: 20 },
+      );
+
+      first.ws.close();
+      await waitForClose(first.ws);
+      await vi.waitFor(() =>
+        expect(
+          second.frames.some(
+            (frame) =>
+              frame['type'] === 'terminal-size-owner' &&
+              frame['owner'] === 'station' &&
+              frame['ownedByRequester'] === false,
+          ),
+        ).toBe(true),
+      );
+
+      const reconnected = await connectAndHandshake(server, privateKeyPem, deviceId);
+      await vi.waitFor(() =>
+        expect(reconnected.frames.some((frame) => frame['type'] === 'session-snapshot')).toBe(true),
+      );
+      sendFrame(reconnected.ws, { type: 'resize', cols: 60, rows: 18 });
+      const stationSizeAfterReconnect = collectOutput(reconnected.ws, (output) =>
+        output.includes('RECONNECTED_WITHOUT_CLAIM=43 132'),
+      );
+      sendFrame(reconnected.ws, {
+        type: 'input',
+        data: `printf 'RECONNECTED_WITHOUT_CLAIM='; stty size${eol()}`,
+      });
+      expect(await stationSizeAfterReconnect).toContain('RECONNECTED_WITHOUT_CLAIM=43 132');
+      workstation.dispose();
+    },
+    25_000,
   );
 
   it('sends an idle bare-PTY Session Snapshot before subsequent live output', async () => {
