@@ -11,3 +11,7 @@ Triage uses the five default canonical role names. See `docs/agents/triage-label
 ### Domain docs
 
 Domain documentation uses a single-context layout. See `docs/agents/domain.md`.
+
+### Local run
+
+To run the CLI and Expo web app for terminal testing (no Android Studio), see `docs/local-run.md`.

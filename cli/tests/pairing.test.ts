@@ -567,6 +567,25 @@ describe('pairing endpoint error cases', () => {
     expect(res.status).toBe(400);
   }, 10000);
 
+  it('adds CORS headers for plaintext local Stations used by Expo web', async () => {
+    const auth = new AuthManager('test-station');
+    auth.setTunnelUrl('ws://localhost:9999');
+    const session = new Session({ cols: 80, rows: 24, auth, runtime: testRuntime });
+    sessions.push(session);
+    const server = await startServer({
+      session,
+      httpRequestHandler: (req, res) => auth.handleHttpRequest(req, res),
+    });
+    servers.push(server);
+
+    const options = await fetch(`http://localhost:${server.port}/.well-known/mobily/pair`, {
+      method: 'OPTIONS',
+    });
+    expect(options.status).toBe(204);
+    expect(options.headers.get('access-control-allow-origin')).toBe('*');
+    expect(options.headers.get('access-control-allow-methods')).toContain('POST');
+  }, 10000);
+
   it('returns 404 for unknown paths', async () => {
     const auth = new AuthManager('test-station');
     auth.setTunnelUrl('ws://test:9999');

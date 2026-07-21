@@ -19,6 +19,23 @@ const LEGACY_STORAGE_KEY = 'mobily.pairing';
 const PAIRINGS_STORAGE_KEY = 'mobily.pairings.v2';
 const SELECTED_STORAGE_KEY = 'mobily.selected-pairing.v2';
 
+/** Accepts wss:// always; ws:// only for persisted insecure local (Expo web) records. */
+function isPersistedTunnelUrl(endpoint: string): boolean {
+  if (isSecureWebSocketUrl(endpoint)) return true;
+  try {
+    const url = new URL(endpoint);
+    return (
+      url.protocol === 'ws:' &&
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function listPairings(): Promise<PairingRecord[]> {
   const stored = await readPairings();
   if (stored !== null) return stored;
@@ -133,7 +150,7 @@ function isLegacyPairingRecord(
     record['stationName'].length > 0 &&
     record['stationName'].length <= 255 &&
     typeof record['tunnelUrl'] === 'string' &&
-    isSecureWebSocketUrl(record['tunnelUrl']) &&
+    isPersistedTunnelUrl(record['tunnelUrl']) &&
     parseDeviceBindingId(record['deviceBindingId']) !== null &&
     validTimestamp(record['pairedAt']) &&
     (record['lastConnectedAt'] === undefined || validTimestamp(record['lastConnectedAt'])) &&

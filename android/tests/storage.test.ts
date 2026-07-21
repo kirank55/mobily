@@ -94,4 +94,16 @@ describe('pairing storage', () => {
     memory.set('mobily.pairings.v2', JSON.stringify([{ stationName: 'missing fields' }]));
     await expect(listPairings()).resolves.toEqual([]);
   });
+
+  it('persists insecure local ws:// tunnel URLs used by Expo web', async () => {
+    const insecure: PairingRecord = {
+      stationName: 'local-dev',
+      tunnelUrl: 'ws://localhost:51234',
+      deviceBindingId: parseDeviceBindingId('binding_BBBBBBBBBBBBBBBBBBBBBB')!,
+      keyAlias: 'mobily.device.binding_BBBBBBBBBBBBBBBBBBBBBB',
+      pairedAt: 1_700_000_000_000,
+    };
+    await savePairing(insecure);
+    await expect(loadPairing()).resolves.toEqual(insecure);
+  });
 });

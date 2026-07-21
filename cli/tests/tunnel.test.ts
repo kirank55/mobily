@@ -39,11 +39,19 @@ describe('LocalBackend', () => {
     expect(connection.certificatePin).toBe(secure.serverTls?.certificatePin);
   });
 
-  it('connect() URL uses a real LAN IPv4 address or localhost fallback', async () => {
-    const conn = await backend.connect(8080);
+  it('connect() URL uses localhost for plaintext and LAN IP for TLS', async () => {
+    const plaintext = await backend.connect(8080);
+    expect(plaintext.url).toBe('ws://localhost:8080');
+
+    const secure = new LocalBackend({
+      key: 'key',
+      cert: 'cert',
+      certificatePin: 'sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    });
     const ip = primaryLanIp();
     const expectedHost = ip ?? 'localhost';
-    expect(conn.url).toBe(`ws://${expectedHost}:8080`);
+    const connection = await secure.connect(8080);
+    expect(connection.url).toBe(`wss://${expectedHost}:8080`);
   });
 
   it('disconnect() resolves without error', async () => {

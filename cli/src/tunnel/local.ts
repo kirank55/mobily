@@ -3,8 +3,10 @@
  *
  * LAN {@link TunnelBackend}. Binds the Station server to all
  * interfaces (`0.0.0.0`) and exposes it on the LAN at
- * `wss://<lan-ip>:<port>` by default. No account, relay, or external service — the
- * phone and the Station must be on the same network. Device Key auth (Phase 2)
+ * `wss://<lan-ip>:<port>` by default. Plaintext `--allow-insecure-local` advertises
+ * `ws://localhost:<port>` for same-machine browser / Expo web clients (Android
+ * refuses insecure transport). No account, relay, or external service — the
+ * phone and the Station must be on the same network for pinned TLS. Device Key auth (Phase 2)
  * still gates access.
  */
 
@@ -20,8 +22,9 @@ export class LocalBackend implements TunnelBackend {
   constructor(readonly serverTls?: LocalTlsIdentity) {}
 
   connect(localPort: number): Promise<TunnelConnection> {
-    const ip = primaryLanIp();
-    const host = ip ?? 'localhost';
+    // Insecure plaintext is browser/smoke-only (Android refuses ws://). Advertise
+    // localhost so Expo web and smoke.html on the same machine can connect.
+    const host = this.serverTls ? (primaryLanIp() ?? 'localhost') : 'localhost';
     return Promise.resolve({
       url: `${this.serverTls ? 'wss' : 'ws'}://${host}:${localPort}`,
       certificatePin: this.serverTls?.certificatePin,

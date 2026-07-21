@@ -406,7 +406,13 @@ ${VIEWPORT_HELPERS}
       var chunk=stripMouseModes(outQ.join(''));outQ=[];if(term)term.write(chunk);
     });
   }
-  function sendRN(msg){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(msg));}catch(_){}}
+  function sendRN(msg){
+    try{
+      var data=JSON.stringify(msg);
+      if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(data);
+      else if(window.parent&&window.parent!==window)window.parent.postMessage({source:'mobily-terminal',payload:data},'*');
+    }catch(_){}
+  }
   function sendInput(data){
     var values=new Uint32Array(1);crypto.getRandomValues(values);
     var tag='lat-'+values[0].toString(16).padStart(8,'0');

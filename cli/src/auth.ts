@@ -255,7 +255,13 @@ export class AuthManager {
    * pairing logic; all other requests get 404.
    */
   handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
-    if (req.method === 'POST' && req.url === PAIRING_PATH) {
+    if (req.method === 'OPTIONS' && this.requestPath(req) === PAIRING_PATH) {
+      res.writeHead(204, this.browserDevCorsHeaders());
+      res.end();
+      return;
+    }
+
+    if (req.method === 'POST' && this.requestPath(req) === PAIRING_PATH) {
       this.handlePairing(req, res);
       return;
     }
@@ -264,8 +270,29 @@ export class AuthManager {
     res.end(JSON.stringify({ error: 'Not found.' }));
   }
 
+  /** Path without query string. */
+  private requestPath(req: IncomingMessage): string {
+    const url = req.url ?? '';
+    const q = url.indexOf('?');
+    return q >= 0 ? url.slice(0, q) : url;
+  }
+
+  /**
+   * CORS for Expo web / browser smoke against plaintext local Stations only.
+   * Pinned TLS Stations do not need browser clients.
+   */
+  private browserDevCorsHeaders(): Record<string, string> {
+    if (!this.tunnelUrl?.startsWith('ws://')) return {};
+    return {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+  }
+
   /** Internal: read and process a pairing POST. */
   private handlePairing(req: IncomingMessage, res: ServerResponse): void {
+    const cors = this.browserDevCorsHeaders();
     let body = '';
     let tooLarge = false;
     let receivedBytes = 0;
@@ -275,7 +302,7 @@ export class AuthManager {
       if (receivedBytes > MAX_BODY_BYTES) {
         tooLarge = true;
         if (!res.headersSent) {
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.writeHead(413, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ error: 'Request body too large.' }));
         }
         req.destroy();
@@ -291,26 +318,26 @@ export class AuthManager {
       try {
         parsed = JSON.parse(body);
       } catch {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ error: 'Invalid JSON.' }));
         return;
       }
 
       if (!isPairingRequest(parsed)) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ error: 'Invalid pairing request.' }));
         return;
       }
 
       const result = this.pair(parsed.code, parsed.deviceId, parsed.publicKey, parsed.proof);
 
-      res.writeHead(result.status, { 'Content-Type': 'application/json' });
+      res.writeHead(result.status, { 'Content-Type': 'application/json', ...cors });
       res.end(JSON.stringify(result.body));
     });
 
     req.on('error', () => {
       if (!res.headersSent) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ error: 'Request error.' }));
       }
     });
