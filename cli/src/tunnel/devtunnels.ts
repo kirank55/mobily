@@ -5,12 +5,18 @@
  */
 
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { UserFacingError } from '../errors.js';
+import {
+  FileTemporaryTunnelOwnershipStore,
+  type TemporaryTunnelOwnership,
+  type TemporaryTunnelOwnershipStore,
+} from './temporaryTunnelOwnership.js';
 import type { TunnelBackend, TunnelConnection } from './types.js';
 
 export type DevTunnelsProvider = 'github' | 'microsoft';
@@ -50,6 +56,11 @@ export interface PrepareDevTunnelsOptions {
   readonly verbose?: boolean;
   readonly readinessTimeoutMs?: number;
   readonly runtime?: DevTunnelsRuntime;
+  readonly ownershipStore?: TemporaryTunnelOwnershipStore;
+  readonly runId?: string;
+  readonly processId?: number;
+  readonly isProcessAlive?: (processId: number) => boolean;
+  readonly now?: () => Date;
 }
 
 const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
@@ -72,11 +83,18 @@ export async function prepareDevTunnelsBackend(
     throw new UserFacingError(installMessage(runtime.platform));
   }
 
+  const ownershipStore = options.ownershipStore ?? new FileTemporaryTunnelOwnershipStore();
+  const runId = options.runId ?? randomUUID();
   await ensureSignedIn(runtime, executable, options.provider);
   return new DevTunnelsBackend(executable, runtime, {
     provider: options.provider,
     verbose: options.verbose ?? false,
     readinessTimeoutMs: options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
+    ownershipStore,
+    runId,
+    processId: options.processId ?? process.pid,
+    isProcessAlive: options.isProcessAlive ?? isProcessAlive,
+    now: options.now ?? (() => new Date()),
   });
 }
 
@@ -151,6 +169,7 @@ async function promptUser(runtime: DevTunnelsRuntime, message: string): Promise<
 export class DevTunnelsBackend implements TunnelBackend {
   readonly id = 'devtunnels';
   readonly bindHost = 'localhost';
+  private reconciliation: Promise<void> | undefined;
 
   constructor(
     private readonly executable: string,
@@ -159,10 +178,24 @@ export class DevTunnelsBackend implements TunnelBackend {
       readonly provider?: DevTunnelsProvider;
       readonly verbose: boolean;
       readonly readinessTimeoutMs: number;
+      readonly ownershipStore: TemporaryTunnelOwnershipStore;
+      readonly runId: string;
+      readonly processId: number;
+      readonly isProcessAlive: (processId: number) => boolean;
+      readonly now: () => Date;
     },
   ) {}
 
   async connect(localPort: number): Promise<TunnelConnection> {
+    this.reconciliation ??= reconcileTemporaryTunnels(
+      this.runtime,
+      this.executable,
+      this.options.ownershipStore,
+      this.options.runId,
+      this.options.isProcessAlive,
+    );
+    await this.reconciliation;
+
     try {
       return await this.startHost(localPort);
     } catch (error) {
@@ -198,16 +231,114 @@ export class DevTunnelsBackend implements TunnelBackend {
       throw error;
     }
 
+    const tunnelId = extractTunnelId(url, localPort);
+    if (!tunnelId) {
+      await stopHost(child);
+      throw new UserFacingError(
+        'Dev Tunnels returned a URL without a usable tunnel identity. The temporary tunnel was stopped before Mobily reported it ready.',
+      );
+    }
+    const ownership: TemporaryTunnelOwnership = {
+      version: 1,
+      tunnelId,
+      ownerRunId: this.options.runId,
+      ownerProcessId: this.options.processId,
+      createdAt: this.options.now().toISOString(),
+      state: 'ready',
+    };
+    try {
+      await this.options.ownershipStore.save(ownership);
+    } catch (error) {
+      await stopHost(child);
+      try {
+        await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
+      } catch {
+        // The original durable-record failure is authoritative: the tunnel was
+        // never reported ready, and helper shutdown still gets its normal
+        // chance to remove the temporary resource.
+      }
+      throw new UserFacingError(
+        `Mobily could not record ownership of temporary tunnel '${tunnelId}', so it was not reported ready. ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     let disconnected = false;
     return {
       url,
       disconnect: async () => {
         if (disconnected) return;
         disconnected = true;
+        const deletingOwnership: TemporaryTunnelOwnership = {
+          ...ownership,
+          state: 'deleting',
+        };
+        try {
+          await this.options.ownershipStore.save(deletingOwnership);
+        } catch {
+          // Keep cleaning: if deletion fails, the already-durable "ready"
+          // record remains sufficient for a later recovery attempt.
+        }
         await stopHost(child);
-        await deleteTemporaryTunnel(this.runtime, this.executable, url, localPort);
+        await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
+        await this.options.ownershipStore.remove(ownership);
       },
     };
+  }
+}
+
+async function reconcileTemporaryTunnels(
+  runtime: DevTunnelsRuntime,
+  executable: string,
+  ownershipStore: TemporaryTunnelOwnershipStore,
+  runId: string,
+  ownerIsAlive: (processId: number) => boolean,
+): Promise<void> {
+  let records: readonly TemporaryTunnelOwnership[];
+  try {
+    records = await ownershipStore.list();
+  } catch {
+    throw new UserFacingError(
+      'Mobily could not read its Temporary Tunnel recovery records. Check access to ~/.mobily/temporary-tunnels and rerun Mobily before creating another Dev Tunnel.',
+    );
+  }
+
+  for (const ownership of records) {
+    if (
+      ownership.ownerRunId === runId ||
+      (ownership.ownerProcessId !== undefined && ownerIsAlive(ownership.ownerProcessId))
+    ) {
+      continue;
+    }
+
+    const deletingOwnership: TemporaryTunnelOwnership = {
+      ...ownership,
+      state: 'deleting',
+    };
+    try {
+      await ownershipStore.save(deletingOwnership);
+    } catch {
+      throw new UserFacingError(
+        `Mobily could not update the recovery record for temporary tunnel '${ownership.tunnelId}'. Check access to ~/.mobily/temporary-tunnels and rerun Mobily; no new Dev Tunnel was created.`,
+      );
+    }
+
+    await deleteTemporaryTunnel(runtime, executable, ownership.tunnelId, true);
+    try {
+      await ownershipStore.remove(deletingOwnership);
+    } catch {
+      throw new UserFacingError(
+        `Mobily deleted stale temporary tunnel '${ownership.tunnelId}' but could not remove its recovery record. Check access to ~/.mobily/temporary-tunnels and rerun Mobily; no new Dev Tunnel was created.`,
+      );
+    }
+  }
+}
+
+function isProcessAlive(processId: number): boolean {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 
@@ -313,16 +444,13 @@ function extractTunnelId(tunnelUrl: string, localPort: number): string | undefin
 async function deleteTemporaryTunnel(
   runtime: DevTunnelsRuntime,
   executable: string,
-  tunnelUrl: string,
-  localPort: number,
+  tunnelId: string,
+  recovery = false,
 ): Promise<void> {
-  const tunnelId = extractTunnelId(tunnelUrl, localPort);
-  if (!tunnelId) return;
   const deletion = await runtime.run(executable, ['delete', tunnelId], { inheritStdio: false });
   if (deletion.exitCode === 0 || isMissingTunnel(deletion)) return;
-  const detail = conciseHelperDetail(`${deletion.stdout}\n${deletion.stderr}`);
   throw new UserFacingError(
-    `Dev Tunnels could not delete temporary tunnel '${tunnelId}'. Delete it with \`devtunnel delete ${tunnelId}\` before starting Mobily again.${detail}`,
+    `Dev Tunnels could not delete temporary tunnel '${tunnelId}'. Run \`devtunnel delete ${tunnelId}\`, then rerun Mobily.${recovery ? ' No new Dev Tunnel was created.' : ''}`,
   );
 }
 

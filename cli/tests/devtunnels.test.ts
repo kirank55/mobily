@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,7 +12,14 @@ import {
   type CommandResult,
   type DevTunnelHostProcess,
   type DevTunnelsRuntime,
+  type PrepareDevTunnelsOptions,
 } from '../src/tunnel/devtunnels.js';
+import { LocalBackend } from '../src/tunnel/local.js';
+import {
+  FileTemporaryTunnelOwnershipStore,
+  type TemporaryTunnelOwnership,
+  type TemporaryTunnelOwnershipStore,
+} from '../src/tunnel/temporaryTunnelOwnership.js';
 
 class FakeHostProcess extends EventEmitter implements DevTunnelHostProcess {
   readonly stdout = new PassThrough();
@@ -33,6 +43,33 @@ class FakeHostProcess extends EventEmitter implements DevTunnelHostProcess {
   }
 }
 
+class FakeOwnershipStore implements TemporaryTunnelOwnershipStore {
+  readonly records = new Map<string, TemporaryTunnelOwnership>();
+  readonly events: Array<{ action: 'save' | 'remove'; ownership: TemporaryTunnelOwnership }> = [];
+  saveError: Error | undefined;
+  removeError: Error | undefined;
+
+  async list(): Promise<readonly TemporaryTunnelOwnership[]> {
+    return [...this.records.values()];
+  }
+
+  async save(ownership: TemporaryTunnelOwnership): Promise<void> {
+    if (this.saveError) throw this.saveError;
+    this.events.push({ action: 'save', ownership });
+    this.records.set(this.key(ownership), ownership);
+  }
+
+  async remove(ownership: TemporaryTunnelOwnership): Promise<void> {
+    if (this.removeError) throw this.removeError;
+    this.events.push({ action: 'remove', ownership });
+    this.records.delete(this.key(ownership));
+  }
+
+  private key(ownership: TemporaryTunnelOwnership): string {
+    return `${ownership.ownerRunId}:${ownership.tunnelId}`;
+  }
+}
+
 class FakeRuntime implements DevTunnelsRuntime {
   interactive = false;
   platform: NodeJS.Platform = 'linux';
@@ -44,6 +81,7 @@ class FakeRuntime implements DevTunnelsRuntime {
   readonly results: CommandResult[] = [];
   readonly promptAnswers: string[] = [];
   readonly hosts: FakeHostProcess[] = [];
+  readonly ownershipStore = new FakeOwnershipStore();
   findCount = 0;
 
   findExecutable(): string | undefined {
@@ -74,6 +112,18 @@ class FakeRuntime implements DevTunnelsRuntime {
   write(message: string): void {
     this.output.push(message);
   }
+}
+
+function prepareFakeBackend(
+  runtime: FakeRuntime,
+  options: Omit<PrepareDevTunnelsOptions, 'runtime' | 'ownershipStore'> = {},
+) {
+  return prepareDevTunnelsBackend({
+    processId: 4242,
+    ...options,
+    runtime,
+    ownershipStore: runtime.ownershipStore,
+  });
 }
 
 describe('prepareDevTunnelsBackend()', () => {
@@ -238,12 +288,172 @@ describe('findDevTunnelExecutable()', () => {
   });
 });
 
+describe('FileTemporaryTunnelOwnershipStore', () => {
+  it('atomically replaces lifecycle state and removes the exact ownership record', async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), 'mobily-tunnel-ownership-'));
+    const store = new FileTemporaryTunnelOwnershipStore(directory);
+    const ownership: TemporaryTunnelOwnership = {
+      version: 1,
+      tunnelId: 'abc',
+      ownerRunId: 'run-123',
+      createdAt: '2026-07-21T07:00:00.000Z',
+      state: 'ready',
+    };
+
+    try {
+      await store.save(ownership);
+      const [recordFile] = readdirSync(directory);
+      expect(recordFile).toMatch(/^[a-f0-9]{64}\.json$/);
+      await expect(store.list()).resolves.toEqual([ownership]);
+      expect(JSON.parse(readFileSync(path.join(directory, recordFile!), 'utf8'))).toEqual(
+        ownership,
+      );
+
+      const deletingOwnership: TemporaryTunnelOwnership = {
+        ...ownership,
+        state: 'deleting',
+      };
+      await store.save(deletingOwnership);
+      expect(readdirSync(directory)).toEqual([recordFile]);
+      expect(JSON.parse(readFileSync(path.join(directory, recordFile!), 'utf8'))).toEqual(
+        deletingOwnership,
+      );
+
+      await store.remove(deletingOwnership);
+      expect(readdirSync(directory)).toEqual([]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Temporary Tunnel startup recovery', () => {
+  const staleOwnership = (
+    overrides: Partial<TemporaryTunnelOwnership> = {},
+  ): TemporaryTunnelOwnership => ({
+    version: 1,
+    tunnelId: 'stale-tunnel',
+    ownerRunId: 'stale-run',
+    ownerProcessId: 111,
+    createdAt: '2026-07-21T06:00:00.000Z',
+    state: 'ready',
+    ...overrides,
+  });
+
+  it('deletes stale recorded tunnels before creating a new Dev Tunnel', async () => {
+    const runtime = new FakeRuntime();
+    await runtime.ownershipStore.save(staleOwnership());
+    runtime.ownershipStore.events.length = 0;
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+    );
+
+    const backend = await prepareFakeBackend(runtime, {
+      runId: 'current-run',
+      isProcessAlive: () => false,
+    });
+
+    expect(runtime.calls.map((call) => call.args)).toEqual([['user', 'show']]);
+    expect(runtime.hostCalls).toHaveLength(0);
+
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://new-tunnel-4321.usw2.devtunnels.ms/');
+    await expect(connecting).resolves.toMatchObject({
+      url: 'wss://new-tunnel-4321.usw2.devtunnels.ms/',
+    });
+    expect(runtime.calls.map((call) => call.args)).toEqual([
+      ['user', 'show'],
+      ['delete', 'stale-tunnel'],
+    ]);
+    expect(runtime.ownershipStore.records.size).toBe(1);
+  });
+
+  it('protects a recorded tunnel whose owning CLI process is still live', async () => {
+    const runtime = new FakeRuntime();
+    await runtime.ownershipStore.save(staleOwnership({ tunnelId: 'live-tunnel' }));
+    runtime.ownershipStore.events.length = 0;
+
+    const backend = await prepareFakeBackend(runtime, {
+      runId: 'current-run',
+      isProcessAlive: (processId) => processId === 111,
+    });
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://current-4321.usw2.devtunnels.ms/');
+    await connecting;
+
+    expect(runtime.calls.map((call) => call.args)).toEqual([['user', 'show']]);
+    expect([...runtime.ownershipStore.records.values()]).toContainEqual(
+      staleOwnership({ tunnelId: 'live-tunnel' }),
+    );
+  });
+
+  it('treats a missing stale tunnel as cleaned and removes its record', async () => {
+    const runtime = new FakeRuntime();
+    await runtime.ownershipStore.save(staleOwnership());
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 1, stdout: '', stderr: 'Tunnel was not found' },
+    );
+
+    const backend = await prepareFakeBackend(runtime, { isProcessAlive: () => false });
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://current-4321.usw2.devtunnels.ms/');
+
+    await expect(connecting).resolves.toMatchObject({
+      url: 'wss://current-4321.usw2.devtunnels.ms/',
+    });
+    expect([...runtime.ownershipStore.records.values()]).toMatchObject([
+      { tunnelId: 'current', ownerRunId: expect.any(String) },
+    ]);
+  });
+
+  it('retains the record and blocks creation when stale cleanup fails', async () => {
+    const runtime = new FakeRuntime();
+    await runtime.ownershipStore.save(staleOwnership());
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 1, stdout: '', stderr: 'Bearer super-secret-token' },
+    );
+
+    const backend = await prepareFakeBackend(runtime, { isProcessAlive: () => false });
+    const expectedError = new UserFacingError(
+      "Dev Tunnels could not delete temporary tunnel 'stale-tunnel'. Run `devtunnel delete stale-tunnel`, then rerun Mobily. No new Dev Tunnel was created.",
+    );
+
+    await expect(backend.connect(4321)).rejects.toEqual(expectedError);
+    await expect(backend.connect(4321)).rejects.toEqual(expectedError);
+    expect(runtime.hostCalls).toHaveLength(0);
+    expect([...runtime.ownershipStore.records.values()]).toMatchObject([
+      { tunnelId: 'stale-tunnel', state: 'deleting' },
+    ]);
+
+    const local = new LocalBackend({
+      key: 'key',
+      cert: 'cert',
+      certificatePin: 'sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    });
+    await expect(local.connect(4321)).resolves.toMatchObject({
+      url: expect.stringMatching(/^wss:/),
+    });
+  });
+});
+
 describe('DevTunnelsBackend', () => {
   it('hosts the local HTTP port and returns the port-specific secure WebSocket URL', async () => {
     const runtime = new FakeRuntime();
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime, {
+      runId: 'run-123',
+      now: () => new Date('2026-07-21T07:00:00.000Z'),
+    });
 
     const connecting = backend.connect(4321);
     host.stdout.write(
@@ -262,6 +472,40 @@ describe('DevTunnelsBackend', () => {
       'http',
     ]);
     expect(connection.url).toBe('wss://abc-4321.usw2.devtunnels.ms/');
+    expect(runtime.ownershipStore.events).toEqual([
+      {
+        action: 'save',
+        ownership: {
+          version: 1,
+          tunnelId: 'abc',
+          ownerRunId: 'run-123',
+          ownerProcessId: 4242,
+          createdAt: '2026-07-21T07:00:00.000Z',
+          state: 'ready',
+        },
+      },
+    ]);
+  });
+
+  it('does not report a tunnel ready when durable ownership recording fails', async () => {
+    const runtime = new FakeRuntime();
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+    );
+    runtime.ownershipStore.saveError = new Error('disk unavailable');
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareFakeBackend(runtime, { runId: 'run-record-failure' });
+
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
+
+    await expect(connecting).rejects.toThrow(
+      "could not record ownership of temporary tunnel 'abc'",
+    );
+    expect(host.signals).toEqual(['SIGINT']);
+    expect(runtime.calls.map((call) => call.args)).toContainEqual(['delete', 'abc']);
   });
 
   it.each(['linux', 'win32'] as const)(
@@ -271,7 +515,7 @@ describe('DevTunnelsBackend', () => {
       runtime.platform = platform;
       const host = new FakeHostProcess();
       runtime.hosts.push(host);
-      const backend = await prepareDevTunnelsBackend({ runtime });
+      const backend = await prepareFakeBackend(runtime);
       const connecting = backend.connect(4321);
       host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
       const connection = await connecting;
@@ -283,6 +527,7 @@ describe('DevTunnelsBackend', () => {
         args: ['delete', 'abc'],
         inheritStdio: false,
       });
+      expect(runtime.ownershipStore.records.size).toBe(0);
     },
   );
 
@@ -294,16 +539,19 @@ describe('DevTunnelsBackend', () => {
     );
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime);
     const connecting = backend.connect(4321);
     host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
     const connection = await connecting;
 
     await expect(connection.disconnect()).rejects.toEqual(
       new UserFacingError(
-        "Dev Tunnels could not delete temporary tunnel 'abc'. Delete it with `devtunnel delete abc` before starting Mobily again. service unavailable",
+        "Dev Tunnels could not delete temporary tunnel 'abc'. Run `devtunnel delete abc`, then rerun Mobily.",
       ),
     );
+    expect([...runtime.ownershipStore.records.values()]).toMatchObject([
+      { tunnelId: 'abc', state: 'deleting' },
+    ]);
   });
 
   it('accepts a temporary tunnel that graceful shutdown already deleted', async () => {
@@ -314,20 +562,55 @@ describe('DevTunnelsBackend', () => {
     );
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime);
     const connecting = backend.connect(4321);
     host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
     const connection = await connecting;
 
     await expect(connection.disconnect()).resolves.toBeUndefined();
+    expect(runtime.ownershipStore.records.size).toBe(0);
+  });
+
+  it('deletes only the tunnel owned by this connection', async () => {
+    const runtime = new FakeRuntime();
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+    );
+    await runtime.ownershipStore.save({
+      version: 1,
+      tunnelId: 'other-user-tunnel',
+      ownerRunId: 'other-run',
+      ownerProcessId: 999,
+      createdAt: '2026-07-21T06:00:00.000Z',
+      state: 'ready',
+    });
+    runtime.ownershipStore.events.length = 0;
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareFakeBackend(runtime, {
+      runId: 'current-run',
+      isProcessAlive: (processId) => processId === 999,
+    });
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://owned-4321.usw2.devtunnels.ms/');
+    const connection = await connecting;
+
+    await connection.disconnect();
+
+    expect(runtime.calls.filter((call) => call.args[0] === 'delete')).toEqual([
+      { args: ['delete', 'owned'], inheritStdio: false },
+    ]);
+    expect([...runtime.ownershipStore.records.values()]).toMatchObject([
+      { tunnelId: 'other-user-tunnel', ownerRunId: 'other-run' },
+    ]);
   });
 
   it('times out with a user-facing error when the helper never becomes ready', async () => {
     const runtime = new FakeRuntime();
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({
-      runtime,
+    const backend = await prepareFakeBackend(runtime, {
       readinessTimeoutMs: 5,
     });
 
@@ -339,9 +622,10 @@ describe('DevTunnelsBackend', () => {
     const runtime = new FakeRuntime();
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime);
 
     const connecting = backend.connect(4321);
+    await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(1));
     host.stderr.write('Error: unsupported helper version\n');
     host.exit(2);
 
@@ -356,9 +640,10 @@ describe('DevTunnelsBackend', () => {
     const runtime = new FakeRuntime();
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime);
 
     const connecting = backend.connect(4321);
+    await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(1));
     host.stderr.write('Error: The maximum number of tunnels has been reached.\n');
     host.exit(1);
 
@@ -376,7 +661,7 @@ describe('DevTunnelsBackend', () => {
       const host = new FakeHostProcess();
       host.autoExitOnKill = false;
       runtime.hosts.push(host);
-      const backend = await prepareDevTunnelsBackend({ runtime });
+      const backend = await prepareFakeBackend(runtime);
       const connecting = backend.connect(4321);
       host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
       const connection = await connecting;
@@ -403,11 +688,13 @@ describe('DevTunnelsBackend', () => {
     const firstHost = new FakeHostProcess();
     const secondHost = new FakeHostProcess();
     runtime.hosts.push(firstHost, secondHost);
-    const backend = await prepareDevTunnelsBackend({ runtime });
+    const backend = await prepareFakeBackend(runtime);
 
     const connecting = backend.connect(4321);
-    queueMicrotask(() => firstHost.exit(1));
-    setTimeout(() => secondHost.stdout.write('https://abc-4321.usw2.devtunnels.ms/'), 0);
+    await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(1));
+    firstHost.exit(1);
+    await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(2));
+    secondHost.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
 
     await expect(connecting).resolves.toMatchObject({
       url: 'wss://abc-4321.usw2.devtunnels.ms/',

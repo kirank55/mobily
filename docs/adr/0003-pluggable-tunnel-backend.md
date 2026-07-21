@@ -30,6 +30,38 @@ credential caching; Mobily owns the guided first-run experience and temporary
 tunnel lifecycle. See
 [`docs/devtunnels-provisioning.md`](../devtunnels-provisioning.md).
 
+### Durable Temporary Tunnel ownership
+
+Every Dev Tunnel created by Mobily is a Temporary Tunnel. After the helper
+returns its remote identity, Mobily atomically writes a private ownership record
+under `~/.mobily/temporary-tunnels/` before exposing the tunnel URL. A record
+contains the tunnel identity, a distinct CLI run identity, its creation time,
+its owning process identity, and its lifecycle state (`ready` or `deleting`).
+
+Normal shutdown first marks that exact record as deleting, stops the helper,
+and explicitly asks the provider to delete that tunnel identity. Provider
+"not found" responses are successful idempotent cleanup. The record is removed
+only after confirmed or idempotent deletion; ambiguous failures retain it for
+recovery.
+
+This record is Mobily's ownership boundary. Cleanup may address only identities
+from records Mobily wrote. It must not list the account's tunnels to infer
+ownership, adopt an unrecorded tunnel, or issue provider-wide deletion.
+
+Before Mobily creates a new Dev Tunnel, it scans these records and checks the
+owning process. Records belonging to another live CLI run are left untouched.
+For each stale record, Mobily marks it deleting, deletes that exact tunnel, and
+then removes the record. A provider "not found" result is successful recovery,
+which makes repeated recovery idempotent.
+
+If any stale tunnel cannot be deleted or its durable record cannot be updated,
+Mobily retains the record and refuses to create another Dev Tunnel in that run.
+Creating another remote resource would compound the leak and can exhaust the
+account quota. The error identifies the tunnel and gives a specific manual
+delete or local-record recovery action without reproducing provider output,
+which may contain credentials. This reconciliation is part of the Dev Tunnels
+backend only; explicitly selecting the secure local backend remains available.
+
 ## Why the interface exists
 
 Driven by FOSS goals: an open-source project shouldn't force users onto a single
