@@ -25,7 +25,7 @@ A persistent terminal interaction on the Station. When `tmux` is available, back
 _Avoid_: Connection (that's the WebSocket link, not the terminal session)
 
 **Terminal Size Owner**:
-The single active viewer whose geometry defines a Session's terminal grid. The Station grants ownership to the most recently foregrounded Android terminal and reclaims it when that terminal leaves or disconnects; other viewers remain interactive but cannot resize the Session.
+The single active viewer whose geometry defines a Session's terminal grid. The Station owns dimensions by default. Android does not claim ownership; it scales the Station grid into the phone viewport (Fit) and leaves readability to user zoom/pan.
 _Avoid_: Authoritative grid, primary terminal
 
 **Session Snapshot**:

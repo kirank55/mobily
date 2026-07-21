@@ -64,33 +64,17 @@ replay, moving the viewer away from the current screen, or overwriting newer
 output.
 
 Terminal dimensions are governed by explicit Terminal Size Ownership rather
-than connection lifetime. The Station owns dimensions by default. An
-authenticated Android terminal claims ownership only while its terminal route
-is visible and the app is foregrounded; accepted Android resize frames then
-resize the shared Session grid seen by every viewer. Leaving the route or
-backgrounding the app releases ownership after a short debounce. The most
-recent new foreground claim becomes owner. Earlier foreground claimants remain
-eligible while their leases are refreshed, so owner release, disconnect, or
-lease expiry transfers control to the next most-recent valid claimant. The
-Station's latest dimensions are restored only when no Android claimant remains.
-Reconnection never inherits an earlier socket's claim.
+than connection lifetime. The Station owns dimensions by default and remains
+the size owner for the shared Session grid. Android does not claim ownership
+or emit Session resize frames; it scales the Station grid into the phone
+viewport so the full desktop layout remains visible, and leaves readability
+to user zoom and pan. The protocol still supports Android claim/release frames
+for compatibility, but the Android app does not use them.
 
-Android refreshes its bounded claim lease while it remains a foreground
-terminal. Refreshing an existing claim extends its validity without changing
-foreground recency. The Session identifies the one owning socket, ignores
-resize frames from non-owners while preserving their input and output access,
-and broadcasts requester-specific owner state and dimension changes. This makes
-visibility, not mere authentication or WebSocket connectivity, the authority
-boundary.
-
-While Android owns the size, it derives candidate rows and columns from the
-usable terminal viewport at a readable font size rather than shrinking a
-desktop-sized grid into the phone. System insets, the soft keyboard, and the
-extra key row are outside that usable viewport. Orientation changes and
-explicit font-size adjustments emit debounced owner resize requests and may
-persist the font preference. Pinch zoom remains a visual transform only and
-does not reflow the Session; when visual scale exceeds the viewport the stage
-stays pannable.
+Pinch zoom and Fit are visual transforms only and do not reflow the Session;
+when visual scale exceeds the viewport the stage stays pannable. Font-size
+controls on Android adjust local rendering and re-fit the scaled view without
+changing Station columns or rows.
 
 ## Consequences
 
@@ -106,12 +90,9 @@ stays pannable.
   consumed the corresponding PTY chunk.
 - The Station and Android use matching xterm semantics, at the cost of a
   headless xterm dependency in the CLI.
-- The most recently foregrounded Android terminal selects the one shared grid;
-  valid earlier claimants provide deterministic fallback without leaving a
-  stale background or disconnected client in control.
-- Owner-selected phone dimensions prioritize readable text over preserving a
-  workstation column count, so full-screen TUIs reflow while Android owns size.
-- Restoring Station ownership may resize a full-screen application back to the
-  Station's latest local grid.
+- The Station remains Terminal Size Owner so workstation layouts stay intact
+  while Android scales the full grid into the phone viewport.
+- Android Fit and pinch zoom trade font size for a complete desktop frame;
+  they do not reflow full-screen TUIs on the Station.
 - Snapshot size is proportional to the visible grid and is capped by both
   frame-size and cell-count limits.

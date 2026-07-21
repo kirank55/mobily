@@ -35,6 +35,7 @@ describe('terminal document', () => {
     expect(production).toContain("msg.type==='paste'");
     expect(production).toContain('proposeOwnerGrid');
     expect(production).toContain("sendRN({type:'resize'");
+    expect(production).toContain("msg.type==='fit')fitView()");
     expect(readFileSync(resolve(__dirname, '../dev/term.html'), 'utf8')).toContain(
       '[mobily harness] terminal ready',
     );

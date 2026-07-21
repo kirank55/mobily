@@ -569,7 +569,10 @@ ${VIEWPORT_HELPERS}
   function setSizeOwnership(owned){
     ownsSize=!!owned;
     if(ownsSize)proposeOwnerGrid();
-    else gridProposer.reset();
+    else{
+      gridProposer.reset();
+      requestAnimationFrame(fitView);
+    }
   }
   function setSelectionMode(enabled){
     selectionMode=!!enabled;document.body.classList.toggle('selecting',selectionMode);
@@ -601,7 +604,7 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='size-ownership')setSizeOwnership(msg.owned);
     else if(msg.type==='font-size'&&typeof msg.fontSize==='number')setFontSize(msg.fontSize);
     else if(msg.type==='font-delta'&&typeof msg.delta==='number')setFontSize(fontSize+msg.delta);
-    else if(msg.type==='fit'){if(ownsSize){scale=1;applyScale(1);proposeOwnerGrid();}else fitView();}
+    else if(msg.type==='fit')fitView();
     else if(msg.type==='zoom'&&typeof msg.delta==='number')applyScale(scale+msg.delta);
     else if(msg.type==='selection-mode')setSelectionMode(msg.enabled);
     else if(msg.type==='copy-selection'&&term)sendRN({type:'copy',data:term.getSelection()});

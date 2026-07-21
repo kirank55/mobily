@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import type { SessionSnapshotFrame } from '@mobily/shared';
 
@@ -32,14 +32,11 @@ export default function TerminalRoute() {
     detail,
     errorKind,
     pairing,
-    ownsTerminalSize,
     connect,
     disconnect,
     retry,
     sendInput,
-    sendResize,
     acknowledgeSnapshotApplied,
-    setTerminalVisible,
     subscribeOutput,
     subscribeResize,
     subscribeSnapshot,
@@ -90,13 +87,6 @@ export default function TerminalRoute() {
     };
   }, [connect]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setTerminalVisible(true);
-      return () => setTerminalVisible(false);
-    }, [setTerminalVisible]),
-  );
-
   useEffect(() => {
     let cancelled = false;
     void loadTerminalFontSize().then((size) => {
@@ -114,8 +104,9 @@ export default function TerminalRoute() {
 
   useEffect(() => {
     if (!termReady) return;
-    termRef.current?.setSizeOwnership(ownsTerminalSize);
-  }, [termReady, ownsTerminalSize]);
+    // Station owns the Session grid; Android only scales the desktop view.
+    termRef.current?.setSizeOwnership(false);
+  }, [termReady]);
 
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {
@@ -181,14 +172,6 @@ export default function TerminalRoute() {
     setSnapshotApplied(true);
     acknowledgeSnapshotApplied();
   }, [acknowledgeSnapshotApplied]);
-
-  const handleOwnerResize = useCallback(
-    (cols: number, rows: number) => {
-      sessionSize.current = { cols, rows };
-      sendResize(cols, rows);
-    },
-    [sendResize],
-  );
 
   const handleFontSize = useCallback((next: number) => {
     setFontSize(next);
@@ -350,7 +333,6 @@ export default function TerminalRoute() {
           onReady={handleTerminalReady}
           onSnapshotApplied={handleSnapshotApplied}
           onInput={handleTermInput}
-          onResize={handleOwnerResize}
           onFontSize={handleFontSize}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {

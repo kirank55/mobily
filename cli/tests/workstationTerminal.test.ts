@@ -125,7 +125,7 @@ describe('attachWorkstationTerminal()', () => {
 
     backend.emit('\u001b[2Kphone command and result\r\n');
     input.emit('data', 'echo λ from workstation\r\npasted line');
-    input.emit('data', '\u0018');
+    input.emit('data', '\u0003');
 
     expect(output.chunks.at(-1)).toBe('\u001b[2Kphone command and result\r\n');
     expect(backend.writes).toEqual(['echo λ from workstation\r\npasted line', '\u0003']);
@@ -140,9 +140,9 @@ describe('attachWorkstationTerminal()', () => {
     output.emit('resize');
     expect(backend.resizes.at(-1)).toEqual([80, 24]);
 
-    input.emit('data', '\u0003not forwarded');
+    input.emit('data', '\u0018not forwarded');
     expect(onShutdown).toHaveBeenCalledOnce();
-    expect(onShutdown).toHaveBeenCalledWith('ctrl-c');
+    expect(onShutdown).toHaveBeenCalledWith('ctrl-x');
     expect(backend.writes).not.toContain('not forwarded');
 
     backend.emitExit({ exitCode: 0 });

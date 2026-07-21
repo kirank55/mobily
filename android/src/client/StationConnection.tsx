@@ -16,7 +16,6 @@ import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
 import { RpcClient } from './rpcClient';
 import { ForegroundConnectionController } from '@/foreground/controller';
 import { allowInsecureStationTransport } from '@/dev/insecureTransport';
-import { TerminalSizeOwnershipController } from '@/terminal/sizeOwnership';
 import { SessionSnapshotChannel } from './sessionSnapshotChannel';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
@@ -30,14 +29,11 @@ interface StationConnectionValue {
   detail: string;
   errorKind: ErrorKind;
   rpc: RpcClient | null;
-  ownsTerminalSize: boolean;
   connect(pairing: PairingRecord): void;
   disconnect(): void;
   retry(): void;
   sendInput(data: string, latencyTag?: string): void;
-  sendResize(cols: number, rows: number): void;
   acknowledgeSnapshotApplied(): void;
-  setTerminalVisible(visible: boolean): void;
   subscribeOutput(listener: OutputListener): () => void;
   subscribeResize(listener: ResizeListener): () => void;
   subscribeSnapshot(listener: SnapshotListener): () => void;
@@ -52,7 +48,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const [detail, setDetail] = useState('');
   const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
   const [rpc, setRpc] = useState<RpcClient | null>(null);
-  const [ownsTerminalSize, setOwnsTerminalSize] = useState(false);
   const clientRef = useRef<WsClient | null>(null);
   const rpcRef = useRef<RpcClient | null>(null);
   const pairingRef = useRef<PairingRecord | null>(null);
@@ -62,23 +57,8 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
   const [snapshotChannel] = useState(() => new SessionSnapshotChannel());
-  const [sizeOwnership] = useState(
-    () =>
-      new TerminalSizeOwnershipController({
-        claim() {},
-        release() {},
-      }),
-  );
-
-  useEffect(() => {
-    sizeOwnership.setActions({
-      claim: () => clientRef.current?.claimTerminalSize(),
-      release: () => clientRef.current?.releaseTerminalSize(),
-    });
-  }, [sizeOwnership]);
 
   const disconnect = useCallback(() => {
-    sizeOwnership.setConnected(false);
     rpcRef.current?.disconnect();
     clientRef.current?.disconnect();
     clientRef.current = null;
@@ -86,12 +66,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     pairingRef.current = null;
     latestResize.current = null;
     snapshotChannel.reset();
-    setOwnsTerminalSize(false);
     setRpc(null);
     setPairing(null);
     setState('disconnected');
     void foreground.current.disconnect();
-  }, [sizeOwnership, snapshotChannel]);
+  }, [snapshotChannel]);
 
   const connect = useCallback(
     (nextPairing: PairingRecord) => {
@@ -107,7 +86,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       clientRef.current?.disconnect();
       latestResize.current = null;
       snapshotChannel.reset();
-      setOwnsTerminalSize(false);
       let client!: WsClient;
       const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
       client = new WsClient({
@@ -118,8 +96,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         allowInsecureTransport: allowInsecureStationTransport(),
         protocolVersion: PROTOCOL_VERSION,
         onStateChange: (nextState, nextDetail) => {
-          sizeOwnership.setConnected(nextState === 'connected');
-          if (nextState !== 'connected') setOwnsTerminalSize(false);
           setState(nextState);
           setDetail(nextDetail ?? '');
           if (
@@ -149,9 +125,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         onScrollback: (data) => {
           for (const listener of scrollbackListeners.current) listener(data);
         },
-        onTerminalSizeOwner: (owner) => {
-          setOwnsTerminalSize(owner.ownedByRequester);
-        },
         onAlert: (message) => void foreground.current.alert(message),
         onRpcFrame: (frame) => nextRpc.handleFrame(frame),
         onReady: () => {
@@ -173,7 +146,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       void foreground.current.connect(nextPairing.stationName);
       client.connect();
     },
-    [sizeOwnership, snapshotChannel],
+    [snapshotChannel],
   );
 
   const retry = useCallback(() => {
@@ -183,18 +156,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const sendInput = useCallback((data: string, latencyTag?: string) => {
     clientRef.current?.sendInput(data, latencyTag);
   }, []);
-  const sendResize = useCallback((cols: number, rows: number) => {
-    clientRef.current?.sendResize(cols, rows);
-  }, []);
   const acknowledgeSnapshotApplied = useCallback(() => {
     clientRef.current?.acknowledgeSnapshotApplied();
   }, []);
-  const setTerminalVisible = useCallback(
-    (visible: boolean) => {
-      sizeOwnership.setTerminalVisible(visible);
-    },
-    [sizeOwnership],
-  );
   const subscribeOutput = useCallback((listener: OutputListener) => {
     outputListeners.current.add(listener);
     return () => outputListeners.current.delete(listener);
@@ -215,9 +179,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    sizeOwnership.setAppActive(AppState.currentState === 'active');
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      sizeOwnership.setAppActive(nextState === 'active');
       if (nextState !== 'active' || !clientRef.current) return;
       const current = clientRef.current.currentState;
       if (
@@ -229,7 +191,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       }
     });
     return () => subscription.remove();
-  }, [errorKind, sizeOwnership]);
+  }, [errorKind]);
 
   useEffect(() => () => disconnect(), [disconnect]);
 
@@ -240,14 +202,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       detail,
       errorKind,
       rpc,
-      ownsTerminalSize,
       connect,
       disconnect,
       retry,
       sendInput,
-      sendResize,
       acknowledgeSnapshotApplied,
-      setTerminalVisible,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
@@ -259,14 +218,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       detail,
       errorKind,
       rpc,
-      ownsTerminalSize,
       connect,
       disconnect,
       retry,
       sendInput,
-      sendResize,
       acknowledgeSnapshotApplied,
-      setTerminalVisible,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,

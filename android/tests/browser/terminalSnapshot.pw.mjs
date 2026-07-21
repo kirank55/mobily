@@ -539,11 +539,11 @@ function openCodeSnapshotForGrid(cols, rows) {
     bg: { mode: 'palette', value: 17 },
     attrs: 1,
   });
-  writeRow(grid[1], '┌─ workspace ───────────────────────┐');
-  writeRow(grid[2], '│ model: GPT-5');
-  writeRow(grid[3], '│ ✓ READY redraw');
-  writeRow(grid[4], '│ plan 界 step');
-  writeRow(grid[5], '╰─› implement issue 6');
+  writeRow(grid[1], '?? workspace ????????????????????????');
+  writeRow(grid[2], '? model: GPT-5');
+  writeRow(grid[3], '? ? READY redraw');
+  writeRow(grid[4], '? plan ? step');
+  writeRow(grid[5], '??? implement issue 6');
   return {
     type: 'session-snapshot',
     cols,
@@ -557,7 +557,7 @@ function openCodeSnapshotForGrid(cols, rows) {
 function writeRow(row, text, style = {}, start = 0) {
   let column = start;
   for (const chars of text) {
-    const width = chars === '界' ? 2 : 1;
+    const width = chars === '?' ? 2 : 1;
     if (column >= row.length) break;
     row[column] = { chars, width, ...style };
     if (width === 2 && column + 1 < row.length) row[column + 1] = { chars: '', width: 0, ...style };

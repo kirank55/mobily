@@ -2,7 +2,6 @@ import type { Session } from './session.js';
 import type { SessionBackend } from './mux/types.js';
 import type { IDisposable } from './pty/node-pty.js';
 
-const CTRL_C = '\u0003';
 const CTRL_X = '\u0018';
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -48,7 +47,7 @@ export interface WorkstationTerminalOptions {
 }
 
 export type WorkstationShutdownCause =
-  'ctrl-c' | 'input-closed' | 'session-exited' | 'output-failed';
+  'ctrl-x' | 'input-closed' | 'session-exited' | 'output-failed';
 
 export function shouldEmbedWorkstationTerminal(
   backend: Pick<SessionBackend, 'kind'>,
@@ -105,12 +104,12 @@ export function attachWorkstationTerminal(
     attachment.resize(cols, rows);
   };
   const onData = (data: string): void => {
-    const shutdownIndex = data.indexOf(CTRL_C);
-    const sessionInput = inputFilter
-      .push(shutdownIndex === -1 ? data : data.slice(0, shutdownIndex))
-      .replaceAll(CTRL_X, CTRL_C);
+    const shutdownIndex = data.indexOf(CTRL_X);
+    const sessionInput = inputFilter.push(
+      shutdownIndex === -1 ? data : data.slice(0, shutdownIndex),
+    );
     if (sessionInput.length > 0) attachment.input(sessionInput);
-    if (shutdownIndex !== -1) requestShutdown('ctrl-c');
+    if (shutdownIndex !== -1) requestShutdown('ctrl-x');
   };
   const onInputClosed = (): void => requestShutdown('input-closed');
 

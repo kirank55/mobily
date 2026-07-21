@@ -292,7 +292,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
   if (embedsWorkstation) {
-    console.log('Controls:     Ctrl+C exits Mobily; Ctrl+X interrupts the shared session.');
+    console.log('Controls:     Ctrl+C interrupts the shared session; Ctrl+X exits Mobily.');
     console.log(
       'Waiting for the Android app to authenticate; this terminal will continue automatically.',
     );
@@ -358,8 +358,8 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
 
 function workstationShutdownMessage(reason: WorkstationShutdownCause): string {
   switch (reason) {
-    case 'ctrl-c':
-      return 'Ctrl+C received';
+    case 'ctrl-x':
+      return 'Ctrl+X received';
     case 'input-closed':
       return 'Input closed';
     case 'session-exited':
