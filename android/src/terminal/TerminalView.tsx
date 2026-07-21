@@ -2,7 +2,7 @@
  * src/terminal/TerminalView.tsx
  *
  * WebView-based xterm.js terminal.
- * Bridges output (RN → WebView via injectJavaScript) and input/resize
+ * Bridges output (RN → WebView via postMessage) and input/resize
  * (WebView → RN via onMessage).
  *
  * rAF batching lives inside the generated inline document; we send raw data as fast
@@ -10,45 +10,72 @@
  * loop coalesce writes at display frequency.
  */
 
-import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useRef, useCallback, forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
 import type { SessionSnapshotFrame } from '@mobily/shared';
-import { XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
+import {
+  TERMINAL_HELPERS_JS,
+  XTERM_CSS,
+  XTERM_FIT_JS,
+  XTERM_JS,
+} from './xtermAssets.generated';
 import { parseTerminalBridgeMessage } from './bridge';
+import {
+  rendererStartupPresentation,
+  TerminalRendererStartup,
+  type RendererStartupState,
+} from './rendererStartup';
 import { buildTerminalDocument } from './terminalDocument';
 import type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
 
 export type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
 
-// Build the terminal source object.
-// We embed the terminal HTML and generated, pinned xterm assets inline so it
-// works offline without granting the WebView filesystem or network access.
-function getTerminalSource(): { uri: string } | { html: string; baseUrl: string } {
-  // A synthetic HTTPS base gives the static document a non-file origin while
-  // CSP blocks all network access.
-  return {
-    html: TERMINAL_HTML_CONTENT,
-    baseUrl: 'https://localhost',
-  };
-}
-
 export const TERMINAL_HTML_CONTENT = buildTerminalDocument({
   xtermCss: XTERM_CSS,
   xtermJs: XTERM_JS,
   xtermFitJs: XTERM_FIT_JS,
+  terminalHelpersJs: TERMINAL_HELPERS_JS,
 });
+
+// Stable for the mounted view's entire lifetime, so ordinary React renders
+// cannot make react-native-webview reload the offline terminal document.
+const TERMINAL_SOURCE = {
+  html: TERMINAL_HTML_CONTENT,
+  baseUrl: 'https://localhost',
+};
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
   { onReady, onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
+  const onReadyRef = useRef(onReady);
+  const [rendererState, setRendererState] = useState<RendererStartupState>('loading');
+  const [rendererGeneration, setRendererGeneration] = useState(0);
+  const startupRef = useRef<TerminalRendererStartup | null>(null);
+  onReadyRef.current = onReady;
+
+  if (startupRef.current === null) {
+    startupRef.current = new TerminalRendererStartup({
+      sendProbe: () => webViewRef.current?.postMessage(JSON.stringify({ type: 'ready-probe' })),
+      onStateChange: setRendererState,
+      onReady: () => onReadyRef.current?.(),
+    });
+  }
 
   const postToWebView = useCallback((msg: Record<string, unknown>) => {
-    const escaped = JSON.stringify(JSON.stringify(msg));
-    const js = `(function(){try{window.dispatchEvent(new MessageEvent('message',{data:${escaped}}));}catch(e){}})();true;`;
-    webViewRef.current?.injectJavaScript(js);
+    webViewRef.current?.postMessage(JSON.stringify(msg));
+  }, []);
+
+  useEffect(() => {
+    const startup = startupRef.current;
+    return () => startup?.stop();
+  }, []);
+
+  const retryRenderer = useCallback(() => {
+    startupRef.current?.retry();
+    setRendererGeneration((current) => current + 1);
   }, []);
 
   useImperativeHandle(
@@ -109,7 +136,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (!msg) return;
       switch (msg.type) {
         case 'ready':
-          onReady?.();
+          startupRef.current?.rendererReady();
           break;
         case 'snapshot-applied':
           onSnapshotApplied?.();
@@ -131,18 +158,22 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           break;
       }
     },
-    [onReady, onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats],
+    [onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats],
   );
 
   const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;
+  const startupPresentation = rendererStartupPresentation(rendererState);
 
   return (
     <View style={styles.container}>
       <WebViewAny
+        key={rendererGeneration}
         ref={webViewRef}
-        source={getTerminalSource()}
+        source={TERMINAL_SOURCE}
         style={styles.webview}
         onMessage={handleMessage}
+        onLoadStart={() => startupRef.current?.beginLoad()}
+        onLoadEnd={() => startupRef.current?.pageLoaded()}
         javaScriptEnabled={true}
         domStorageEnabled={false}
         originWhitelist={['https://localhost']}
@@ -162,6 +193,26 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         setSupportMultipleWindows={false}
         thirdPartyCookiesEnabled={false}
       />
+      {startupPresentation && (
+        <View style={styles.rendererOverlay} accessibilityLiveRegion="polite">
+          <Text style={styles.rendererMessage}>{startupPresentation.message}</Text>
+          {startupPresentation.canRetry && (
+            <>
+              <Text style={styles.rendererDetail}>
+                The Station connection and Device Key pairing are unchanged.
+              </Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={retryRenderer}
+                accessibilityRole="button"
+                accessibilityLabel="Retry terminal renderer"
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
     </View>
   );
 });
@@ -169,6 +220,29 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 export default TerminalView;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a1a' },
+  container: { flex: 1, position: 'relative', backgroundColor: '#1a1a1a' },
+  rendererOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    padding: 24,
+    backgroundColor: '#0d1117',
+  },
+  rendererMessage: { color: '#c9d1d9', fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  rendererDetail: { color: '#8b949e', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  retryButton: {
+    marginTop: 4,
+    borderRadius: 8,
+    backgroundColor: '#238636',
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+  },
+  retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   webview: { flex: 1, backgroundColor: 'transparent' },
 });

@@ -1,7 +1,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildTerminalDocument } from '../src/terminal/terminalDocument.js';
+import {
+  buildTerminalDocument,
+  buildTerminalHelpersSource,
+} from '../src/terminal/terminalDocument.js';
 
 const androidRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = resolve(androidRoot, '..');
@@ -24,6 +27,11 @@ for (const [name, path] of Object.entries(sources)) {
   }
   lines.push(`export const ${name} = ${JSON.stringify(contents)};`);
 }
+const terminalHelpersJs = buildTerminalHelpersSource();
+if (/<\/script/i.test(terminalHelpersJs)) {
+  throw new Error('terminal helper source contains an unsafe HTML closing tag');
+}
+lines.push(`export const TERMINAL_HELPERS_JS = ${JSON.stringify(terminalHelpersJs)};`);
 
 writeFileSync(
   resolve(androidRoot, 'src/terminal/xtermAssets.generated.ts'),
@@ -55,6 +63,7 @@ writeFileSync(
     xtermJs: assets.XTERM_JS,
     xtermFitJs: assets.XTERM_FIT_JS,
     devBridgeJs,
+    terminalHelpersJs,
   }),
   'utf8',
 );

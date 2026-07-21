@@ -13,7 +13,12 @@ import {
 } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { SessionSnapshotFrame } from '@mobily/shared';
-import { XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
+import {
+  TERMINAL_HELPERS_JS,
+  XTERM_CSS,
+  XTERM_FIT_JS,
+  XTERM_JS,
+} from './xtermAssets.generated';
 import { parseTerminalBridgeMessage } from './bridge';
 import { buildTerminalDocument } from './terminalDocument';
 import type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
@@ -24,6 +29,7 @@ export const TERMINAL_HTML_CONTENT = buildTerminalDocument({
   xtermCss: XTERM_CSS,
   xtermJs: XTERM_JS,
   xtermFitJs: XTERM_FIT_JS,
+  terminalHelpersJs: TERMINAL_HELPERS_JS,
 });
 
 const IFRAME_MESSAGE_SOURCE = 'mobily-terminal';

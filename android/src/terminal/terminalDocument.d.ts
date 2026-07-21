@@ -1,10 +1,14 @@
+import type { SessionSnapshotFrame } from '@mobily/shared';
+
 export interface TerminalDocumentAssets {
   readonly xtermCss: string;
   readonly xtermJs: string;
   readonly xtermFitJs: string;
   readonly devBridgeJs?: string;
+  readonly terminalHelpersJs?: string;
 }
 
+export function buildTerminalHelpersSource(): string;
 export function buildTerminalDocument(assets: TerminalDocumentAssets): string;
 
 export const DEFAULT_READABLE_FONT_SIZE: 14;
@@ -70,4 +74,3 @@ export function terminalSelectionRange(
   end: TerminalCell,
   cols: number,
 ): { readonly column: number; readonly row: number; readonly length: number };
-import type { SessionSnapshotFrame } from '@mobily/shared';

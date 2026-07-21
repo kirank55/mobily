@@ -252,8 +252,34 @@ export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '
   );
 }
 
+export function buildTerminalHelpersSource() {
+  return [
+    clampTerminalScale,
+    clampTerminalFontSize,
+    estimateTerminalCellSize,
+    usableTerminalViewport,
+    deriveReadableTerminalGrid,
+    createDebouncedGridProposer,
+    fitTerminalScale,
+    pinchTerminalScale,
+    stripTerminalMouseControls,
+    terminalSelectionRange,
+    terminalCellSgr,
+    snapshotToAnsi,
+    scrollbackAndSnapshotToAnsi,
+  ]
+    .map((helper) => helper.toString())
+    .join('\n');
+}
+
 /** Shared production terminal document used by the app and browser harness. */
-export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridgeJs = '' }) {
+export function buildTerminalDocument({
+  xtermCss,
+  xtermJs,
+  xtermFitJs,
+  devBridgeJs = '',
+  terminalHelpersJs,
+}) {
   const XTERM_CSS = xtermCss;
   const XTERM_JS = xtermJs;
   const XTERM_FIT_JS = xtermFitJs;
@@ -263,23 +289,7 @@ export function buildTerminalDocument({ xtermCss, xtermJs, xtermFitJs, devBridge
     `var DEFAULT_READABLE_FONT_SIZE=${DEFAULT_READABLE_FONT_SIZE};\n` +
     `var MIN_READABLE_FONT_SIZE=${MIN_READABLE_FONT_SIZE};\n` +
     `var MAX_READABLE_FONT_SIZE=${MAX_READABLE_FONT_SIZE};\n` +
-    [
-      clampTerminalScale,
-      clampTerminalFontSize,
-      estimateTerminalCellSize,
-      usableTerminalViewport,
-      deriveReadableTerminalGrid,
-      createDebouncedGridProposer,
-      fitTerminalScale,
-      pinchTerminalScale,
-      stripTerminalMouseControls,
-      terminalSelectionRange,
-      terminalCellSgr,
-      snapshotToAnsi,
-      scrollbackAndSnapshotToAnsi,
-    ]
-      .map((helper) => helper.toString())
-      .join('\n');
+    (terminalHelpersJs ?? buildTerminalHelpersSource());
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -579,7 +589,8 @@ ${VIEWPORT_HELPERS}
     if(typeof ev.data!=='string'||ev.data.length>4194304)return;
     var msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
     if(!msg||typeof msg!=='object')return;
-    if(msg.type==='session-snapshot'&&term)applySnapshot(msg.snapshot);
+    if(msg.type==='ready-probe'&&term)sendRN({type:'ready'});
+    else if(msg.type==='session-snapshot'&&term)applySnapshot(msg.snapshot);
     else if(msg.type==='session-scrollback'&&term)applyScrollback(msg.data,msg.snapshot,msg.liveOutput);
     else if(msg.type==='write'&&typeof msg.data==='string'&&msg.data.length<=65536)enqueue(msg.data,msg.latencyTags);
     else if(msg.type==='connection-state'&&typeof msg.state==='string'&&(msg.detail===undefined||typeof msg.detail==='string'))setConnectionState(msg.state,msg.detail);

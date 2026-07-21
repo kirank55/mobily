@@ -17,6 +17,7 @@ import { RpcClient } from './rpcClient';
 import { ForegroundConnectionController } from '@/foreground/controller';
 import { allowInsecureStationTransport } from '@/dev/insecureTransport';
 import { TerminalSizeOwnershipController } from '@/terminal/sizeOwnership';
+import { SessionSnapshotChannel } from './sessionSnapshotChannel';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 type ResizeListener = (cols: number, rows: number) => void;
@@ -57,10 +58,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const pairingRef = useRef<PairingRecord | null>(null);
   const outputListeners = useRef(new Set<OutputListener>());
   const resizeListeners = useRef(new Set<ResizeListener>());
-  const snapshotListeners = useRef(new Set<SnapshotListener>());
   const scrollbackListeners = useRef(new Set<ScrollbackListener>());
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
   const foreground = useRef(new ForegroundConnectionController());
+  const [snapshotChannel] = useState(() => new SessionSnapshotChannel());
   const [sizeOwnership] = useState(
     () =>
       new TerminalSizeOwnershipController({
@@ -84,12 +85,13 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     rpcRef.current = null;
     pairingRef.current = null;
     latestResize.current = null;
+    snapshotChannel.reset();
     setOwnsTerminalSize(false);
     setRpc(null);
     setPairing(null);
     setState('disconnected');
     void foreground.current.disconnect();
-  }, [sizeOwnership]);
+  }, [sizeOwnership, snapshotChannel]);
 
   const connect = useCallback(
     (nextPairing: PairingRecord) => {
@@ -104,6 +106,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       rpcRef.current?.disconnect();
       clientRef.current?.disconnect();
       latestResize.current = null;
+      snapshotChannel.reset();
       setOwnsTerminalSize(false);
       let client!: WsClient;
       const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
@@ -141,7 +144,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
           for (const listener of resizeListeners.current) listener(cols, rows);
         },
         onSnapshot: (snapshot) => {
-          for (const listener of snapshotListeners.current) listener(snapshot);
+          snapshotChannel.publish(snapshot);
         },
         onScrollback: (data) => {
           for (const listener of scrollbackListeners.current) listener(data);
@@ -170,7 +173,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       void foreground.current.connect(nextPairing.stationName);
       client.connect();
     },
-    [sizeOwnership],
+    [sizeOwnership, snapshotChannel],
   );
 
   const retry = useCallback(() => {
@@ -202,10 +205,10 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     if (current) listener(current.cols, current.rows);
     return () => resizeListeners.current.delete(listener);
   }, []);
-  const subscribeSnapshot = useCallback((listener: SnapshotListener) => {
-    snapshotListeners.current.add(listener);
-    return () => snapshotListeners.current.delete(listener);
-  }, []);
+  const subscribeSnapshot = useCallback(
+    (listener: SnapshotListener) => snapshotChannel.subscribe(listener),
+    [snapshotChannel],
+  );
   const subscribeScrollback = useCallback((listener: ScrollbackListener) => {
     scrollbackListeners.current.add(listener);
     return () => scrollbackListeners.current.delete(listener);

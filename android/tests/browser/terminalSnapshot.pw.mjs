@@ -29,6 +29,30 @@ const terminalHtml = buildTerminalDocument({
   `,
 });
 
+test('re-announces readiness when React Native probes after page load', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'ready-probe' }),
+      }),
+    );
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+});
+
 test('renders a detailed OpenCode-like Session Snapshot in the production document', async ({
   page,
 }) => {

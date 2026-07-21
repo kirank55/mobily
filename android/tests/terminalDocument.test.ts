@@ -14,6 +14,7 @@ import {
   scrollbackAndSnapshotToAnsi,
   terminalSelectionRange,
 } from '../src/terminal/terminalDocument';
+import { TERMINAL_HELPERS_JS } from '../src/terminal/xtermAssets.generated';
 
 describe('terminal document', () => {
   it('uses the same generator for production and the browser harness', () => {
@@ -37,6 +38,36 @@ describe('terminal document', () => {
     expect(readFileSync(resolve(__dirname, '../dev/term.html'), 'utf8')).toContain(
       '[mobily harness] terminal ready',
     );
+  });
+
+  it('re-announces readiness when React Native probes after page load', () => {
+    const production = buildTerminalDocument({
+      xtermCss: '',
+      xtermJs: '',
+      xtermFitJs: '',
+    });
+
+    expect(production).toContain("msg.type==='ready-probe'&&term)sendRN({type:'ready'});");
+  });
+
+  it('does not serialize Hermes bytecode placeholders into the document', () => {
+    const originalToString = Function.prototype.toString;
+    try {
+      Function.prototype.toString = function hermesFunctionToString() {
+        return `function ${this.name}() { [bytecode] }`;
+      };
+
+      const production = buildTerminalDocument({
+        xtermCss: '',
+        xtermJs: '',
+        xtermFitJs: '',
+        terminalHelpersJs: TERMINAL_HELPERS_JS,
+      });
+
+      expect(production).not.toContain('[bytecode]');
+    } finally {
+      Function.prototype.toString = originalToString;
+    }
   });
 
   it('fits and zooms a stable grid without changing terminal dimensions', () => {
