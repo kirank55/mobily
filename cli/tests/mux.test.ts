@@ -14,7 +14,11 @@ import {
   validateSessionName,
   type SessionRuntime,
 } from '../src/mux/factory.js';
-import { TmuxBackend } from '../src/mux/tmux.js';
+import { clearShellPane, resizePairingPanel, resizePairingPanelLines, TmuxBackend } from '../src/mux/tmux.js';
+import {
+  CONNECTED_WORKSTATION_PANEL,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+} from '../src/tmuxWorkstationAttach.js';
 
 class FakePty implements PtyProcess {
   readonly raw = {} as PtyProcess['raw'];
@@ -121,6 +125,7 @@ describe('TmuxBackend', () => {
         if (args[0] === 'capture-pane') return 'captured\n';
         if (args[0] === 'display-message') return '1\t4\t6\t0\tbar\t0\n';
         if (args[0] === 'split-window') return '%9\n';
+        if (args[0] === 'list-panes') return '%0 \n%9 qr\n';
         return '';
       }),
     });
@@ -171,11 +176,29 @@ describe('TmuxBackend', () => {
       expect.arrayContaining([
         expect.objectContaining({
           file: 'tmux',
-          args: expect.arrayContaining(['split-window', '-l', '10']),
+          args: expect.arrayContaining(['split-window', '-l', '1']),
         }),
         { file: 'tmux', args: ['set-option', '-p', '-t', '%9', '@mobily_role', 'qr'] },
+        { file: 'tmux', args: ['set-option', '-p', '-t', '%9', '@mobily_panel_lines', '1'] },
+        { file: 'tmux', args: ['select-pane', '-t', '%9', '-d'] },
+        { file: 'tmux', args: ['resize-pane', '-t', '%9', '-y', '1'] },
+        { file: 'tmux', args: ['select-pane', '-t', '%0'] },
       ]),
     );
+    expect(
+      fake.commands
+        .filter(({ args }) => args[0] === 'set-hook' && args[3] !== '-u')
+        .map(({ args }) => args[3]),
+    ).toEqual(['client-resized', 'client-attached']);
+    expect(
+      fake.commands.some(
+        ({ args }) =>
+          args[0] === 'set-hook' &&
+          typeof args[4] === 'string' &&
+          args[4].includes("sh '") &&
+          args[4].includes('>/dev/null 2>&1'),
+      ),
+    ).toBe(true);
 
     backend.dispose();
     expect(fake.pty.killed).toBe(true);
@@ -203,6 +226,135 @@ describe('TmuxBackend', () => {
     });
     expect(hideCurrentQrPanel(fake.value)).toBe(true);
     expect(fake.commands).toContainEqual({ file: 'tmux', args: ['kill-pane', '-t', '%2'] });
+  });
+
+  it('resizes the marked QR pane toward a vertical share of the window', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        return '';
+      }),
+    });
+    expect(resizePairingPanel('mobily-work-1234', 50, fake.value)).toBe(true);
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['resize-pane', '-t', '%2', '-y', '50%'],
+    });
+  });
+
+  it('clamps the marked QR pane to an exact row count', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        return '';
+      }),
+    });
+    expect(resizePairingPanelLines('mobily-work-1234', 2, fake.value)).toBe(true);
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['resize-pane', '-t', '%2', '-y', '2'],
+    });
+  });
+
+  it('clears the shell pane and its scrollback without touching the QR pane', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        return '';
+      }),
+    });
+    expect(clearShellPane('mobily-work-1234', fake.value)).toBe(true);
+    expect(fake.commands).toEqual(
+      expect.arrayContaining([
+        { file: 'tmux', args: ['send-keys', '-t', '%1', '-l', 'clear'] },
+        { file: 'tmux', args: ['send-keys', '-t', '%1', 'Enter'] },
+        { file: 'tmux', args: ['clear-history', '-t', '%1'] },
+      ]),
+    );
+    expect(fake.commands.some(({ args }) => args.includes('%2') && args[0] === 'send-keys')).toBe(
+      false,
+    );
+  });
+
+  it('pins the connected workstation panel at the initial two-line height', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'has-session') return '';
+        if (args[0] === 'split-window') return '%9\n';
+        if (args[0] === 'list-panes') return '%0 \n%9 qr\n';
+        return '';
+      }),
+    });
+    const backend = new TmuxBackend(
+      { cwd: '/workspace', sessionName: 'mobily-work-1234' },
+      fake.value,
+    );
+
+    backend.showPairingPanel(CONNECTED_WORKSTATION_PANEL, CONNECTED_WORKSTATION_PANEL_HEIGHT);
+
+    expect(fake.commands).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: 'tmux',
+          args: expect.arrayContaining([
+            'split-window',
+            '-l',
+            String(CONNECTED_WORKSTATION_PANEL_HEIGHT),
+          ]),
+        }),
+        {
+          file: 'tmux',
+          args: [
+            'set-option',
+            '-p',
+            '-t',
+            '%9',
+            '@mobily_panel_lines',
+            String(CONNECTED_WORKSTATION_PANEL_HEIGHT),
+          ],
+        },
+        {
+          file: 'tmux',
+          args: ['resize-pane', '-t', '%9', '-y', String(CONNECTED_WORKSTATION_PANEL_HEIGHT)],
+        },
+      ]),
+    );
+    backend.dispose();
+  });
+
+  it('hides the connected workstation panel after dismiss', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'has-session') return '';
+        if (args[0] === 'split-window') return '%9\n';
+        if (args[0] === 'list-panes') return '%0 \n%9 qr\n';
+        return '';
+      }),
+    });
+    const backend = new TmuxBackend(
+      { cwd: '/workspace', sessionName: 'mobily-work-1234' },
+      fake.value,
+    );
+
+    backend.showPairingPanel(CONNECTED_WORKSTATION_PANEL, CONNECTED_WORKSTATION_PANEL_HEIGHT);
+    fake.commands.length = 0;
+    backend.hidePairingPanel();
+
+    expect(fake.commands).toEqual(
+      expect.arrayContaining([
+        {
+          file: 'tmux',
+          args: ['list-panes', '-t', 'mobily-work-1234', '-F', '#{pane_id} #{@mobily_role}'],
+        },
+        { file: 'tmux', args: ['kill-pane', '-t', '%9'] },
+      ]),
+    );
+    backend.dispose();
   });
 });
 

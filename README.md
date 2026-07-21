@@ -26,8 +26,10 @@ to the shared terminal. Commands and PTY output are visible on both Android and
 the workstation. Ctrl+C exits Mobily; Ctrl+X sends an interrupt to the shared
 session.
 
-When tmux is available, Mobily also prints the exact command for attaching an
-additional workstation terminal. Use `--session <name>` to choose a stable name:
+When tmux is available, this terminal attaches to the shared Session after the
+phone authenticates (QR header above the shell). Mobily also prints the exact
+command for attaching an additional workstation terminal. Use `--session <name>`
+to choose a stable name:
 
 ```bash
 npx mobily --tunnel devtunnels --session project-x

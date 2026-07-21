@@ -123,11 +123,14 @@ export class TmuxBackend implements SessionBackend {
   }
 
   showPairingPanel(content: string, height: number): void {
-    removePairingPanel(this.sessionName, this.runtime);
+    this.hidePairingPanel();
     this.panelDirectory = mkdtempSync(join(tmpdir(), 'mobily-qr-'));
     const panelFile = join(this.panelDirectory, 'panel.txt');
+    const contentLines = Math.max(1, content.split('\n').length);
+    const paneLines = Math.max(1, Math.min(height, contentLines));
     writeFileSync(panelFile, content, { encoding: 'utf8', mode: 0o600 });
-    const shellCommand = `cat -- '${panelFile.replaceAll("'", "'\\''")}'; exec sleep infinity`;
+    // Clear then print so unused pane rows do not linger as blank red space.
+    const shellCommand = `printf '\\033[H\\033[J'; cat -- '${panelFile.replaceAll("'", "'\\''")}'; exec sleep infinity`;
     const pane = this.runtime
       .execFile('tmux', [
         'split-window',
@@ -135,7 +138,7 @@ export class TmuxBackend implements SessionBackend {
         '-v',
         '-b',
         '-l',
-        String(Math.max(5, height)),
+        String(paneLines),
         '-P',
         '-F',
         '#{pane_id}',
@@ -144,7 +147,31 @@ export class TmuxBackend implements SessionBackend {
         shellCommand,
       ])
       .trim();
-    if (pane) this.runtime.execFile('tmux', ['set-option', '-p', '-t', pane, '@mobily_role', 'qr']);
+    if (pane) {
+      this.runtime.execFile('tmux', ['set-option', '-p', '-t', pane, '@mobily_role', 'qr']);
+      this.runtime.execFile('tmux', [
+        'set-option',
+        '-p',
+        '-t',
+        pane,
+        '@mobily_panel_lines',
+        String(paneLines),
+      ]);
+      // Keep the status pane from stealing keyboard focus; shell stays interactive.
+      this.runtime.execFile('tmux', ['select-pane', '-t', pane, '-d']);
+      this.runtime.execFile('tmux', ['resize-pane', '-t', pane, '-y', String(paneLines)]);
+      installStatusPanelClampHook(this.sessionName, this.panelDirectory, this.runtime);
+      selectShellPane(this.sessionName, this.runtime);
+    }
+  }
+
+  hidePairingPanel(): void {
+    removePairingPanel(this.sessionName, this.runtime);
+    clearStatusPanelClampHooks(this.sessionName, this.runtime);
+    if (this.panelDirectory) {
+      rmSync(this.panelDirectory, { recursive: true, force: true });
+      this.panelDirectory = undefined;
+    }
   }
 
   dispose(): void {
@@ -153,6 +180,7 @@ export class TmuxBackend implements SessionBackend {
     this.dataSubscription.dispose();
     this.listeners.clear();
     this.pty.kill();
+    clearStatusPanelClampHooks(this.sessionName, this.runtime);
     if (this.panelDirectory) rmSync(this.panelDirectory, { recursive: true, force: true });
   }
 }
@@ -168,6 +196,53 @@ function installPromptPrefix(sessionName: string, runtime: SessionRuntime): void
   const snippet = `if [ -n "$BASH_VERSION" ]; then case "$PS1" in '[mobily] '*) ;; *) PS1='[mobily] '"$PS1";; esac; elif [ -n "$ZSH_VERSION" ]; then case "$PROMPT" in '[mobily] '*) ;; *) PROMPT='[mobily] '"$PROMPT";; esac; else printf '[mobily] session\\n'; fi; clear`;
   runtime.execFile('tmux', ['send-keys', '-t', sessionName, '-l', snippet]);
   runtime.execFile('tmux', ['send-keys', '-t', sessionName, 'Enter']);
+}
+
+/**
+ * Re-clamp the status/QR pane after clients attach or the window grows
+ * (`window-size largest` otherwise expands the header into blank red space).
+ */
+export const CLAMP_STATUS_PANEL_SCRIPT = `#!/bin/sh
+session="$1"
+[ -n "$session" ] || exit 0
+tmux list-panes -t "$session" -F '#{pane_id} #{@mobily_role} #{@mobily_panel_lines}' 2>/dev/null |
+while read -r id role lines; do
+  if [ "$role" = qr ] && [ -n "$lines" ]; then
+    current=$(tmux display-message -p -t "$id" '#{pane_height}' 2>/dev/null || echo "")
+    if [ "$current" != "$lines" ]; then
+      tmux resize-pane -t "$id" -y "$lines"
+    fi
+  fi
+done
+`.replaceAll('\r\n', '\n');
+
+/** Hooks that may re-clamp the status pane; exclude layout-changed to avoid error feedback loops. */
+export const STATUS_PANEL_CLAMP_HOOK_EVENTS = ['client-resized', 'client-attached'] as const;
+
+function installStatusPanelClampHook(
+  sessionName: string,
+  directory: string,
+  runtime: SessionRuntime,
+): void {
+  const scriptPath = join(directory, 'clamp-status-panel.sh');
+  writeFileSync(scriptPath, CLAMP_STATUS_PANEL_SCRIPT, { encoding: 'utf8', mode: 0o700 });
+  // Invoke via `sh` so a missing +x/shebang cannot yield 127, and silence output so
+  // failed hooks do not print into the attached workstation and corrupt the TTY.
+  const quoted = scriptPath.replaceAll("'", "'\\''");
+  const hook = `run-shell -b "sh '${quoted}' '#{session_name}' >/dev/null 2>&1"`;
+  for (const event of STATUS_PANEL_CLAMP_HOOK_EVENTS) {
+    runtime.execFile('tmux', ['set-hook', '-t', sessionName, event, hook]);
+  }
+}
+
+function clearStatusPanelClampHooks(sessionName: string, runtime: SessionRuntime): void {
+  for (const event of [...STATUS_PANEL_CLAMP_HOOK_EVENTS, 'window-layout-changed'] as const) {
+    try {
+      runtime.execFile('tmux', ['set-hook', '-t', sessionName, '-u', event]);
+    } catch {
+      // Hook may not exist yet.
+    }
+  }
 }
 
 export function removePairingPanel(sessionName: string, runtime: SessionRuntime): boolean {
@@ -192,6 +267,101 @@ export function removePairingPanel(sessionName: string, runtime: SessionRuntime)
     }
   }
   return removed;
+}
+
+/** Focus the interactive shell pane (any pane that is not the status/QR header). */
+function selectShellPane(sessionName: string, runtime: SessionRuntime): void {
+  const pane = findShellPane(sessionName, runtime);
+  if (pane) runtime.execFile('tmux', ['select-pane', '-t', pane]);
+}
+
+/**
+ * Clear the visible shell pane and its scrollback so a fresh workstation attach
+ * does not show leftover output from the persisted tmux Session.
+ */
+export function clearShellPane(sessionName: string, runtime: SessionRuntime): boolean {
+  const pane = findShellPane(sessionName, runtime);
+  if (!pane) return false;
+  try {
+    runtime.execFile('tmux', ['send-keys', '-t', pane, '-l', 'clear']);
+    runtime.execFile('tmux', ['send-keys', '-t', pane, 'Enter']);
+    runtime.execFile('tmux', ['clear-history', '-t', pane]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findShellPane(sessionName: string, runtime: SessionRuntime): string | null {
+  let panes = '';
+  try {
+    panes = runtime.execFile('tmux', [
+      'list-panes',
+      '-t',
+      sessionName,
+      '-F',
+      '#{pane_id} #{@mobily_role}',
+    ]);
+  } catch {
+    return null;
+  }
+  for (const line of panes.split('\n')) {
+    const [pane, role] = line.trim().split(/\s+/, 2);
+    if (pane && role !== 'qr') return pane;
+  }
+  return null;
+}
+
+/** Resize the QR header pane toward a vertical share of the window (e.g. 50). */
+export function resizePairingPanel(
+  sessionName: string,
+  heightPercent: number,
+  runtime: SessionRuntime,
+): boolean {
+  const percent = Math.min(90, Math.max(10, Math.round(heightPercent)));
+  return forEachPairingPane(sessionName, runtime, (pane) => {
+    runtime.execFile('tmux', ['resize-pane', '-t', pane, '-y', `${percent}%`]);
+  });
+}
+
+/** Clamp the QR/status header pane to an exact row count (reduces blank red space). */
+export function resizePairingPanelLines(
+  sessionName: string,
+  lines: number,
+  runtime: SessionRuntime,
+): boolean {
+  const height = Math.max(1, Math.round(lines));
+  return forEachPairingPane(sessionName, runtime, (pane) => {
+    runtime.execFile('tmux', ['resize-pane', '-t', pane, '-y', String(height)]);
+  });
+}
+
+function forEachPairingPane(
+  sessionName: string,
+  runtime: SessionRuntime,
+  action: (pane: string) => void,
+): boolean {
+  let panes = '';
+  try {
+    panes = runtime.execFile('tmux', [
+      'list-panes',
+      '-t',
+      sessionName,
+      '-F',
+      '#{pane_id} #{@mobily_role}',
+    ]);
+  } catch {
+    return false;
+  }
+  let touched = false;
+  for (const line of panes.split('\n')) {
+    const [pane, role] = line.trim().split(/\s+/, 2);
+    if (pane && role === 'qr') {
+      action(pane);
+      touched = true;
+    }
+  }
+  return touched;
 }
 
 function sessionExists(name: string, runtime: SessionRuntime): boolean {

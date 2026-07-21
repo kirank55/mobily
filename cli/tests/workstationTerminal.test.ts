@@ -95,7 +95,7 @@ class FakeOutput extends EventEmitter {
 }
 
 describe('attachWorkstationTerminal()', () => {
-  it('keeps the pairing screen visible for a tmux-backed session', () => {
+  it('keeps the pairing screen visible for a tmux-backed session (no bare PTY embed)', () => {
     expect(
       shouldEmbedWorkstationTerminal({ kind: 'tmux' }, new FakeInput(), new FakeOutput()),
     ).toBe(false);

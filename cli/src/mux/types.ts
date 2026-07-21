@@ -19,5 +19,7 @@ export interface SessionBackend {
   readScrollback(maxLines?: number): string;
   /** Pin pairing details above the shell for the next workstation attachment. */
   showPairingPanel?(content: string, height: number): void;
+  /** Remove the pairing/status header pane if present. */
+  hidePairingPanel?(): void;
   dispose(): void;
 }

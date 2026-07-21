@@ -26,12 +26,20 @@ import {
   type WorkstationShutdownCause,
 } from './workstationTerminal.js';
 import {
+  attachTmuxWorkstation,
+  CONNECTED_WORKSTATION_PANEL,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+  scheduleConnectedPanelDismiss,
+  shouldAttachTmuxWorkstation,
+} from './tmuxWorkstationAttach.js';
+import {
   createSessionBackend,
   hideCurrentQrPanel,
   killTmuxSession,
   validateSessionName,
 } from './mux/factory.js';
 import { CliLifecycle, createNodeCliLifecycleRuntime } from './cliLifecycle.js';
+import { formatCliHelp } from './cliHelp.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -42,6 +50,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
+      help: { type: 'boolean', short: 'h', default: false },
       tunnel: { type: 'string' },
       'allow-insecure-local': { type: 'boolean', default: false },
       'devtunnels-provider': { type: 'string' },
@@ -52,6 +61,11 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
       'kill-session': { type: 'string' },
     },
   });
+
+  if (values.help) {
+    console.log(formatCliHelp(pkg.version));
+    return;
+  }
 
   if (positionals[0] === 'qr') {
     const action = positionals[1];
@@ -195,6 +209,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
   });
 
   const embedsWorkstation = shouldEmbedWorkstationTerminal(sessionBackend);
+  const attachesTmuxWorkstation = shouldAttachTmuxWorkstation(sessionBackend);
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
   console.log(
@@ -206,7 +221,11 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
       console.log(`Additional:   ${sessionBackend.attachCommand}`);
     }
   } else if (sessionBackend.kind === 'tmux') {
-    console.log('Workstation:  open a second terminal (pairing QR stays visible here)');
+    if (attachesTmuxWorkstation) {
+      console.log('Workstation:  this terminal attaches when the phone connects');
+    } else {
+      console.log('Workstation:  open a second terminal (pairing QR stays visible here)');
+    }
     console.log(`Attach:       ${sessionBackend.attachCommand}`);
   } else {
     console.log('Workstation:  embedded terminal unavailable (interactive TTY required)');
@@ -287,6 +306,49 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
           void lifecycle.requestShutdown(workstationShutdownMessage(reason));
         },
       });
+    };
+    if (clientAuthenticated) beginWorkstation();
+  } else if (
+    attachesTmuxWorkstation &&
+    sessionBackend.sessionName &&
+    sessionBackend.attachCommand
+  ) {
+    const sessionName = sessionBackend.sessionName;
+    const attachCommand = sessionBackend.attachCommand;
+    console.log('Controls:     Ctrl+C once warns, twice exits Mobily.');
+    console.log(
+      'Waiting for the Android app to authenticate; this terminal will attach automatically.',
+    );
+    console.log();
+    let workstationStarted = false;
+    beginWorkstation = () => {
+      if (workstationStarted) return;
+      workstationStarted = true;
+      console.log('Phone connected — attaching workstation…');
+      sessionBackend.showPairingPanel?.(
+        CONNECTED_WORKSTATION_PANEL,
+        CONNECTED_WORKSTATION_PANEL_HEIGHT,
+      );
+      const attached = attachTmuxWorkstation({
+        sessionName,
+        attachCommand,
+        cwd,
+        onDetach: (message) => {
+          console.log(message);
+          void lifecycle.requestShutdown(message);
+        },
+      });
+      const dismissSuccess = scheduleConnectedPanelDismiss({
+        hidePanel: () => {
+          sessionBackend.hidePairingPanel?.();
+        },
+      });
+      workstationTerminal = {
+        dispose(): void {
+          dismissSuccess.dispose();
+          attached.dispose();
+        },
+      };
     };
     if (clientAuthenticated) beginWorkstation();
   } else {
