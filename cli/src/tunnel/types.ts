@@ -22,8 +22,12 @@ export interface TunnelConnection {
   readonly url: string;
   /** Dynamic SHA-256 SPKI pin for a self-signed local Station certificate. */
   readonly certificatePin?: string;
-  /** Tear down the tunnel. Safe to call multiple times. */
-  disconnect(): Promise<void>;
+  /**
+   * Tear down the tunnel. Safe to call multiple times. When shutdown is
+   * forced, an aborted signal prevents durable recovery state from being
+   * removed even if an in-flight provider deletion finishes afterward.
+   */
+  disconnect(signal?: AbortSignal): Promise<void>;
 }
 
 /**

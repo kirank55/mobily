@@ -62,6 +62,20 @@ delete or local-record recovery action without reproducing provider output,
 which may contain credentials. This reconciliation is part of the Dev Tunnels
 backend only; explicitly selecting the secure local backend remains available.
 
+### Bounded shutdown and recovery
+
+Normal Session completion, handled termination signals, startup failures after
+tunnel creation, and top-level failures use one idempotent CLI cleanup
+coordinator. The first shutdown request immediately stops accepting new work,
+shows Temporary Tunnel cleanup progress, and gives the complete cleanup
+operation ten seconds. A second request or deadline expiry force-exits without
+waiting for the provider.
+
+Forced or failed cleanup aborts removal of the durable ownership record, even
+if an in-flight provider deletion finishes afterward. The next CLI run can
+therefore reconcile the exact recorded tunnel before creating another one.
+Only successful cleanup within the deadline removes the record.
+
 ## Why the interface exists
 
 Driven by FOSS goals: an open-source project shouldn't force users onto a single

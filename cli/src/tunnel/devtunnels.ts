@@ -265,7 +265,7 @@ export class DevTunnelsBackend implements TunnelBackend {
     let disconnected = false;
     return {
       url,
-      disconnect: async () => {
+      disconnect: async (signal?: AbortSignal) => {
         if (disconnected) return;
         disconnected = true;
         const deletingOwnership: TemporaryTunnelOwnership = {
@@ -280,6 +280,7 @@ export class DevTunnelsBackend implements TunnelBackend {
         }
         await stopHost(child);
         await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
+        if (signal?.aborted) return;
         await this.options.ownershipStore.remove(ownership);
       },
     };

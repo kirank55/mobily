@@ -531,6 +531,24 @@ describe('DevTunnelsBackend', () => {
     },
   );
 
+  it('preserves the ownership record when forced shutdown aborts cleanup', async () => {
+    const runtime = new FakeRuntime();
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareFakeBackend(runtime);
+    const connecting = backend.connect(4321);
+    host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
+    const connection = await connecting;
+    const shutdown = new AbortController();
+    shutdown.abort();
+
+    await connection.disconnect(shutdown.signal);
+
+    expect([...runtime.ownershipStore.records.values()]).toMatchObject([
+      { tunnelId: 'abc', state: 'deleting' },
+    ]);
+  });
+
   it('reports a temporary tunnel that could not be deleted', async () => {
     const runtime = new FakeRuntime();
     runtime.results.push(

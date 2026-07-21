@@ -6,14 +6,14 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Session } from './session.js';
-import { startServer } from './ws.js';
+import { startServer, type Server } from './ws.js';
 import { AuthManager } from './auth.js';
 import { renderTerminalQr } from './qr.js';
 import { createTunnelBackend, isTunnelId, type TunnelId } from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
 import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { PAIRING_CODE_TTL_MS } from './auth.js';
-import { formatCliError, UserFacingError } from './errors.js';
+import { UserFacingError } from './errors.js';
 import { defaultBindingFile, FileBindingRepository } from './bindings.js';
 import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
 import { GitService } from './git/service.js';
@@ -31,11 +31,14 @@ import {
   killTmuxSession,
   validateSessionName,
 } from './mux/factory.js';
+import { CliLifecycle, createNodeCliLifecycleRuntime } from './cliLifecycle.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
+const cliLifecycle = new CliLifecycle(createNodeCliLifecycleRuntime());
+cliLifecycle.installSignalHandlers();
 
-export async function main(): Promise<void> {
+export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
@@ -144,17 +147,38 @@ export async function main(): Promise<void> {
   });
   let clientAuthenticated = false;
   let beginWorkstation: (() => void) | undefined;
+  let workstationTerminal: IDisposable | null = null;
+  let sessionExitSubscription: IDisposable | null = null;
+  let serverClose: Promise<void> | undefined;
   const authenticatedSubscription = session.onAuthenticatedClient(() => {
     clientAuthenticated = true;
     beginWorkstation?.();
   });
-  const server = await startServer({
+  const server: Server = await startServer({
     session,
     host: tunnel.bindHost,
     httpRequestHandler: (req, res) => auth.handleHttpRequest(req, res),
     tls: tunnel.serverTls,
   });
   const connection: TunnelConnection = await tunnel.connect(server.port);
+  lifecycle.setCleanup({
+    temporaryTunnel: tunnel.id === 'devtunnels',
+    stopNewWork: () => {
+      workstationTerminal?.dispose();
+      workstationTerminal = null;
+      sessionExitSubscription?.dispose();
+      sessionExitSubscription = null;
+      authenticatedSubscription.dispose();
+      session.dispose();
+      serverClose ??= server.close();
+    },
+    run: async (signal) => {
+      session.dispose();
+      serverClose ??= server.close();
+      await serverClose;
+      await connection.disconnect(signal);
+    },
+  });
   auth.setTunnelUrl(connection.url, connection.certificatePin);
 
   const pairingCode = auth.generatePairingCode();
@@ -166,31 +190,9 @@ export async function main(): Promise<void> {
     certificatePin: connection.certificatePin,
   });
 
-  let workstationTerminal: IDisposable | null = null;
-  let sessionExitSubscription: IDisposable | null = null;
-  let shuttingDown = false;
-  const shutdown = async (reason: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    workstationTerminal?.dispose();
-    workstationTerminal = null;
-    sessionExitSubscription?.dispose();
-    sessionExitSubscription = null;
-    authenticatedSubscription.dispose();
-    console.log(`${reason}; shutting down…`);
-    try {
-      session.dispose();
-      await server.close();
-      await connection.disconnect();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      process.exit(0);
-    }
-  };
-  process.on('SIGINT', () => void shutdown('SIGINT received'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM received'));
-  sessionExitSubscription = session.onExit(() => void shutdown('Session exited'));
+  sessionExitSubscription = session.onExit(() => {
+    void lifecycle.requestShutdown('Session exited');
+  });
 
   const embedsWorkstation = shouldEmbedWorkstationTerminal(sessionBackend);
   console.log(`mobily v${pkg.version}`);
@@ -281,7 +283,9 @@ export async function main(): Promise<void> {
       if (workstationStarted) return;
       workstationStarted = true;
       workstationTerminal = attachWorkstationTerminal(session, {
-        onShutdown: (reason) => void shutdown(workstationShutdownMessage(reason)),
+        onShutdown: (reason) => {
+          void lifecycle.requestShutdown(workstationShutdownMessage(reason));
+        },
       });
     };
     if (clientAuthenticated) beginWorkstation();
@@ -304,7 +308,10 @@ function workstationShutdownMessage(reason: WorkstationShutdownCause): string {
 }
 
 const verbose = process.argv.includes('--verbose');
-main().catch((err: unknown) => {
-  console.error(formatCliError(err, verbose));
-  process.exit(1);
+process.on('uncaughtException', (error) => {
+  void cliLifecycle.fail(error, verbose);
 });
+process.on('unhandledRejection', (reason) => {
+  void cliLifecycle.fail(reason, verbose);
+});
+void main().catch((error: unknown) => cliLifecycle.fail(error, verbose));
