@@ -2,6 +2,13 @@
 
 How the engineering skills should consume this repository’s domain documentation when exploring the codebase.
 
+## What belongs in `docs/`
+
+`docs/` holds durable architecture and decisions only — primarily `docs/adr/`.
+It must not hold roadmaps, task checklists, runbooks, bug lists, research dumps,
+or code walkthroughs. Those belong in `README.md`, `SECURITY.md`, package
+READMEs, or `.scratch/` working notes.
+
 ## Before exploring, read these
 
 - `CONTEXT.md` at the repository root

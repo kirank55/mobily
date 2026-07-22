@@ -1,6 +1,8 @@
-# Dependency audit dispositions
+# Security
 
-## `uuid` / Expo xcode tooling — upstream exception
+## Dependency audit dispositions
+
+### `uuid` / Expo xcode tooling — upstream exception
 
 Checked 2026-07-14. `pnpm audit` reports CVE-2026-41907 for `uuid@7.0.3` on this
 development-only path:

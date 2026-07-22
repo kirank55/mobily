@@ -41,9 +41,41 @@ it. If tmux is unavailable, the embedded terminal still mirrors Android while
 the CLI is alive, but the bare session cannot survive CLI exit or accept an
 additional tmux attachment. Redirected/non-TTY CLI processes remain remote-only.
 
-On first use, Mobily guides installation of Microsoft's official `devtunnel`
-helper and offers GitHub or Microsoft device-code login. Credentials are cached
-by the helper for later runs.
+### Dev Tunnels helper
+
+Mobily uses Microsoft's official `devtunnel` helper (GitHub, Microsoft personal,
+or Entra ID). Credentials are cached by the helper. No Mobily OAuth client ID or
+`MOBILY_DEVTUNNELS_*` environment variable is required.
+
+If the helper is missing, Mobily prints the install command. Typical installs:
+
+```bash
+# Linux / WSL
+curl -sL https://aka.ms/DevTunnelCliInstall | bash
+
+# macOS
+brew install --cask devtunnel
+
+# Windows
+winget install Microsoft.devtunnel
+```
+
+Force a provider or verbose diagnostics:
+
+```bash
+npx mobily --tunnel devtunnels --devtunnels-provider github
+npx mobily --tunnel devtunnels --devtunnels-provider microsoft
+npx mobily --tunnel devtunnels --verbose
+```
+
+If an interrupted run left the account quota full:
+
+```bash
+devtunnel delete-all
+```
+
+Official CLI reference:
+https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/cli-commands
 
 Device Key bindings are persisted on the Station in `~/.mobily/device-bindings.json`.
 Use `npx mobily --list-bindings` to inspect them and
@@ -56,21 +88,64 @@ in the QR. Android verifies that pin for both pairing HTTPS and terminal WSS.
 Plaintext remains available only for browser protocol development with
 `--tunnel local --allow-insecure-local`; the Android production flow refuses it.
 
+## Local development (CLI + Expo web)
+
+Day-to-day validation without Android Studio: run the Station CLI and the Expo
+web app in Chrome. Requires Node ≥ 20 and pnpm.
+
+```bash
+pnpm install
+pnpm build
+```
+
+Gate before manual testing:
+
+```bash
+pnpm typecheck
+pnpm --filter mobily-android lint
+pnpm build
+pnpm --filter @mobily/shared test
+pnpm --filter mobily test
+pnpm --filter mobily-android exec vitest run
+```
+
+Full `pnpm lint` may fail on unrelated CLI fixtures; full `pnpm test` also runs
+Playwright under android and can hang — use `vitest run` for the android unit
+gate.
+
+**Terminal A — Station**
+
+```bash
+pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local --allow-insecure-local
+```
+
+**Terminal B — Expo web**
+
+```bash
+pnpm --filter mobily-android web
+```
+
+On the web pair screen, paste the `mobily://pair?…` payload or enter
+`ws://localhost:<port>` plus the pairing code. If the browser is blank, clear
+Metro cache with `pnpm --filter mobily-android exec expo start --web -c`.
+
+Browser protocol harness (no Expo UI): open the Smoke test URL the CLI prints
+(`cli/dev/smoke.html?…`).
+
 ## Architecture
 
 ```
 cli/       — Node.js CLI that runs on your workstation (PTY, WebSocket, tunnel)
 android/   — React Native (Expo) Android app
 shared/    — Shared TypeScript types and protocol definitions
-docs/      — Plan, tasks, and architectural decision records
+docs/adr/  — Architectural decision records
 ```
 
 ## Documentation
 
-- [Plan](docs/plan.md) — project roadmap and technical decisions
-- [Tasks](docs/tasks.md) — phase-by-phase implementation checklist
 - [Domain Glossary](CONTEXT.md) — canonical terminology
 - [ADRs](docs/adr/) — architectural decision records
+- [Security](SECURITY.md) — dependency audit dispositions
 
 ## License
 

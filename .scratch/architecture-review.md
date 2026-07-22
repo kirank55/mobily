@@ -2,6 +2,8 @@
 
 22 Jul 2026. Vocabulary: **module**, **interface**, **implementation**, **depth**, **seam**, **adapter**, **leverage**, **locality** (see `/codebase-design`). Domain terms from `CONTEXT.md`.
 
+Working note (not an ADR). Moved out of `docs/`.
+
 Leave alone: `CanonicalTerminalScreen`, `TunnelBackend`, `CliLifecycle`, `SessionBackend` seam, `BindingRepository`, `encodeFrame` / `decodeFrame`, `RpcClient`, `AuthManager` pair/challenge core.
 
 ## Top recommendation

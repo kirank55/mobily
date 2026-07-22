@@ -2,6 +2,8 @@
 
 Defects found in a deep review of Station size ownership, mobile fit-to-viewport, snapshots/reconnect, and CLI auth attach. Ordered by severity.
 
+Moved out of `docs/` (architecture-only). Working notes live here until filed as `.scratch/<feature>/issues/`.
+
 ## [P1] Stuck “Loading Session…” after WebView remount while still connected
 
 **Where:** `android/src/app/terminal.tsx` (~line 160)

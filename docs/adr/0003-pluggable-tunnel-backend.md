@@ -27,8 +27,7 @@ needs a Microsoft account.
 The operator authenticates once through Microsoft's official `devtunnel`
 helper, choosing GitHub or Microsoft device-code login. The helper owns secure
 credential caching; Mobily owns the guided first-run experience and temporary
-tunnel lifecycle. See
-[`docs/devtunnels-provisioning.md`](../devtunnels-provisioning.md).
+tunnel lifecycle. Operator setup steps live in the root `README.md`.
 
 ### Durable Temporary Tunnel ownership
 

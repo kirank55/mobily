@@ -8,7 +8,7 @@ export const site = {
     repository: 'https://github.com/kirank55/mobily',
     releases: 'https://github.com/kirank55/mobily/releases/latest',
     readme: 'https://github.com/kirank55/mobily#readme',
-    security: 'https://github.com/kirank55/mobily/blob/main/docs/security-audit.md',
+    security: 'https://github.com/kirank55/mobily/blob/main/SECURITY.md',
     license: 'https://github.com/kirank55/mobily/blob/main/LICENSE',
   },
 } as const;

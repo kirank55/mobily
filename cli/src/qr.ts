@@ -2,7 +2,7 @@
  * cli/src/qr.ts
  *
  * Renders the short pairing code as a compact terminal QR code. The QR encodes
- * only the code (per `docs/plan.md`) — tiny, scannable in any modern terminal
+ * a compact pairing payload — tiny, scannable in any modern terminal
  * (Windows Terminal, iTerm, VS Code). The caller also prints the plain-text
  * code as a fallback for terminals that can't render the QR.
  *
