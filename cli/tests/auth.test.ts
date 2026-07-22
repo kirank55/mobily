@@ -89,8 +89,8 @@ describe('AuthManager — pairing code', () => {
   });
 });
 
-describe('AuthManager — binding administration', () => {
-  it('loads bindings from its repository and revokes them explicitly', () => {
+describe('BindingRepository — administration', () => {
+  it('loads bindings from storage and revokes them explicitly', () => {
     const repository = new MemoryBindingRepository();
     const auth = new AuthManager(STATION, repository);
     auth.setTunnelUrl(TUNNEL_URL);
@@ -98,10 +98,10 @@ describe('AuthManager — binding administration', () => {
     const { publicKeyPem, privateKeyPem } = generateKeyPair();
     pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
 
-    const restarted = new AuthManager(STATION, repository);
-    expect(restarted.listBindings()).toHaveLength(1);
-    expect(restarted.revokeBinding('device-1')).toBe(true);
-    expect(restarted.isDeviceBound('device-1')).toBe(false);
+    expect(repository.list()).toHaveLength(1);
+    expect(repository.revoke('device-1')).toBe(true);
+    expect(repository.get('device-1')).toBeUndefined();
+    expect(new AuthManager(STATION, repository).isDeviceBound('device-1')).toBe(false);
   });
 });
 

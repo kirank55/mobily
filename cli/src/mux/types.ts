@@ -13,9 +13,11 @@ export interface SessionBackend {
   onExit(listener: (event: ExitEvent) => void): IDisposable;
   /**
    * Return one ANSI reconstruction of the backend's current visible screen.
-   * This is distinct from scrollback or other replay history.
+   * Both adapters produce parseable attributed ANSI for the Canonical Terminal
+   * Screen. This is never a substitute for {@link readScrollback}.
    */
   captureVisibleScreen(): string;
+  /** Bounded trailing-line history for workstation replay / post-snapshot transfer. */
   readScrollback(maxLines?: number): string;
   /** Pin pairing details above the shell for the next workstation attachment. */
   showPairingPanel?(content: string, height: number): void;

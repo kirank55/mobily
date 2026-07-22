@@ -111,6 +111,7 @@ export class Session {
   private readonly pendingScrollback = new Map<WebSocket, string>();
   private readonly exitListeners = new Set<(event: ExitEvent) => void>();
   private readonly authenticatedListeners = new Set<() => void>();
+  private authenticatedClientSeen = false;
   private localTerminal?: LocalTerminalState;
   private currentCols: number;
   private currentRows: number;
@@ -247,9 +248,22 @@ export class Session {
     return { dispose: () => this.exitListeners.delete(listener) };
   }
 
-  /** Observe a phone completing authentication and becoming ready for terminal I/O. */
+  /**
+   * Observe a phone completing authentication, immediately before Session Snapshot
+   * capture. Listeners may mutate the Session; those mutations are included in the
+   * snapshot and must not run after it (ADR-0004).
+   *
+   * If a viewer has already authenticated, the listener runs once immediately.
+   */
   onAuthenticatedClient(listener: () => void): IDisposable {
     this.authenticatedListeners.add(listener);
+    if (this.authenticatedClientSeen) {
+      try {
+        listener();
+      } catch {
+        // Connection readiness must not depend on an observer.
+      }
+    }
     return { dispose: () => this.authenticatedListeners.delete(listener) };
   }
 
@@ -367,19 +381,28 @@ export class Session {
   }
 
   // -------------------------------------------------------------------------
-  // Authenticated: PTY ↔ client
+  // Authenticated viewer attach (ADR-0004):
+  // auth-ok → prepare (workstation) → size owner → dimensions → freeze →
+  // snapshot → subscribe → live I/O → scrollback after ack
   // -------------------------------------------------------------------------
 
   private attachAuthenticated(ws: WebSocket): void {
-    this.sendSizeOwnershipState(ws);
-    this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
     this.pendingLatencyTags.set(ws, []);
     this.activeRpcRequests.set(ws, new Map());
-    ws.on('message', (data) => this.handleMessage(ws, data));
     let detached = false;
+    let attachReady = false;
+    const inboundQueue: RawData[] = [];
+    const messageHandler = (data: RawData): void => {
+      if (!attachReady) {
+        inboundQueue.push(data);
+        return;
+      }
+      this.handleMessage(ws, data);
+    };
     const detach = (): void => {
       if (detached) return;
       detached = true;
+      ws.off('message', messageHandler);
       this.releaseSizeClaim(ws);
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
@@ -387,24 +410,54 @@ export class Session {
       for (const controller of this.activeRpcRequests.get(ws)?.values() ?? []) controller.abort();
       this.activeRpcRequests.delete(ws);
     };
+    ws.on('message', messageHandler);
     ws.on('close', detach);
     ws.on('error', detach);
+
+    // Workstation presence and other observers run before capture so their
+    // Session mutations are frozen into the snapshot, not streamed as live output.
+    this.notifyAuthenticatedClient();
+
+    this.sendSizeOwnershipState(ws);
+    this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
     this.screen.capture((snapshot) => {
-      if (detached || ws.readyState !== READY_STATE_OPEN) return;
+      if (detached || this.exited || ws.readyState !== READY_STATE_OPEN) {
+        detach();
+        if (ws.readyState === READY_STATE_OPEN) {
+          try {
+            ws.close(1000, this.exited ? 'pty exited' : 'session disposed');
+          } catch {
+            // Already closed — ignore.
+          }
+        }
+        return;
+      }
       this.pendingScrollback.set(
         ws,
         this.backend.readScrollback().slice(-MAX_SESSION_SCROLLBACK_CHARS),
       );
       this.sendTo(ws, snapshot);
       this.subscribers.add(ws);
-      for (const listener of [...this.authenticatedListeners]) {
-        try {
-          listener();
-        } catch {
-          // Connection readiness must not depend on an observer.
-        }
+      // Flush queued frames only after the snapshot is on the wire so size
+      // claims cannot resize the Session underneath the initial screen.
+      attachReady = true;
+      for (const data of inboundQueue) {
+        if (detached) return;
+        this.handleMessage(ws, data);
       }
+      inboundQueue.length = 0;
     });
+  }
+
+  private notifyAuthenticatedClient(): void {
+    this.authenticatedClientSeen = true;
+    for (const listener of [...this.authenticatedListeners]) {
+      try {
+        listener();
+      } catch {
+        // Connection readiness must not depend on an observer.
+      }
+    }
   }
 
   private handleMessage(ws: WebSocket, data: RawData): void {
@@ -710,13 +763,7 @@ export class Session {
         // Exit observers are isolated from each other and WebSocket cleanup.
       }
     }
-    for (const ws of this.subscribers) {
-      try {
-        ws.close(1000, 'pty exited');
-      } catch {
-        // Already closed — ignore.
-      }
-    }
+    this.closeAttachedViewers(1000, 'pty exited');
   }
 
   /** Tear down: stop listening, close clients, and dispose the backend. */
@@ -726,18 +773,11 @@ export class Session {
     this.onExitDisposable.dispose();
     this.alertDetector.dispose();
     this.screen.dispose();
-    for (const ws of this.subscribers) {
-      try {
-        ws.close(1001, 'session disposed');
-      } catch {
-        // Already closed — ignore.
-      }
-    }
-    this.subscribers.clear();
+    this.closeAttachedViewers(1001, 'session disposed');
     this.localTerminal?.deactivate();
     this.localTerminal = undefined;
     this.exitListeners.clear();
-    this.pendingLatencyTags.clear();
+    this.authenticatedListeners.clear();
     for (const active of this.activeRpcRequests.values()) {
       for (const controller of active.values()) controller.abort();
     }
@@ -748,6 +788,21 @@ export class Session {
       this.backend.dispose();
     } catch {
       // Already dead — ignore.
+    }
+  }
+
+  /** Close live subscribers and viewers still inside the post-auth capture window. */
+  private closeAttachedViewers(code: number, reason: string): void {
+    const viewers = new Set([...this.subscribers, ...this.pendingLatencyTags.keys()]);
+    this.subscribers.clear();
+    this.pendingLatencyTags.clear();
+    this.pendingScrollback.clear();
+    for (const ws of viewers) {
+      try {
+        ws.close(code, reason);
+      } catch {
+        // Already closed — ignore.
+      }
     }
   }
 

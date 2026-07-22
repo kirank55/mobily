@@ -213,16 +213,6 @@ export class AuthManager {
     return this.bindings.get(deviceBindingId) !== undefined;
   }
 
-  /** Return every Device Key binding known to this Station. */
-  listBindings(): DeviceBinding[] {
-    return this.bindings.list();
-  }
-
-  /** Revoke one Device Key binding. */
-  revokeBinding(deviceBindingId: string): boolean {
-    return this.bindings.revoke(deviceBindingId);
-  }
-
   /**
    * Create a nonce challenge. The nonce is a cryptorandom base64 string.
    * The device proves identity by signing this nonce in `verifyResponse`.

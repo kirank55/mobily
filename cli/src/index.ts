@@ -18,20 +18,12 @@ import { defaultBindingFile, FileBindingRepository } from './bindings.js';
 import { isDevTunnelsProvider, type DevTunnelsProvider } from './tunnel/devtunnels.js';
 import { GitService } from './git/service.js';
 import { RpcRouter } from './rpc/router.js';
-import type { IDisposable } from './pty/node-pty.js';
+import { workstationTerminalSize, type WorkstationShutdownCause } from './workstationTerminal.js';
 import {
-  attachWorkstationTerminal,
-  shouldEmbedWorkstationTerminal,
-  workstationTerminalSize,
-  type WorkstationShutdownCause,
-} from './workstationTerminal.js';
-import {
-  attachTmuxWorkstation,
-  CONNECTED_WORKSTATION_PANEL,
-  CONNECTED_WORKSTATION_PANEL_HEIGHT,
-  scheduleConnectedPanelDismiss,
-  shouldAttachTmuxWorkstation,
-} from './tmuxWorkstationAttach.js';
+  beginWorkstationPresence,
+  planWorkstationPresence,
+  type WorkstationPresenceHandle,
+} from './workstationPresence.js';
 import {
   createSessionBackend,
   hideCurrentQrPanel,
@@ -159,15 +151,9 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     auth,
     rpc: new RpcRouter(new GitService(cwd)),
   });
-  let clientAuthenticated = false;
-  let beginWorkstation: (() => void) | undefined;
-  let workstationTerminal: IDisposable | null = null;
-  let sessionExitSubscription: IDisposable | null = null;
+  let workstationPresence: WorkstationPresenceHandle | null = null;
+  let sessionExitSubscription: ReturnType<Session['onExit']> | null = null;
   let serverClose: Promise<void> | undefined;
-  const authenticatedSubscription = session.onAuthenticatedClient(() => {
-    clientAuthenticated = true;
-    beginWorkstation?.();
-  });
   const server: Server = await startServer({
     session,
     host: tunnel.bindHost,
@@ -178,11 +164,10 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
   lifecycle.setCleanup({
     temporaryTunnel: tunnel.id === 'devtunnels',
     stopNewWork: () => {
-      workstationTerminal?.dispose();
-      workstationTerminal = null;
+      workstationPresence?.dispose();
+      workstationPresence = null;
       sessionExitSubscription?.dispose();
       sessionExitSubscription = null;
-      authenticatedSubscription.dispose();
       session.dispose();
       serverClose ??= server.close();
     },
@@ -208,33 +193,13 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     void lifecycle.requestShutdown('Session exited');
   });
 
-  const embedsWorkstation = shouldEmbedWorkstationTerminal(sessionBackend);
-  const attachesTmuxWorkstation = shouldAttachTmuxWorkstation(sessionBackend);
+  const presencePlan = planWorkstationPresence(sessionBackend);
   console.log(`mobily v${pkg.version}`);
   console.log(`Tunnel:       ${connection.url}`);
   console.log(
     `Session:      ${sessionBackend.kind}${sessionBackend.sessionName ? ` (${sessionBackend.sessionName})` : ''}`,
   );
-  if (embedsWorkstation) {
-    console.log('Workstation:  embedded in this CLI below');
-    if (sessionBackend.attachCommand) {
-      console.log(`Additional:   ${sessionBackend.attachCommand}`);
-    }
-  } else if (sessionBackend.kind === 'tmux') {
-    if (attachesTmuxWorkstation) {
-      console.log('Workstation:  this terminal attaches when the phone connects');
-    } else {
-      console.log('Workstation:  open a second terminal (pairing QR stays visible here)');
-    }
-    console.log(`Attach:       ${sessionBackend.attachCommand}`);
-  } else {
-    console.log('Workstation:  embedded terminal unavailable (interactive TTY required)');
-    if (sessionBackend.attachCommand) {
-      console.log(`Attach:       ${sessionBackend.attachCommand}`);
-    } else {
-      console.log('Fallback:     unavailable in bare mode; the session ends when the CLI exits');
-    }
-  }
+  for (const line of presencePlan.logLines) console.log(line);
   console.log();
   console.log('  Scan this QR with the Mobily app to pair your device:');
   console.log();
@@ -273,10 +238,6 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     'mobily qr hide   Hide this panel',
     'mobily qr clear  Hide it and clear the whole terminal',
   ].join('\n');
-  sessionBackend.showPairingPanel?.(
-    pairingPanel,
-    Math.min(pairingPanel.split('\n').length, Math.max(50, workstationSize.rows - 1)),
-  );
 
   const smokePath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -291,66 +252,38 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
   } else if (!tunnel.serverTls) {
     console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
   }
-  if (embedsWorkstation) {
+
+  workstationPresence = beginWorkstationPresence({
+    session,
+    backend: sessionBackend,
+    pairingPanel,
+    pairingPanelHeight: Math.min(
+      pairingPanel.split('\n').length,
+      Math.max(50, workstationSize.rows - 1),
+    ),
+    cwd,
+    onEmbeddedShutdown: (reason) => {
+      void lifecycle.requestShutdown(workstationShutdownMessage(reason));
+    },
+    onTmuxDetach: (message) => {
+      console.log(message);
+      void lifecycle.requestShutdown(message);
+    },
+    log: (line) => console.log(line),
+  });
+
+  if (presencePlan.mode === 'embedded') {
     console.log('Controls:     Ctrl+C interrupts the shared session; Ctrl+X exits Mobily.');
     console.log(
       'Waiting for the Android app to authenticate; this terminal will continue automatically.',
     );
     console.log();
-    let workstationStarted = false;
-    beginWorkstation = () => {
-      if (workstationStarted) return;
-      workstationStarted = true;
-      workstationTerminal = attachWorkstationTerminal(session, {
-        onShutdown: (reason) => {
-          void lifecycle.requestShutdown(workstationShutdownMessage(reason));
-        },
-      });
-    };
-    if (clientAuthenticated) beginWorkstation();
-  } else if (
-    attachesTmuxWorkstation &&
-    sessionBackend.sessionName &&
-    sessionBackend.attachCommand
-  ) {
-    const sessionName = sessionBackend.sessionName;
-    const attachCommand = sessionBackend.attachCommand;
+  } else if (presencePlan.mode === 'tmux-attach') {
     console.log('Controls:     Ctrl+C once warns, twice exits Mobily.');
     console.log(
       'Waiting for the Android app to authenticate; this terminal will attach automatically.',
     );
     console.log();
-    let workstationStarted = false;
-    beginWorkstation = () => {
-      if (workstationStarted) return;
-      workstationStarted = true;
-      console.log('Phone connected — attaching workstation…');
-      sessionBackend.showPairingPanel?.(
-        CONNECTED_WORKSTATION_PANEL,
-        CONNECTED_WORKSTATION_PANEL_HEIGHT,
-      );
-      const attached = attachTmuxWorkstation({
-        sessionName,
-        attachCommand,
-        cwd,
-        onDetach: (message) => {
-          console.log(message);
-          void lifecycle.requestShutdown(message);
-        },
-      });
-      const dismissSuccess = scheduleConnectedPanelDismiss({
-        hidePanel: () => {
-          sessionBackend.hidePairingPanel?.();
-        },
-      });
-      workstationTerminal = {
-        dispose(): void {
-          dismissSuccess.dispose();
-          attached.dispose();
-        },
-      };
-    };
-    if (clientAuthenticated) beginWorkstation();
   } else {
     console.log('Press Ctrl+C to exit.');
   }

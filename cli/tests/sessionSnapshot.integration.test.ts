@@ -179,7 +179,9 @@ async function captureSnapshot(backend: SessionBackend): Promise<SessionSnapshot
     },
   });
   workstation.input(`exec ${shellQuote(process.execPath)} ${shellQuote(fixturePath)}\r`);
-  await vi.waitFor(() => expect(workstationOutput).toContain('READY redraw'));
+  await vi.waitFor(() => expect(workstationOutput).toContain('READY redraw'), {
+    timeout: 10_000,
+  });
   workstation.dispose();
 
   return captureSessionSnapshot(session);

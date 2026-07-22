@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ScrollbackBuffer } from './scrollback.js';
+import { PtyOutputHub, reconstructAttributedVisibleAnsi } from './outputHub.js';
 import { defaultSessionRuntime, type SessionRuntime } from './runtime.js';
 import type { SessionBackend } from './types.js';
 
@@ -20,8 +21,7 @@ export class TmuxBackend implements SessionBackend {
   readonly attachCommand: string;
 
   private readonly pty: PtyProcess;
-  private readonly scrollback: ScrollbackBuffer;
-  private readonly listeners = new Set<(data: string) => void>();
+  private readonly hub: PtyOutputHub;
   private readonly dataSubscription: IDisposable;
   private disposed = false;
   private panelDirectory?: string;
@@ -33,7 +33,7 @@ export class TmuxBackend implements SessionBackend {
     const { cwd, sessionName, scrollbackBytes, cols, rows, env, terminalName } = options;
     this.sessionName = sessionName;
     this.attachCommand = `tmux attach-session -t ${sessionName}`;
-    this.scrollback = new ScrollbackBuffer(scrollbackBytes);
+    this.hub = new PtyOutputHub(new ScrollbackBuffer(scrollbackBytes));
 
     const created = !sessionExists(sessionName, runtime);
     if (created) {
@@ -43,7 +43,7 @@ export class TmuxBackend implements SessionBackend {
     runtime.execFile('tmux', ['set-window-option', '-t', sessionName, 'window-size', 'largest']);
     runtime.execFile('tmux', ['set-option', '-t', sessionName, 'status', 'off']);
     try {
-      this.scrollback.append(
+      this.hub.scrollback.append(
         runtime.execFile('tmux', [
           'capture-pane',
           '-p',
@@ -67,10 +67,7 @@ export class TmuxBackend implements SessionBackend {
       env,
       terminalName,
     });
-    this.dataSubscription = this.pty.onData((data) => {
-      this.scrollback.append(data);
-      for (const listener of this.listeners) listener(data);
-    });
+    this.dataSubscription = this.pty.onData((data) => this.hub.push(data));
   }
 
   write(data: string): void {
@@ -82,14 +79,17 @@ export class TmuxBackend implements SessionBackend {
   }
 
   onData(listener: (data: string) => void): IDisposable {
-    this.listeners.add(listener);
-    return { dispose: () => this.listeners.delete(listener) };
+    return this.hub.onData(listener);
   }
 
   onExit(listener: Parameters<PtyProcess['onExit']>[0]): IDisposable {
     return this.pty.onExit(listener);
   }
 
+  /**
+   * One attributed ANSI reconstruction of tmux's current visible pane
+   * (capture-pane -e + cursor metadata). Distinct from scrollback history.
+   */
   captureVisibleScreen(): string {
     const contents = this.runtime.execFile('tmux', [
       'capture-pane',
@@ -109,17 +109,19 @@ export class TmuxBackend implements SessionBackend {
       ])
       .replace(/\r?\n$/, '')
       .split('\t');
-    const lines = contents.replace(/\r?\n$/, '').split(/\r?\n/);
-    const screen = lines.map((line, row) => `\u001b[${row + 1};1H${line}`).join('');
-    const activeScreen = alternate === '1' ? '\u001b[?1049h' : '\u001b[?1049l';
-    const cursor = `\u001b[${Number(cursorY) + 1};${Number(cursorX) + 1}H`;
-    const visibility = cursorVisible === '0' ? '\u001b[?25l' : '\u001b[?25h';
-    const style = tmuxCursorStyleControl(cursorShape, cursorBlinking);
-    return `${activeScreen}\u001b[2J\u001b[H${screen}\u001b[0m${style}${cursor}${visibility}`;
+    return reconstructAttributedVisibleAnsi({
+      contents,
+      alternateOn: alternate === '1',
+      cursorX: Number(cursorX),
+      cursorY: Number(cursorY),
+      cursorVisible: cursorVisible !== '0',
+      cursorShape,
+      cursorBlinking: cursorBlinking !== '0',
+    });
   }
 
   readScrollback(maxLines?: number): string {
-    return this.scrollback.read(maxLines);
+    return this.hub.scrollback.read(maxLines);
   }
 
   showPairingPanel(content: string, height: number): void {
@@ -178,18 +180,11 @@ export class TmuxBackend implements SessionBackend {
     if (this.disposed) return;
     this.disposed = true;
     this.dataSubscription.dispose();
-    this.listeners.clear();
+    this.hub.clear();
     this.pty.kill();
     clearStatusPanelClampHooks(this.sessionName, this.runtime);
     if (this.panelDirectory) rmSync(this.panelDirectory, { recursive: true, force: true });
   }
-}
-
-function tmuxCursorStyleControl(shape: string | undefined, blinking: string | undefined): string {
-  const steady = blinking === '0';
-  const code =
-    shape === 'underline' ? (steady ? 4 : 3) : shape === 'bar' ? (steady ? 6 : 5) : steady ? 2 : 1;
-  return `\u001b[${code} q`;
 }
 
 function installPromptPrefix(sessionName: string, runtime: SessionRuntime): void {
