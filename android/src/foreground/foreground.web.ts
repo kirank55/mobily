@@ -7,7 +7,12 @@ export const foregroundNotification = {
 
   async start(_stationName: string): Promise<void> {},
 
-  async update(_state: string, _lastLine: string, _alert?: string): Promise<void> {},
+  async update(
+    _state: string,
+    _phase: string,
+    _lastLine: string,
+    _alert?: string,
+  ): Promise<void> {},
 
   async stop(): Promise<void> {},
 };

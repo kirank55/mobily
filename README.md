@@ -8,7 +8,7 @@ A free and open-source mobile remote-control for terminal-based development envi
 - **Secure pairing** — QR code pairing with hardware-backed device keys (Android Keystore)
 - **Shared persistent session** — automatically uses tmux when available, with bounded replay on phone/network reconnects and a bare PTY fallback
 - **Embedded workstation terminal** — the launching CLI becomes an interactive mirror of the Android session after setup
-- **Background terminal alerts** — an Android foreground service reports connection state, the latest terminal line, and prompts that need attention
+- **Background terminal alerts** — an Android foreground service reports session progress (Working / Waiting for input / Finished), the latest terminal line, and prompts that need attention
 - **Native Git controls** — browse changes, stage/unstage, inspect large diffs, switch branches, and commit from Android
 - **Multiple Stations** — retain paired workstations and switch between them without scanning again
 - **Pluggable tunneling** — Dev Tunnels for remote access, plus pinned TLS directly on your LAN

@@ -1,13 +1,14 @@
 import { foregroundNotification } from './foreground';
 import { latestTerminalLine, notificationText } from './text';
 import type { ConnectionState } from '@/client/wsClient';
+import type { SessionPhase } from '@mobily/shared';
 
 const MAX_TERMINAL_CONTEXT = 8 * 1024;
 
 export interface ForegroundNotification {
   requestNotificationPermission(): Promise<boolean>;
   start(stationName: string): Promise<void>;
-  update(state: string, lastLine: string, alert?: string): Promise<void>;
+  update(state: string, phase: string, lastLine: string, alert?: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -15,6 +16,7 @@ export class ForegroundConnectionController {
   private generation = 0;
   private started = false;
   private state: ConnectionState = 'connecting';
+  private phase: SessionPhase | '' = '';
   private lastLine = 'Waiting for terminal output';
   private terminalContext = '';
   private outputTimer: ReturnType<typeof setTimeout> | null = null;
@@ -28,6 +30,7 @@ export class ForegroundConnectionController {
   async connect(stationName: string): Promise<void> {
     const generation = ++this.generation;
     this.state = 'connecting';
+    this.phase = '';
     this.lastLine = 'Waiting for terminal output';
     this.terminalContext = '';
     try {
@@ -58,6 +61,12 @@ export class ForegroundConnectionController {
     await this.safeUpdate();
   }
 
+  async updatePhase(phase: SessionPhase, detail?: string): Promise<void> {
+    this.phase = phase;
+    if (detail) this.lastLine = detail;
+    await this.safeUpdate();
+  }
+
   recordOutput(data: string): void {
     this.terminalContext = (this.terminalContext + data).slice(-MAX_TERMINAL_CONTEXT);
     const latestLine = latestTerminalLine(this.terminalContext);
@@ -77,9 +86,10 @@ export class ForegroundConnectionController {
     this.generation++;
     if (this.outputTimer) {
       clearTimeout(this.outputTimer);
-      this.outputTimer = null;
     }
+    this.outputTimer = null;
     this.started = false;
+    this.phase = '';
     this.terminalContext = '';
     await this.queueLifecycle(() => this.safeStop());
   }
@@ -87,7 +97,7 @@ export class ForegroundConnectionController {
   private async safeUpdate(alert?: string): Promise<void> {
     if (!this.started) return;
     try {
-      await this.notifications.update(this.state, this.lastLine, alert);
+      await this.notifications.update(this.state, this.phase, this.lastLine, alert);
     } catch {
       // Notification failures must never interrupt terminal connectivity.
     }
