@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
 import { listPairings } from '@/auth/storage';
+import { StatePanel, Screen } from '@/ui/components';
 
 export default function HomeScreen() {
   const [ready, setReady] = useState(false);
@@ -21,19 +21,15 @@ export default function HomeScreen() {
 
   if (!ready) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator />
-      </View>
+      <Screen>
+        <StatePanel label="Loading Stations" loading />
+      </Screen>
     );
   }
 
-  return <View style={styles.container} />;
+  return (
+    <Screen>
+      <StatePanel label="Opening Mobily" loading />
+    </Screen>
+  );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

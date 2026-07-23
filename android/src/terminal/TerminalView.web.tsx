@@ -13,15 +13,11 @@ import {
 } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { SessionSnapshotFrame } from '@mobily/shared';
-import {
-  TERMINAL_HELPERS_JS,
-  XTERM_CSS,
-  XTERM_FIT_JS,
-  XTERM_JS,
-} from './xtermAssets.generated';
+import { TERMINAL_HELPERS_JS, XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
 import { parseTerminalBridgeMessage } from './bridge';
 import { buildTerminalDocument } from './terminalDocument';
 import type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
+import { colors } from '@/ui/theme';
 
 export type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
 
@@ -167,5 +163,5 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 export default TerminalView;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a1a' },
+  container: { flex: 1, backgroundColor: colors.terminal },
 });

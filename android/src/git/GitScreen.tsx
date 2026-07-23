@@ -6,10 +6,8 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import {
   GIT_RPC_METHODS,
@@ -20,6 +18,8 @@ import {
   type GitStatusResult,
 } from '@mobily/shared';
 import { useStationConnection } from '@/client/StationConnection';
+import { Button, Field, Screen, Status } from '@/ui/components';
+import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 
 export default function GitScreen() {
   const { rpc, state, pairing } = useStationConnection();
@@ -117,32 +117,60 @@ export default function GitScreen() {
 
   if (state !== 'connected' || !rpc) {
     return (
-      <SafeAreaView style={styles.center}>
+      <Screen style={styles.center}>
+        <Text style={styles.kicker}>03 / GIT</Text>
         <Text style={styles.title}>Git</Text>
         <Text style={styles.muted}>Connect to a Station before opening its repository.</Text>
-        <Pressable style={styles.primaryButton} onPress={() => router.navigate('/hosts' as never)}>
-          <Text style={styles.primaryText}>Choose Station</Text>
-        </Pressable>
-      </SafeAreaView>
+        <Button
+          label="Choose Station"
+          variant="primary"
+          onPress={() => router.navigate('/hosts' as never)}
+        />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen>
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Git · {pairing?.stationName}</Text>
-          <Pressable onPress={() => setBranchesOpen(true)} accessibilityLabel="Choose branch">
+          <Pressable
+            style={styles.branchButton}
+            onPress={() => setBranchesOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Choose branch"
+          >
             <Text style={styles.branch}>{status?.branch ?? 'Detached HEAD'} ▾</Text>
           </Pressable>
         </View>
-        <Pressable onPress={() => router.navigate('/terminal')}><Text style={styles.link}>Terminal</Text></Pressable>
-        <Pressable onPress={() => router.navigate('/hosts' as never)}><Text style={styles.link}>Stations</Text></Pressable>
+        <Pressable
+          style={styles.navButton}
+          onPress={() => router.navigate('/terminal')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.link}>Terminal</Text>
+        </Pressable>
+        <Pressable
+          style={styles.navButton}
+          onPress={() => router.navigate('/hosts' as never)}
+          accessibilityRole="button"
+        >
+          <Text style={styles.link}>Stations</Text>
+        </Pressable>
       </View>
 
-      {error.length > 0 && <Text style={styles.error}>{error}</Text>}
+      {error.length > 0 && (
+        <View style={styles.errorBar} accessibilityLiveRegion="polite">
+          <Text style={styles.error}>{error}</Text>
+          <Button label="Retry" compact onPress={() => void refresh()} />
+        </View>
+      )}
       {loading && !status ? (
-        <View style={styles.center}><ActivityIndicator /></View>
+        <View style={styles.loadingPanel} accessibilityLiveRegion="polite">
+          <ActivityIndicator color={colors.ink} />
+          <Status label="Loading repository" />
+        </View>
       ) : (
         <FlatList
           data={status?.files ?? []}
@@ -150,14 +178,27 @@ export default function GitScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <View style={styles.summary}>
-              <Text style={styles.summaryText}>
-                {status?.clean ? 'Working tree clean' : `${status?.files.length ?? 0} changed files`}
-              </Text>
+              <Status
+                label={
+                  status?.clean
+                    ? 'Working tree clean'
+                    : `${status?.files.length ?? 0} changed files`
+                }
+                tone={status?.clean ? 'success' : 'warning'}
+              />
               <View style={styles.actions}>
-                <Pressable style={styles.secondaryButton} onPress={() => void refresh()}>
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => void refresh()}
+                  accessibilityRole="button"
+                >
                   <Text style={styles.secondaryText}>Refresh</Text>
                 </Pressable>
-                <Pressable style={styles.primaryButton} onPress={() => setCommitOpen(true)}>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={() => setCommitOpen(true)}
+                  accessibilityRole="button"
+                >
                   <Text style={styles.primaryText}>Commit</Text>
                 </Pressable>
               </View>
@@ -168,16 +209,28 @@ export default function GitScreen() {
               ))}
             </View>
           }
-          ListEmptyComponent={<Text style={styles.muted}>No local changes.</Text>}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.muted}>No local changes.</Text>
+              <Button label="Refresh" onPress={() => void refresh()} />
+            </View>
+          }
           renderItem={({ item }) => {
             const hasWorking = item.workingTree !== null;
             const hasIndex = item.index !== null;
             return (
               <View style={styles.fileRow}>
-                <Pressable style={styles.fileText} onPress={() => openDiff(item, !hasWorking && hasIndex)}>
-                  <Text style={styles.fileName} numberOfLines={1}>{item.path}</Text>
+                <Pressable
+                  style={styles.fileText}
+                  onPress={() => openDiff(item, !hasWorking && hasIndex)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.fileName} numberOfLines={1}>
+                    {item.path}
+                  </Text>
                   <Text style={styles.fileState}>
-                    {hasIndex ? `staged ${item.index}` : ''}{hasIndex && hasWorking ? ' · ' : ''}
+                    {hasIndex ? `staged ${item.index}` : ''}
+                    {hasIndex && hasWorking ? ' · ' : ''}
                     {hasWorking ? item.workingTree : ''}
                   </Text>
                 </Pressable>
@@ -185,15 +238,29 @@ export default function GitScreen() {
                   <Pressable
                     style={styles.smallButton}
                     disabled={busy !== null}
-                    onPress={() => void mutate(`stage:${item.path}`, GIT_RPC_METHODS.STAGE, { paths: [item.path] })}
-                  ><Text style={styles.smallText}>Stage</Text></Pressable>
+                    accessibilityRole="button"
+                    onPress={() =>
+                      void mutate(`stage:${item.path}`, GIT_RPC_METHODS.STAGE, {
+                        paths: [item.path],
+                      })
+                    }
+                  >
+                    <Text style={styles.smallText}>Stage</Text>
+                  </Pressable>
                 )}
                 {hasIndex && (
                   <Pressable
                     style={styles.smallButton}
                     disabled={busy !== null}
-                    onPress={() => void mutate(`unstage:${item.path}`, GIT_RPC_METHODS.UNSTAGE, { paths: [item.path] })}
-                  ><Text style={styles.smallText}>Undo</Text></Pressable>
+                    accessibilityRole="button"
+                    onPress={() =>
+                      void mutate(`unstage:${item.path}`, GIT_RPC_METHODS.UNSTAGE, {
+                        paths: [item.path],
+                      })
+                    }
+                  >
+                    <Text style={styles.smallText}>Undo</Text>
+                  </Pressable>
                 )}
               </View>
             );
@@ -201,73 +268,228 @@ export default function GitScreen() {
         />
       )}
 
-      <Modal visible={commitOpen} transparent animationType="fade" onRequestClose={() => setCommitOpen(false)}>
-        <View style={styles.modalBackdrop}><View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Commit staged changes</Text>
-          <TextInput
-            style={styles.input}
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Commit message"
-            placeholderTextColor="#6e7681"
-            multiline
-            autoFocus
-          />
-          <View style={styles.actions}>
-            <Pressable style={styles.secondaryButton} onPress={() => setCommitOpen(false)}><Text style={styles.secondaryText}>Cancel</Text></Pressable>
-            <Pressable style={styles.primaryButton} disabled={busy !== null || !message.trim()} onPress={() => void commit()}><Text style={styles.primaryText}>Commit</Text></Pressable>
+      <Modal
+        visible={commitOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setCommitOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={styles.modalCard}
+            accessibilityViewIsModal
+            accessibilityLabel="Commit staged changes"
+          >
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Commit staged changes
+            </Text>
+            <Field
+              label="Commit message"
+              style={styles.input}
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Commit message"
+              multiline
+              autoFocus
+            />
+            <View style={styles.actions}>
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => setCommitOpen(false)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.primaryButton}
+                disabled={busy !== null || !message.trim()}
+                onPress={() => void commit()}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryText}>Commit</Text>
+              </Pressable>
+            </View>
           </View>
-        </View></View>
+        </View>
       </Modal>
 
-      <Modal visible={branchesOpen} transparent animationType="slide" onRequestClose={() => setBranchesOpen(false)}>
-        <View style={styles.modalBackdrop}><View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Local branches</Text>
-          <FlatList
-            data={branches?.branches ?? []}
-            keyExtractor={(branch) => branch}
-            renderItem={({ item }) => (
-              <Pressable style={styles.branchRow} onPress={() => void checkout(item)}>
-                <Text style={[styles.fileName, item === branches?.current && styles.currentBranch]}>{item}</Text>
-              </Pressable>
-            )}
-          />
-          <Pressable style={styles.secondaryButton} onPress={() => setBranchesOpen(false)}><Text style={styles.secondaryText}>Close</Text></Pressable>
-        </View></View>
+      <Modal
+        visible={branchesOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setBranchesOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={styles.modalCard}
+            accessibilityViewIsModal
+            accessibilityLabel="Local branches"
+          >
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Local branches
+            </Text>
+            <FlatList
+              data={branches?.branches ?? []}
+              keyExtractor={(branch) => branch}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.branchRow}
+                  onPress={() => void checkout(item)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: item === branches?.current }}
+                >
+                  <Text
+                    style={[styles.fileName, item === branches?.current && styles.currentBranch]}
+                  >
+                    {item === branches?.current ? '> ' : '  '}
+                    {item}
+                  </Text>
+                </Pressable>
+              )}
+            />
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => setBranchesOpen(false)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117' },
-  center: { flex: 1, backgroundColor: '#0d1117', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#30363d' },
+  center: { alignItems: 'center', justifyContent: 'center', gap: spacing.x4, padding: spacing.x6 },
+  kicker: { ...type.label, color: colors.muted },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.x2,
+    minHeight: 72,
+    padding: spacing.x4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink,
+  },
   headerText: { flex: 1 },
-  title: { color: '#f0f6fc', fontSize: 21, fontWeight: '700' },
-  branch: { color: '#58a6ff', marginTop: 5 },
-  link: { color: '#58a6ff', fontWeight: '600' },
-  error: { color: '#ff7b72', backgroundColor: '#2d1117', padding: 10 },
-  muted: { color: '#8b949e', textAlign: 'center' },
-  list: { padding: 12, gap: 8 },
-  summary: { gap: 9, paddingBottom: 8 },
-  summaryText: { color: '#c9d1d9', fontSize: 15 },
-  actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
-  history: { color: '#8b949e', fontSize: 12 },
-  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, backgroundColor: '#161b22', borderWidth: 1, borderColor: '#30363d', borderRadius: 8 },
-  fileText: { flex: 1 },
-  fileName: { color: '#f0f6fc', fontSize: 14, fontWeight: '600' },
-  fileState: { color: '#8b949e', fontSize: 11, marginTop: 4 },
-  primaryButton: { backgroundColor: '#238636', paddingHorizontal: 16, paddingVertical: 9, borderRadius: 7 },
-  primaryText: { color: '#fff', fontWeight: '700' },
-  secondaryButton: { borderWidth: 1, borderColor: '#30363d', paddingHorizontal: 16, paddingVertical: 9, borderRadius: 7 },
-  secondaryText: { color: '#c9d1d9', fontWeight: '600' },
-  smallButton: { borderWidth: 1, borderColor: '#30363d', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 7 },
-  smallText: { color: '#58a6ff', fontSize: 12, fontWeight: '600' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'center', padding: 24 },
-  modalCard: { maxHeight: '75%', backgroundColor: '#161b22', borderRadius: 12, borderWidth: 1, borderColor: '#30363d', padding: 18, gap: 14 },
-  modalTitle: { color: '#f0f6fc', fontSize: 19, fontWeight: '700' },
-  input: { minHeight: 100, color: '#f0f6fc', backgroundColor: '#0d1117', borderWidth: 1, borderColor: '#30363d', borderRadius: 8, padding: 12, textAlignVertical: 'top' },
-  branchRow: { paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#30363d' },
-  currentBranch: { color: '#3fb950' },
+  title: { ...type.title },
+  branch: { color: colors.ink, fontFamily: fonts.monoMedium, marginTop: spacing.x1 },
+  branchButton: { minHeight: minTouchTarget, justifyContent: 'center' },
+  navButton: { minHeight: minTouchTarget, justifyContent: 'center', paddingHorizontal: spacing.x2 },
+  link: {
+    color: colors.ink,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  errorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.x3,
+    backgroundColor: colors.dangerSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.danger,
+    padding: spacing.x3,
+  },
+  error: {
+    ...type.body,
+    flex: 1,
+    color: colors.danger,
+  },
+  loadingPanel: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.x3 },
+  muted: { ...type.body, color: colors.muted, textAlign: 'center' },
+  list: { padding: spacing.x3 },
+  emptyState: { alignItems: 'center', gap: spacing.x4, padding: spacing.x8 },
+  summary: { gap: spacing.x3, paddingBottom: spacing.x3 },
+  actions: { flexDirection: 'row', gap: spacing.x2, justifyContent: 'flex-end' },
+  history: { ...type.meta },
+  fileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.x2,
+    minHeight: 68,
+    padding: spacing.x3,
+    marginTop: -1,
+    backgroundColor: colors.canvas,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  fileText: { flex: 1, minHeight: minTouchTarget, justifyContent: 'center' },
+  fileName: { color: colors.ink, fontFamily: fonts.monoSemiBold, fontSize: 13 },
+  fileState: { ...type.meta, marginTop: spacing.x1 },
+  primaryButton: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    backgroundColor: colors.ink,
+    borderWidth: 1,
+    borderColor: colors.ink,
+    paddingHorizontal: spacing.x4,
+  },
+  primaryText: {
+    color: colors.canvas,
+    fontFamily: fonts.monoSemiBold,
+    textTransform: 'uppercase',
+    fontSize: 12,
+  },
+  secondaryButton: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.ink,
+    paddingHorizontal: spacing.x4,
+    backgroundColor: colors.canvas,
+  },
+  secondaryText: {
+    color: colors.ink,
+    fontFamily: fonts.monoSemiBold,
+    textTransform: 'uppercase',
+    fontSize: 12,
+  },
+  smallButton: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.ink,
+    paddingHorizontal: spacing.x3,
+  },
+  smallText: {
+    color: colors.ink,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: colors.backdrop,
+    justifyContent: 'center',
+    padding: spacing.x6,
+  },
+  modalCard: {
+    maxHeight: '75%',
+    backgroundColor: colors.canvas,
+    borderWidth: 1,
+    borderColor: colors.ink,
+    padding: spacing.x4,
+    gap: spacing.x4,
+  },
+  modalTitle: { ...type.title },
+  input: {
+    minHeight: 100,
+    color: colors.ink,
+    fontFamily: fonts.body,
+    backgroundColor: colors.canvas,
+    borderWidth: 1,
+    borderColor: colors.ink,
+    padding: spacing.x3,
+    textAlignVertical: 'top',
+  },
+  branchRow: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  currentBranch: { color: colors.ink, fontFamily: fonts.monoBold },
 });

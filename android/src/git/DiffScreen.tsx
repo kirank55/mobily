@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { GIT_RPC_METHODS, type JsonObject } from '@mobily/shared';
 import { useStationConnection } from '@/client/StationConnection';
+import { Button, Screen, Status } from '@/ui/components';
+import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 import {
   parseUnifiedDiff,
   toSideBySideRows,
@@ -70,18 +71,36 @@ export default function DiffScreen() {
   const data = (mode === 'unified' ? lines : sideRows) as (DiffLine | SideBySideRow)[];
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><Text style={styles.link}>Back</Text></Pressable>
+        <Pressable
+          style={styles.headerButton}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+        >
+          <Text style={styles.link}>Back</Text>
+        </Pressable>
         <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={1}>{path || 'Diff'}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {path || 'Diff'}
+          </Text>
           <Text style={styles.muted}>{staged ? 'Staged changes' : 'Working tree changes'}</Text>
         </View>
-        <Pressable onPress={() => setMode(mode === 'unified' ? 'side-by-side' : 'unified')}>
+        <Pressable
+          style={styles.headerButton}
+          onPress={() => setMode(mode === 'unified' ? 'side-by-side' : 'unified')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'side-by-side' }}
+        >
           <Text style={styles.link}>{mode === 'unified' ? 'Split' : 'Unified'}</Text>
         </Pressable>
       </View>
-      {error.length > 0 && <Text style={styles.error}>{error}</Text>}
+      {error.length > 0 && (
+        <View style={styles.errorBar} accessibilityLiveRegion="polite">
+          <Text style={styles.error}>{error}</Text>
+          <Button label="Retry" compact onPress={() => void load()} />
+        </View>
+      )}
       <FlatList
         data={data}
         keyExtractor={(_item, index) => `${mode}:${index}`}
@@ -92,8 +111,22 @@ export default function DiffScreen() {
         onEndReached={() => {
           if (nextCursor && !loading) void load(nextCursor);
         }}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>No textual diff.</Text> : null}
-        ListFooterComponent={loading ? <ActivityIndicator style={styles.loader} /> : null}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.empty}>No textual diff.</Text>
+              <Button label="Back" onPress={() => router.back()} />
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          loading ? (
+            <View style={styles.loader} accessibilityLiveRegion="polite">
+              <ActivityIndicator color={colors.ink} />
+              <Status label="Loading diff" />
+            </View>
+          ) : null
+        }
         renderItem={({ item }) =>
           mode === 'unified' ? (
             <UnifiedRow line={item as DiffLine} />
@@ -102,7 +135,7 @@ export default function DiffScreen() {
           )
         }
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
@@ -111,7 +144,9 @@ function UnifiedRow({ line }: { line: DiffLine }) {
     <View style={[styles.diffRow, lineStyle(line)]}>
       <Text style={styles.lineNumber}>{line.oldLine ?? ''}</Text>
       <Text style={styles.lineNumber}>{line.newLine ?? ''}</Text>
-      <Text style={styles.code} selectable>{line.content}</Text>
+      <Text style={styles.code} selectable>
+        {line.content}
+      </Text>
     </View>
   );
 }
@@ -128,40 +163,107 @@ function SplitRow({ row }: { row: SideBySideRow }) {
 function DiffCell({ line, side }: { line: DiffLine | null; side: 'left' | 'right' }) {
   return (
     <View style={[styles.cell, line ? lineStyle(line) : styles.blankCell]}>
-      <Text style={styles.lineNumber}>{line ? (side === 'left' ? line.oldLine : line.newLine) ?? '' : ''}</Text>
-      <Text style={styles.code} numberOfLines={1}>{line?.content ?? ''}</Text>
+      <Text style={styles.lineNumber}>
+        {line ? ((side === 'left' ? line.oldLine : line.newLine) ?? '') : ''}
+      </Text>
+      <Text style={styles.code} numberOfLines={1}>
+        {line?.content ?? ''}
+      </Text>
     </View>
   );
 }
 
 function lineStyle(line: DiffLine) {
   switch (line.kind) {
-    case 'addition': return styles.addition;
-    case 'deletion': return styles.deletion;
-    case 'hunk': return styles.hunk;
-    case 'header': return styles.fileHeader;
-    default: return undefined;
+    case 'addition':
+      return styles.addition;
+    case 'deletion':
+      return styles.deletion;
+    case 'hunk':
+      return styles.hunk;
+    case 'header':
+      return styles.fileHeader;
+    default:
+      return undefined;
   }
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#30363d' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.x2,
+    minHeight: 72,
+    paddingHorizontal: spacing.x2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink,
+  },
+  headerButton: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.x2,
+  },
   headerText: { flex: 1 },
-  title: { color: '#f0f6fc', fontSize: 16, fontWeight: '700' },
-  muted: { color: '#8b949e', fontSize: 11, marginTop: 2 },
-  link: { color: '#58a6ff', fontWeight: '600' },
-  error: { color: '#ff7b72', backgroundColor: '#2d1117', padding: 10 },
-  empty: { color: '#8b949e', textAlign: 'center', padding: 40 },
-  loader: { padding: 20 },
-  diffRow: { minHeight: 23, flexDirection: 'row', alignItems: 'flex-start' },
-  splitRow: { flexDirection: 'row', minHeight: 23 },
-  cell: { width: '50%', flexDirection: 'row', borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#30363d' },
-  blankCell: { backgroundColor: '#161b22' },
-  lineNumber: { width: 42, color: '#6e7681', textAlign: 'right', paddingRight: 7, fontFamily: 'monospace', fontSize: 11, lineHeight: 22 },
-  code: { flex: 1, color: '#c9d1d9', fontFamily: 'monospace', fontSize: 11, lineHeight: 22 },
-  addition: { backgroundColor: '#0f2d1b' },
-  deletion: { backgroundColor: '#3b1518' },
-  hunk: { backgroundColor: '#17294d' },
-  fileHeader: { backgroundColor: '#21262d' },
+  title: { ...type.title, fontSize: 15, lineHeight: 20 },
+  muted: { ...type.meta, marginTop: 2 },
+  link: {
+    color: colors.ink,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+  errorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.x3,
+    backgroundColor: colors.dangerSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.danger,
+    padding: spacing.x3,
+  },
+  error: {
+    ...type.body,
+    flex: 1,
+    color: colors.danger,
+  },
+  empty: { ...type.body, color: colors.muted, textAlign: 'center', padding: spacing.x12 },
+  emptyState: { alignItems: 'center', gap: spacing.x3 },
+  loader: { alignItems: 'center', gap: spacing.x3, padding: spacing.x6 },
+  diffRow: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  splitRow: { flexDirection: 'row', minHeight: 24 },
+  cell: {
+    width: '50%',
+    flexDirection: 'row',
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  blankCell: { backgroundColor: colors.surface },
+  lineNumber: {
+    width: 42,
+    color: colors.muted,
+    textAlign: 'right',
+    paddingRight: 7,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    lineHeight: 23,
+  },
+  code: { flex: 1, color: colors.ink, fontFamily: fonts.mono, fontSize: 11, lineHeight: 23 },
+  addition: {
+    backgroundColor: colors.successSurface,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.success,
+  },
+  deletion: {
+    backgroundColor: colors.dangerSurface,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.danger,
+  },
+  hunk: { backgroundColor: colors.surfaceRaised },
+  fileHeader: { backgroundColor: colors.surface },
 });

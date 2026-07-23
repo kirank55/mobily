@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { listPairings, selectPairing, type PairingRecord } from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
+import { Button, Screen, StatePanel, Status, TopBar } from '@/ui/components';
+import { colors, fonts, spacing, type } from '@/ui/theme';
 import { probeStation } from './probe';
 
 type Reachability = 'checking' | 'online' | 'offline';
@@ -58,47 +59,50 @@ export default function HostsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator />
-      </SafeAreaView>
+      <Screen>
+        <StatePanel label="Checking Stations" loading />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Stations</Text>
-          <Text style={styles.subtitle}>Choose where you want to work</Text>
-        </View>
-        <Pressable
-          style={styles.addButton}
-          onPress={() => router.push('/scanner')}
-          accessibilityLabel="Add Station"
-        >
-          <Text style={styles.addButtonText}>Add</Text>
-        </Pressable>
-      </View>
+    <Screen>
+      <TopBar
+        eyebrow="01 / Stations"
+        title="Choose your Station"
+        actions={
+          <Button
+            label="Add"
+            variant="primary"
+            compact
+            onPress={() => router.push('/scanner')}
+            accessibilityLabel="Add Station"
+          />
+        }
+      />
       <FlatList
         data={pairings}
         keyExtractor={(record) => record.deviceBindingId}
         contentContainerStyle={pairings.length === 0 ? styles.emptyList : styles.list}
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text style={styles.emptyTitle}>No paired Stations</Text>
-            <Text style={styles.subtitle}>Add a Station by scanning its Mobily QR code.</Text>
+            <Text style={styles.emptyTitle}>NO PAIRED STATIONS</Text>
+            <Text style={styles.subtitle}>Scan the QR code shown by the Mobily CLI to begin.</Text>
+            <Button label="Add Station" variant="primary" onPress={() => router.push('/scanner')} />
           </View>
         }
         renderItem={({ item }) => {
           const active = connectedPairing?.deviceBindingId === item.deviceBindingId;
-          const reachability = active && state === 'connected' ? 'online' : statuses[item.deviceBindingId];
+          const reachability =
+            active && state === 'connected' ? 'online' : statuses[item.deviceBindingId];
           return (
             <Pressable
               style={[styles.card, active && styles.activeCard]}
               onPress={() => void open(item)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               accessibilityLabel={`Open ${item.stationName}`}
             >
-              <View style={[styles.dot, styles[reachability ?? 'checking']]} />
               <View style={styles.cardText}>
                 <Text style={styles.stationName}>{item.stationName}</Text>
                 <Text style={styles.lastConnected}>
@@ -107,49 +111,49 @@ export default function HostsScreen() {
                     : 'Not connected yet'}
                 </Text>
               </View>
-              <Text style={styles.status}>{reachability ?? 'checking'}</Text>
+              <Status
+                label={reachability ?? 'checking'}
+                tone={
+                  reachability === 'online'
+                    ? 'success'
+                    : reachability === 'offline'
+                      ? 'danger'
+                      : 'neutral'
+                }
+              />
             </Pressable>
           );
         }}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  center: {
+    flex: 1,
     alignItems: 'center',
-    padding: 20,
-    borderBottomColor: '#30363d',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    gap: spacing.x4,
+    padding: spacing.x6,
   },
-  title: { color: '#f0f6fc', fontSize: 26, fontWeight: '700' },
-  subtitle: { color: '#8b949e', fontSize: 14, marginTop: 4 },
-  addButton: { backgroundColor: '#238636', borderRadius: 8, paddingHorizontal: 18, paddingVertical: 10 },
-  addButtonText: { color: '#fff', fontWeight: '700' },
-  list: { padding: 16, gap: 12 },
+  subtitle: { ...type.body, color: colors.muted, textAlign: 'center' },
+  list: { padding: spacing.x4 },
   emptyList: { flexGrow: 1 },
-  emptyTitle: { color: '#f0f6fc', fontSize: 18, fontWeight: '600' },
+  emptyTitle: { ...type.title, textAlign: 'center' },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 10,
+    gap: spacing.x3,
+    minHeight: 84,
+    padding: spacing.x4,
+    marginTop: -1,
     borderWidth: 1,
-    borderColor: '#30363d',
-    backgroundColor: '#161b22',
+    borderColor: colors.border,
+    backgroundColor: colors.canvas,
   },
-  activeCard: { borderColor: '#58a6ff' },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-  checking: { backgroundColor: '#8b949e' },
-  online: { backgroundColor: '#2ea043' },
-  offline: { backgroundColor: '#f85149' },
+  activeCard: { borderWidth: 2, borderColor: colors.ink, backgroundColor: colors.surface },
   cardText: { flex: 1 },
-  stationName: { color: '#f0f6fc', fontSize: 17, fontWeight: '600' },
-  lastConnected: { color: '#8b949e', fontSize: 12, marginTop: 4 },
-  status: { color: '#8b949e', fontSize: 12, textTransform: 'capitalize' },
+  stationName: { color: colors.ink, fontFamily: fonts.monoSemiBold, fontSize: 16 },
+  lastConnected: { ...type.meta, marginTop: spacing.x1 },
 });

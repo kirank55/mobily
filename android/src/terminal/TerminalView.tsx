@@ -14,12 +14,7 @@ import { useRef, useCallback, forwardRef, useEffect, useImperativeHandle, useSta
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
 import type { SessionSnapshotFrame } from '@mobily/shared';
-import {
-  TERMINAL_HELPERS_JS,
-  XTERM_CSS,
-  XTERM_FIT_JS,
-  XTERM_JS,
-} from './xtermAssets.generated';
+import { TERMINAL_HELPERS_JS, XTERM_CSS, XTERM_FIT_JS, XTERM_JS } from './xtermAssets.generated';
 import { parseTerminalBridgeMessage } from './bridge';
 import {
   rendererStartupPresentation,
@@ -28,6 +23,7 @@ import {
 } from './rendererStartup';
 import { buildTerminalDocument } from './terminalDocument';
 import type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
+import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 
 export type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
 
@@ -220,7 +216,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 export default TerminalView;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, position: 'relative', backgroundColor: '#1a1a1a' },
+  container: { flex: 1, position: 'relative', backgroundColor: colors.terminal },
   rendererOverlay: {
     position: 'absolute',
     top: 0,
@@ -230,19 +226,26 @@ const styles = StyleSheet.create({
     zIndex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-    backgroundColor: '#0d1117',
+    gap: spacing.x3,
+    padding: spacing.x6,
+    backgroundColor: colors.canvas,
   },
-  rendererMessage: { color: '#c9d1d9', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  rendererDetail: { color: '#8b949e', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  rendererMessage: { ...type.title, textAlign: 'center' },
+  rendererDetail: { ...type.body, color: colors.muted, textAlign: 'center' },
   retryButton: {
-    marginTop: 4,
-    borderRadius: 8,
-    backgroundColor: '#238636',
-    paddingHorizontal: 28,
-    paddingVertical: 12,
+    minHeight: minTouchTarget,
+    marginTop: spacing.x1,
+    justifyContent: 'center',
+    backgroundColor: colors.ink,
+    borderWidth: 1,
+    borderColor: colors.ink,
+    paddingHorizontal: spacing.x6,
   },
-  retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  retryButtonText: {
+    color: colors.canvas,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
   webview: { flex: 1, backgroundColor: 'transparent' },
 });

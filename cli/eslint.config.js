@@ -9,4 +9,13 @@ export default tseslint.config(
   {
     ignores: ['dist/**'],
   },
+  {
+    files: ['tests/fixtures/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        setInterval: 'readonly',
+      },
+    },
+  },
 );
