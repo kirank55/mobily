@@ -93,6 +93,13 @@ export function pinchTerminalScale(initialScale, initialDistance, currentDistanc
   return clampTerminalScale((initialScale * currentDistance) / initialDistance);
 }
 
+/** DEC private modes that enable click / drag / motion mouse reporting. */
+var TERMINAL_MOUSE_REPORTING_PARAMS = { '1000': 1, '1002': 1, '1003': 1 };
+
+/**
+ * Strip mouse tracking DECSET/DECRST params (used by the workstation embed).
+ * The Android WebView path preserves these and tracks them instead.
+ */
 export function stripTerminalMouseControls(data) {
   return data.replace(/\x1b\[\?([0-9;]+)([hl])/g, function (_sequence, parameters, command) {
     var remaining = parameters.split(';').filter(function (parameter) {
@@ -100,6 +107,54 @@ export function stripTerminalMouseControls(data) {
     });
     return remaining.length ? '\x1b[?' + remaining.join(';') + command : '';
   });
+}
+
+/** Mutable mouse-mode tracker for the Android terminal document. */
+export function createTerminalMouseModeState() {
+  return { modes: {} };
+}
+
+/**
+ * Preserve DEC mouse controls in `data` while updating whether click reporting
+ * is active. Returns `data` unchanged (aside from string identity).
+ */
+export function applyTerminalMouseControls(state, data) {
+  if (!state || typeof data !== 'string') return data;
+  if (!state.modes) state.modes = {};
+  data.replace(/\x1b\[\?([0-9;]+)([hl])/g, function (_sequence, parameters, command) {
+    var enable = command === 'h';
+    parameters.split(';').forEach(function (parameter) {
+      if (!TERMINAL_MOUSE_REPORTING_PARAMS[parameter]) return;
+      if (enable) state.modes[parameter] = 1;
+      else delete state.modes[parameter];
+    });
+    return _sequence;
+  });
+  return data;
+}
+
+export function isTerminalMouseReportingActive(state) {
+  return !!(state && state.modes && Object.keys(state.modes).length > 0);
+}
+
+/** SGR (1006) left-button press+release at 0-based screen cell coordinates. */
+export function sgrMouseClickSequence(col, row) {
+  var c = Math.max(0, col | 0) + 1;
+  var r = Math.max(0, row | 0) + 1;
+  return '\x1b[<0;' + c + ';' + r + 'M\x1b[<0;' + c + ';' + r + 'm';
+}
+
+/** Disable mobile IME word suggestions on xterm's helper textarea. */
+export function hardenTerminalTextarea(term) {
+  var textarea = term && term.textarea;
+  if (!textarea && term && term.element) {
+    textarea = term.element.querySelector('.xterm-helper-textarea');
+  }
+  if (!textarea || !textarea.setAttribute) return;
+  textarea.setAttribute('autocomplete', 'off');
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocapitalize', 'off');
+  textarea.setAttribute('spellcheck', 'false');
 }
 
 export function terminalSelectionRange(start, end, cols) {
@@ -245,15 +300,16 @@ export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '
   if (snapshotAnsi === null) return null;
   return (
     '\x1bc' +
-    stripTerminalMouseControls(scrollback).replace(/\x00/g, '') +
+    scrollback.replace(/\x00/g, '') +
     '\x1b[?1049l\x1b[0m\x1b[2J\x1b[H' +
     snapshotAnsi.slice(2) +
-    stripTerminalMouseControls(liveOutput)
+    liveOutput
   );
 }
 
 export function buildTerminalHelpersSource() {
   return [
+    'var TERMINAL_MOUSE_REPORTING_PARAMS = ' + JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) + ';',
     clampTerminalScale,
     clampTerminalFontSize,
     estimateTerminalCellSize,
@@ -263,12 +319,17 @@ export function buildTerminalHelpersSource() {
     fitTerminalScale,
     pinchTerminalScale,
     stripTerminalMouseControls,
+    createTerminalMouseModeState,
+    applyTerminalMouseControls,
+    isTerminalMouseReportingActive,
+    sgrMouseClickSequence,
+    hardenTerminalTextarea,
     terminalSelectionRange,
     terminalCellSgr,
     snapshotToAnsi,
     scrollbackAndSnapshotToAnsi,
   ]
-    .map((helper) => helper.toString())
+    .map((helper) => (typeof helper === 'string' ? helper : helper.toString()))
     .join('\n');
 }
 
@@ -352,7 +413,7 @@ export function buildTerminalDocument({
     <button class="key-btn" data-seq="RIGHT">&#9654;</button>
     <button class="key-btn" data-seq="UP">&#9650;</button>
     <button class="key-btn" data-seq="DOWN">&#9660;</button>
-    <button class="key-btn" data-seq="HOME">Home</button>
+    <button class="key-btn" data-seq="ENTER">Enter</button>
     <button class="key-btn" data-seq="END">End</button>
     <button class="key-btn" data-seq="PGUP">PgUp</button>
     <button class="key-btn" data-seq="PGDN">PgDn</button>
@@ -371,10 +432,10 @@ export function buildTerminalDocument({
 ${VIEWPORT_HELPERS}
 (function(){
   'use strict';
-  var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',HOME:'\\x1b[H',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
+  var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',ENTER:'\\r',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
   var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
-  var scale=1,selectionMode=false,mouseCarry='',selectionStart=null,pinchDistance=0,pinchScale=1;
+  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,mouseTapStart=null,pinchDistance=0,pinchScale=1;
   var fontSize=DEFAULT_READABLE_FONT_SIZE,ownsSize=false,SURFACE_PAD=8;
   var gridProposer=createDebouncedGridProposer(function(cols,rows){
     if(!term)return;
@@ -413,7 +474,7 @@ ${VIEWPORT_HELPERS}
     if(rafPending||snapshotInFlight||!outQ.length)return;
     rafPending=true;requestAnimationFrame(function(){
       rafPending=false;if(snapshotInFlight||!outQ.length)return;
-      var chunk=stripMouseModes(outQ.join(''));outQ=[];if(term)term.write(chunk);
+      var chunk=prepareOutput(outQ.join(''));outQ=[];if(term)term.write(chunk);
     });
   }
   function sendRN(msg){
@@ -430,11 +491,16 @@ ${VIEWPORT_HELPERS}
     var pendingTags=Object.keys(pendingLat);if(pendingTags.length>256)delete pendingLat[pendingTags[0]];
     sendRN({type:'input',data:data,latencyTag:tag});
   }
-  function stripMouseModes(data){
+  function prepareOutput(data){
     var value=mouseCarry+data;mouseCarry='';
     var pending=value.match(/\x1b(?:\[|\[\?[0-9;]*)$/);
     if(pending){mouseCarry=pending[0];value=value.slice(0,-pending[0].length);}
-    return stripTerminalMouseControls(value);
+    return applyTerminalMouseControls(mouseModeState,value);
+  }
+  function resetMouseTracking(){
+    mouseCarry='';
+    mouseModeState=createTerminalMouseModeState();
+    mouseTapStart=null;
   }
   function terminalOptions(cols,rows){
     return {allowProposedApi:true,cursorBlink:true,fontSize:fontSize,cols:cols,rows:rows,
@@ -448,7 +514,7 @@ ${VIEWPORT_HELPERS}
   }
   function openTerminal(container,cols,rows){
     var next=new Terminal(terminalOptions(cols,rows));
-    next.loadAddon(new FitAddon.FitAddon());next.open(container);return next;
+    next.loadAddon(new FitAddon.FitAddon());next.open(container);hardenTerminalTextarea(next);return next;
   }
   function bindTerminalInput(target){
     target.onData(function(d){sendInput(d);});
@@ -459,7 +525,7 @@ ${VIEWPORT_HELPERS}
       // A reconnect transition supersedes every frame and queued output from
       // the socket that just dropped, including a snapshot still parsing in
       // the hidden staging terminal.
-      snapshotToken++;snapshotInFlight=false;outQ=[];mouseCarry='';
+      snapshotToken++;snapshotInFlight=false;outQ=[];resetMouseTracking();
     }
     var overlay=document.getElementById('connection-overlay');
     var status=document.getElementById('connection-status');
@@ -470,7 +536,7 @@ ${VIEWPORT_HELPERS}
   }
   function applySnapshot(snapshot){
     var snapshotAnsi=snapshotToAnsi(snapshot);if(snapshotAnsi===null)return;
-    outQ=[];mouseCarry='';snapshotInFlight=true;
+    outQ=[];resetMouseTracking();applyTerminalMouseControls(mouseModeState,snapshotAnsi);snapshotInFlight=true;
     var token=++snapshotToken,oldTerm=term;
     var oldContainer=oldTerm&&oldTerm.element&&oldTerm.element.parentElement;
     var nextContainer=document.createElement('div');
@@ -494,7 +560,7 @@ ${VIEWPORT_HELPERS}
   }
   function applyScrollback(scrollback,snapshot,liveOutput){
     var ansi=scrollbackAndSnapshotToAnsi(scrollback,snapshot,liveOutput);if(ansi===null)return;
-    outQ=[];mouseCarry='';snapshotInFlight=true;
+    outQ=[];resetMouseTracking();applyTerminalMouseControls(mouseModeState,ansi);snapshotInFlight=true;
     var token=++snapshotToken,oldTerm=term;
     var oldContainer=oldTerm&&oldTerm.element&&oldTerm.element.parentElement;
     var nextContainer=document.createElement('div');
@@ -578,11 +644,15 @@ ${VIEWPORT_HELPERS}
     selectionMode=!!enabled;document.body.classList.toggle('selecting',selectionMode);
     if(term){term.options.disableStdin=selectionMode;if(!selectionMode)term.clearSelection();}
   }
-  function terminalCell(touch){
+  function terminalScreenCell(touch){
     var viewport=document.getElementById('viewport'),rect=viewport.getBoundingClientRect(),px=terminalPixels();
     var col=Math.max(0,Math.min(term.cols-1,Math.floor((touch.clientX-rect.left+viewport.scrollLeft)/scale/(px.width/term.cols))));
     var row=Math.max(0,Math.min(term.rows-1,Math.floor((touch.clientY-rect.top+viewport.scrollTop)/scale/(px.height/term.rows))));
-    return {col:col,row:term.buffer.active.viewportY+row};
+    return {col:col,row:row};
+  }
+  function terminalCell(touch){
+    var screen=terminalScreenCell(touch);
+    return {col:screen.col,row:term.buffer.active.viewportY+screen.row};
   }
   function selectTo(cell){
     if(!selectionStart)return;var range=terminalSelectionRange(selectionStart,cell,term.cols);
@@ -624,13 +694,32 @@ ${VIEWPORT_HELPERS}
   }
   document.getElementById('viewport').addEventListener('touchstart',function(e){
     if(selectionMode&&e.touches.length===1){selectionStart=terminalCell(e.touches[0]);selectTo(selectionStart);e.preventDefault();}
-    else if(e.touches.length===2){pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
+    else if(e.touches.length===2){mouseTapStart=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
+    else if(!selectionMode&&isTerminalMouseReportingActive(mouseModeState)&&e.touches.length===1){
+      mouseTapStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
+      e.preventDefault();
+      if(term)term.blur();
+    }
   },{passive:false});
   document.getElementById('viewport').addEventListener('touchmove',function(e){
     if(selectionMode&&selectionStart&&e.touches.length===1){selectTo(terminalCell(e.touches[0]));e.preventDefault();}
-    else if(e.touches.length===2&&pinchDistance>0){var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
+    else if(e.touches.length===2&&pinchDistance>0){mouseTapStart=null;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
+    else if(mouseTapStart&&e.touches.length===1){
+      if(Math.hypot(e.touches[0].clientX-mouseTapStart.x,e.touches[0].clientY-mouseTapStart.y)>12)mouseTapStart=null;
+    }
   },{passive:false});
-  document.getElementById('viewport').addEventListener('touchend',function(e){if(!e.touches.length){selectionStart=null;pinchDistance=0;}});
+  document.getElementById('viewport').addEventListener('touchend',function(e){
+    if(mouseTapStart&&!e.touches.length&&!selectionMode&&isTerminalMouseReportingActive(mouseModeState)&&term){
+      var touch=e.changedTouches[0];
+      if(touch&&Math.hypot(touch.clientX-mouseTapStart.x,touch.clientY-mouseTapStart.y)<=12){
+        var cell=terminalScreenCell(touch);
+        sendInput(sgrMouseClickSequence(cell.col,cell.row));
+        e.preventDefault();
+        term.blur();
+      }
+    }
+    if(!e.touches.length){selectionStart=null;mouseTapStart=null;pinchDistance=0;}
+  },{passive:false});
   document.getElementById('key-row').addEventListener('click',function(e){
     var btn=e.target.closest('.key-btn');if(!btn)return;
     var tog=btn.dataset.toggle;
