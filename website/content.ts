@@ -27,16 +27,6 @@ export const proofPoints = [
   { label: 'Transport', detail: 'Local or remote', mark: '↗' },
 ] as const;
 
-export const problemSolution = {
-  index: '00',
-  label: 'WHY MOBILY',
-  eyebrow: 'THE PROBLEM',
-  question: 'Tired of sitting at your PC, staring at the screen while an agent does the work?',
-  answerMark: 'THE FIX',
-  answer:
-    'Use Mobily. Keep the live terminal on your phone—leave the desk without missing the session.',
-} as const;
-
 export const workflow = [
   {
     id: 'pair',
@@ -126,12 +116,6 @@ export const features = [
     description: 'Choose Dev Tunnels away from the desk or pinned TLS on the same Wi-Fi network.',
     meta: 'LAN / REMOTE',
   },
-] as const;
-
-export const securityFlow = [
-  { label: 'PC', detail: 'Your PC', mark: '>_' },
-  { label: 'Secure transport', detail: 'Dev Tunnel or pinned LAN TLS', mark: 'TLS' },
-  { label: 'Android', detail: 'Device Key in Android Keystore', mark: 'KEY' },
 ] as const;
 
 export const securityPoints = [
