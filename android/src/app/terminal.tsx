@@ -15,8 +15,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
 import type { SessionSnapshotFrame } from '@mobily/shared';
 
@@ -25,6 +25,8 @@ import { loadPairing, clearPairing } from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
 import { loadTerminalFontSize, saveTerminalFontSize } from '@/terminal/fontPreference';
+import { Button, Screen, Status } from '@/ui/components';
+import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 
 export default function TerminalRoute() {
   const {
@@ -235,96 +237,126 @@ export default function TerminalRoute() {
               : detail || 'Is the CLI running on your Station?';
 
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <Screen>
         <View style={styles.center}>
+          <Text style={styles.errorKicker}>SESSION ERROR</Text>
           <Text style={styles.errorHeadline}>{headline}</Text>
           <Text style={styles.errorDetail}>{subtext}</Text>
           {!isAuthRejection && !isDeviceKeyError && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
+            <Button
+              label="Retry"
+              variant="primary"
               onPress={handleRetry}
               accessibilityLabel="Retry connection"
-            >
-              <Text style={styles.primaryBtnText}>Retry</Text>
-            </TouchableOpacity>
+            />
           )}
-          <TouchableOpacity
-            style={styles.secondaryBtn}
+          <Button
+            label="Re-scan QR"
+            variant="secondary"
             onPress={handleReScan}
             accessibilityLabel="Re-scan QR code"
-          >
-            <Text style={styles.secondaryBtnText}>Re-scan QR</Text>
-          </TouchableOpacity>
+          />
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen style={styles.container}>
+      <StatusBar style="light" />
       {/* Status bar */}
       <View style={styles.statusBar}>
-        <View
-          style={[
-            styles.dot,
-            connState === 'connected'
-              ? styles.dotConnected
-              : connState === 'reconnecting'
-                ? styles.dotReconnecting
-                : styles.dotConnecting,
-          ]}
-        />
-        <Text style={styles.statusText}>
-          {connState === 'connected'
-            ? stationName
-            : connState === 'reconnecting'
-              ? `Reconnecting… ${detail}`
-              : `Connecting to ${stationName}…`}
-        </Text>
+        <View style={styles.statusInfo}>
+          <Status
+            label={
+              connState === 'connected'
+                ? stationName
+                : connState === 'reconnecting'
+                  ? 'Reconnecting'
+                  : `Connecting / ${stationName}`
+            }
+            tone={
+              connState === 'connected'
+                ? 'success'
+                : connState === 'reconnecting'
+                  ? 'warning'
+                  : 'neutral'
+            }
+          />
+          {latencyStats && (
+            <Text style={styles.latencyText} accessibilityLabel="Terminal latency">
+              P50 {latencyStats.p50}ms · P95 {latencyStats.p95}ms
+            </Text>
+          )}
+        </View>
         <TouchableOpacity
+          style={styles.navButton}
           onPress={() => router.navigate('/git' as never)}
+          accessibilityRole="button"
           accessibilityLabel="Open Git"
         >
           <Text style={styles.navLink}>Git</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={styles.navButton}
           onPress={() => router.navigate('/hosts' as never)}
+          accessibilityRole="button"
           accessibilityLabel="Open Stations"
         >
           <Text style={styles.navLink}>Stations</Text>
         </TouchableOpacity>
-        {latencyStats && (
-          <Text style={styles.latencyText} accessibilityLabel="Terminal latency">
-            P50 {latencyStats.p50}ms · P95 {latencyStats.p95}ms
-          </Text>
-        )}
       </View>
 
       {/* Terminal WebView (always mounted; overlay shown on top when not connected) */}
       <View style={styles.terminalWrapper}>
         <View style={styles.viewControls}>
-          <TouchableOpacity onPress={() => termRef.current?.fit()}>
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={() => termRef.current?.fit()}
+            accessibilityRole="button"
+            accessibilityLabel="Fit terminal"
+          >
             <Text style={styles.controlText}>Fit</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.controlButton}
             onPress={() => termRef.current?.adjustFontSize(-1)}
+            accessibilityRole="button"
             accessibilityLabel="Decrease font size"
           >
             <Text style={styles.controlText}>A−</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.controlButton}
             onPress={() => termRef.current?.adjustFontSize(1)}
+            accessibilityRole="button"
             accessibilityLabel="Increase font size"
           >
             <Text style={styles.controlText}>A+</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={toggleSelection}>
+          <TouchableOpacity
+            style={[styles.controlButton, selectionMode && styles.controlButtonActive]}
+            onPress={toggleSelection}
+            accessibilityRole="button"
+            accessibilityState={{ selected: selectionMode }}
+            accessibilityLabel="Toggle terminal selection"
+          >
             <Text style={[styles.controlText, selectionMode && styles.controlActive]}>Select</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => termRef.current?.copySelection()}>
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={() => termRef.current?.copySelection()}
+            accessibilityRole="button"
+            accessibilityLabel="Copy terminal selection"
+          >
             <Text style={styles.controlText}>Copy</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={pasteClipboard}>
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={pasteClipboard}
+            accessibilityRole="button"
+            accessibilityLabel="Paste into terminal"
+          >
             <Text style={styles.controlText}>Paste</Text>
           </TouchableOpacity>
         </View>
@@ -341,112 +373,74 @@ export default function TerminalRoute() {
           }}
         />
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+  container: { backgroundColor: colors.terminal },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2a2a2a',
-    backgroundColor: '#0d1117',
+    gap: spacing.x1,
+    minHeight: 60,
+    paddingHorizontal: spacing.x2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink,
+    backgroundColor: colors.canvas,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotConnected: {
-    backgroundColor: '#2ea043',
-  },
-  dotReconnecting: {
-    backgroundColor: '#e3b341',
-  },
-  dotConnecting: {
-    backgroundColor: '#484f58',
-  },
-  statusText: {
-    color: '#8b949e',
-    fontSize: 13,
-    flex: 1,
-  },
-  latencyText: {
-    color: '#6e7681',
-    fontSize: 11,
-  },
+  statusInfo: { flex: 1, gap: 2 },
+  latencyText: { ...type.meta, fontSize: 9 },
+  navButton: { minHeight: minTouchTarget, justifyContent: 'center', paddingHorizontal: spacing.x2 },
   navLink: {
-    color: '#58a6ff',
-    fontSize: 12,
-    fontWeight: '600',
+    color: colors.ink,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 11,
+    textTransform: 'uppercase',
   },
-  terminalWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
+  terminalWrapper: { flex: 1, position: 'relative' },
   viewControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    minHeight: 38,
-    backgroundColor: '#111820',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#30363d',
+    minHeight: minTouchTarget,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink,
   },
+  controlButton: {
+    flex: 1,
+    minHeight: minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  controlButtonActive: { backgroundColor: colors.ink },
   controlText: {
-    color: '#c9d1d9',
-    fontSize: 13,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    color: colors.ink,
+    fontFamily: fonts.monoMedium,
+    fontSize: 11,
   },
   controlActive: {
-    color: '#58a6ff',
-    fontWeight: '700',
+    color: colors.canvas,
+    fontFamily: fonts.monoBold,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    padding: 32,
+    gap: spacing.x4,
+    padding: spacing.x8,
   },
+  errorKicker: { ...type.label, color: colors.danger },
   errorHeadline: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#f85149',
+    ...type.title,
+    color: colors.danger,
     textAlign: 'center',
   },
   errorDetail: {
-    fontSize: 14,
-    color: '#8b949e',
+    ...type.body,
+    color: colors.muted,
     textAlign: 'center',
-    lineHeight: 20,
-  },
-  primaryBtn: {
-    marginTop: 8,
-    backgroundColor: '#238636',
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryBtn: {
-    marginTop: 4,
-  },
-  secondaryBtnText: {
-    color: '#58a6ff',
-    fontSize: 15,
   },
 });

@@ -1,22 +1,16 @@
 /**
- * Web pairing screen — paste a Station QR payload or enter endpoint + code.
- * Camera / biometrics are deferred; uses __DEV__ insecure transport.
+ * Web pairing fallback for local Expo development. Native Android pairs by QR.
  */
 
+import { PROTOCOL_VERSION, type PairingPayload } from '@mobily/shared';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { PROTOCOL_VERSION, type PairingPayload } from '@mobily/shared';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+
 import { pairWithStation } from '@/auth/pairing';
 import { allowInsecureStationTransport } from '@/dev/insecureTransport';
+import { Button, Field, Screen, StatePanel, Status, TopBar } from '@/ui/components';
+import { colors, spacing, type } from '@/ui/theme';
 import { parseQrPayload } from './parseQrPayload';
 
 export default function ScannerScreen() {
@@ -54,7 +48,7 @@ export default function ScannerScreen() {
     const parsed = parseQrPayload(qrPaste);
     if (!parsed) {
       setStatus('error');
-      setErrorMsg('Paste a full mobily://pair?… payload from the CLI QR.');
+      setErrorMsg('Paste a full mobily://pair payload from the CLI QR.');
       return;
     }
     await runPair(parsed);
@@ -85,139 +79,101 @@ export default function ScannerScreen() {
 
   if (status === 'pairing') {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.message}>Pairing with Station…</Text>
-      </View>
+      <Screen>
+        <StatePanel
+          label="Pairing with Station"
+          detail="Creating this browser's Device Key."
+          loading
+        />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <Text style={styles.title}>Pair Station (web)</Text>
-      <Text style={styles.hint}>
-        Start the CLI with --tunnel local --allow-insecure-local, then paste the QR payload or enter
-        ws://localhost:PORT and the pairing code.
-      </Text>
+    <Screen edges={['top', 'bottom']}>
+      <TopBar eyebrow="02 / Pair Station" title="Connect the local web client" />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.intro}>
+          Start the CLI with --tunnel local --allow-insecure-local, then use either pairing method
+          below.
+        </Text>
 
-      <Text style={styles.label}>QR payload</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        value={qrPaste}
-        onChangeText={setQrPaste}
-        placeholder="mobily://pair?v=2&endpoint=…"
-        placeholderTextColor="#6a6a6a"
-        autoCapitalize="none"
-        autoCorrect={false}
-        multiline
-      />
-      <Pressable style={styles.button} onPress={() => void handlePasteQr()}>
-        <Text style={styles.buttonText}>Pair from QR payload</Text>
-      </Pressable>
+        {status === 'error' ? (
+          <View style={styles.errorPanel} accessibilityLiveRegion="polite">
+            <Status label="Pairing error" tone="danger" />
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        ) : null}
 
-      <Text style={styles.or}>or</Text>
+        <View style={styles.panel}>
+          <Text style={styles.panelIndex}>01 / QR PAYLOAD</Text>
+          <Field
+            label="QR payload"
+            value={qrPaste}
+            onChangeText={setQrPaste}
+            placeholder="mobily://pair?v=2&endpoint=..."
+            autoCapitalize="none"
+            autoCorrect={false}
+            multiline
+            style={styles.multiline}
+          />
+          <Button
+            label="Pair from payload"
+            variant="primary"
+            onPress={() => void handlePasteQr()}
+          />
+        </View>
 
-      <Text style={styles.label}>WebSocket endpoint</Text>
-      <TextInput
-        style={styles.input}
-        value={endpoint}
-        onChangeText={setEndpoint}
-        placeholder="ws://localhost:51234"
-        placeholderTextColor="#6a6a6a"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Text style={styles.label}>Pairing code</Text>
-      <TextInput
-        style={styles.input}
-        value={code}
-        onChangeText={setCode}
-        placeholder="ABCD2345"
-        placeholderTextColor="#6a6a6a"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        maxLength={8}
-      />
-      <Pressable style={styles.button} onPress={() => void handleManual()}>
-        <Text style={styles.buttonText}>Pair & connect</Text>
-      </Pressable>
-
-      {status === 'error' ? <Text style={styles.error}>{errorMsg}</Text> : null}
-    </SafeAreaView>
+        <View style={styles.panel}>
+          <Text style={styles.panelIndex}>02 / MANUAL</Text>
+          <Field
+            label="WebSocket endpoint"
+            value={endpoint}
+            onChangeText={setEndpoint}
+            placeholder="ws://localhost:51234"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Field
+            label="Pairing code"
+            value={code}
+            onChangeText={setCode}
+            placeholder="ABCD2345"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={8}
+          />
+          <Button label="Pair and connect" variant="primary" onPress={() => void handleManual()} />
+        </View>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0d1117',
-    padding: 24,
-    gap: 10,
+  content: {
+    padding: spacing.x4,
+    gap: spacing.x4,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
-  title: {
-    color: '#e6e6e6',
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  hint: {
-    color: '#9a9a9a',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  label: {
-    color: '#9a9a9a',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    marginTop: 4,
-  },
-  input: {
+  intro: { ...type.body, color: colors.muted },
+  panel: {
+    gap: spacing.x4,
+    padding: spacing.x4,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#e6e6e6',
-    backgroundColor: '#161616',
-    fontFamily: 'monospace',
-    fontSize: 14,
+    borderColor: colors.ink,
+    backgroundColor: colors.surface,
   },
-  multiline: {
-    minHeight: 72,
-    textAlignVertical: 'top',
+  panelIndex: { ...type.label, color: colors.muted },
+  multiline: { minHeight: 88, textAlignVertical: 'top' },
+  errorPanel: {
+    gap: spacing.x3,
+    padding: spacing.x3,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerSurface,
   },
-  button: {
-    backgroundColor: '#2ea043',
-    borderRadius: 6,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  or: {
-    color: '#6a6a6a',
-    textAlign: 'center',
-    marginVertical: 8,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: '#0d1117',
-  },
-  message: {
-    fontSize: 16,
-    color: '#ccc',
-  },
-  error: {
-    color: '#da3633',
-    marginTop: 12,
-    fontSize: 14,
-  },
+  errorText: { ...type.body, color: colors.danger },
 });

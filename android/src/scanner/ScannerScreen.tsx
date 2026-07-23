@@ -1,17 +1,17 @@
 /**
- * src/scanner/ScannerScreen.tsx
- *
- * QR scanner screen using expo-camera. Scans the pairing code,
- * then triggers the pairing flow (Device Key creation + HTTP handshake).
+ * Native QR pairing. The camera remains an immersive product surface while
+ * application chrome follows the Soft Console design system.
  */
 
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
-import { useState, useRef } from 'react';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { pairWithStation } from '@/auth/pairing';
+import { Button, Screen, StatePanel } from '@/ui/components';
+import { colors, fonts, spacing, type } from '@/ui/theme';
 import { parseQrPayload } from './parseQrPayload';
 
 export default function ScannerScreen() {
@@ -24,10 +24,13 @@ export default function ScannerScreen() {
   function showPairingError(message: string) {
     setStatus('error');
     setErrorMsg(message);
-    setTimeout(() => {
-      scannedRef.current = false;
-      setStatus('scanning');
-    }, 3000);
+  }
+
+  function retryScanning() {
+    scannedRef.current = false;
+    invalidQrLoggedRef.current = false;
+    setErrorMsg('');
+    setStatus('scanning');
   }
 
   async function handleBarcodeScanned(data: string) {
@@ -68,43 +71,57 @@ export default function ScannerScreen() {
 
   if (!permission) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
+      <Screen>
+        <StatePanel label="Checking camera" loading />
+      </Screen>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.message}>Camera access is required to scan the QR code.</Text>
-        <Text style={styles.button} onPress={requestPermission}>
-          Grant permission
-        </Text>
-      </View>
+      <Screen>
+        <StatePanel
+          label="Camera permission required"
+          detail="Mobily uses the camera only to scan the one-time pairing QR code shown by your Station."
+          action={<Button label="Grant permission" variant="primary" onPress={requestPermission} />}
+        />
+      </Screen>
     );
   }
 
   if (status === 'pairing') {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.message}>Pairing with Station…</Text>
-      </View>
+      <Screen>
+        <StatePanel
+          label="Pairing with Station"
+          detail="Creating this phone's Device Key."
+          loading
+        />
+      </Screen>
     );
   }
 
   if (status === 'error') {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{errorMsg}</Text>
-        <Text style={styles.hint}>Retrying in a moment…</Text>
-      </View>
+      <Screen>
+        <StatePanel
+          label="Pairing failed"
+          detail={errorMsg}
+          tone="danger"
+          action={
+            <View style={styles.errorActions}>
+              <Button label="Scan again" variant="primary" onPress={retryScanning} />
+              <Button label="Stations" onPress={() => router.replace('/hosts')} />
+            </View>
+          }
+        />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen style={styles.container}>
+      <StatusBar style="light" />
       <CameraView
         style={styles.camera}
         facing="back"
@@ -112,21 +129,20 @@ export default function ScannerScreen() {
         onBarcodeScanned={({ data }) => handleBarcodeScanned(data)}
       />
       <View style={styles.overlay}>
+        <Text style={styles.kicker}>02 / PAIR STATION</Text>
         <View style={styles.scanFrame} />
-        <Text style={styles.scanHint}>Point at the QR code on your Station</Text>
+        <View style={styles.hintPanel}>
+          <Text style={styles.scanHint}>ALIGN THE STATION QR INSIDE THE FRAME</Text>
+          <Text style={styles.scanDetail}>The code expires after ten minutes.</Text>
+        </View>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  camera: {
-    flex: 1,
-  },
+  container: { backgroundColor: colors.terminal },
+  camera: { flex: 1 },
   overlay: {
     position: 'absolute',
     top: 0,
@@ -136,45 +152,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  kicker: {
+    position: 'absolute',
+    top: spacing.x4,
+    left: spacing.x4,
+    right: spacing.x4,
+    color: colors.terminalInk,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.7,
+    textAlign: 'center',
+  },
   scanFrame: {
     width: 250,
     height: 250,
     borderWidth: 2,
-    borderColor: '#2ea043',
-    borderRadius: 12,
+    borderColor: colors.terminalInk,
     backgroundColor: 'transparent',
   },
+  hintPanel: {
+    marginTop: spacing.x4,
+    paddingHorizontal: spacing.x4,
+    paddingVertical: spacing.x3,
+    backgroundColor: colors.ink,
+    borderWidth: 1,
+    borderColor: colors.canvas,
+  },
   scanHint: {
-    color: '#fff',
-    fontSize: 14,
-    marginTop: 16,
+    color: colors.canvas,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  message: {
-    fontSize: 16,
-    color: '#ccc',
-    textAlign: 'center',
-  },
-  error: {
-    fontSize: 16,
-    color: '#da3633',
-    textAlign: 'center',
-  },
-  hint: {
-    fontSize: 14,
-    color: '#9a9a9a',
-  },
-  button: {
-    fontSize: 16,
-    color: '#2ea043',
-    fontWeight: '600',
-    marginTop: 8,
-  },
+  scanDetail: { ...type.body, color: colors.border, marginTop: spacing.x1, textAlign: 'center' },
+  errorActions: { gap: spacing.x2, width: '100%', maxWidth: 320 },
 });
