@@ -6,6 +6,7 @@ import {
   faqs,
   features,
   navigation,
+  problemSolution,
   proofPoints,
   securityFlow,
   securityPoints,
@@ -116,19 +117,23 @@ function SectionHeading({
   title,
   body,
   inverse = false,
+  className = '',
 }: {
   index: string;
   label: string;
   title: React.ReactNode;
   body?: string;
   inverse?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={`section-heading${inverse ? ' section-heading--inverse' : ''}`}>
+    <div
+      className={`section-heading${inverse ? ' section-heading--inverse' : ''}${className ? ` ${className}` : ''}`}
+    >
       <p className="section-kicker">
         <span>{index}</span> / {label}
       </p>
-      <h2>{title}</h2>
+      <h2 className="section-title">{title}</h2>
       {body && <p className="section-body">{body}</p>}
     </div>
   );
@@ -344,9 +349,24 @@ export function MarketingPage() {
                 COMPANION
               </p>
               <h1>
-                <span>The terminal</span>
-                <span>stays with you.</span>
+                <span>Never miss a</span>
+                <span>coding session.</span>
               </h1>
+              <div className="hero-problem" aria-label="Why Mobily">
+                <p className="problem-index">
+                  <span>{problemSolution.index}</span> / {problemSolution.label}
+                </p>
+                <div className="problem-grid">
+                  <div className="problem-question">
+                    <p className="problem-eyebrow">{problemSolution.eyebrow}</p>
+                    <h2>{problemSolution.question}</h2>
+                  </div>
+                  <div className="problem-answer">
+                    <p className="problem-eyebrow">{problemSolution.answerMark}</p>
+                    <p>{problemSolution.answer}</p>
+                  </div>
+                </div>
+              </div>
               <p className="hero-lede">{site.description}</p>
               <div className="hero-actions">
                 <a className="button button--inverse" href="#get-started">
@@ -369,8 +389,8 @@ export function MarketingPage() {
               </div>
               <div className="hero-terminal" aria-hidden="true">
                 <div className="terminal-title">
-                  <span>STATION</span>
-                  <span>studio-workstation</span>
+                  <span>PC</span>
+                  <span>studio-pc</span>
                 </div>
                 <code>
                   <b>$</b> npx mobily --tunnel devtunnels
@@ -399,7 +419,7 @@ export function MarketingPage() {
                 <span className="status-dot status-dot--success" />
                 <div>
                   <strong>SESSION LIVE</strong>
-                  <small>studio-workstation</small>
+                  <small>studio-pc</small>
                 </div>
               </div>
             </div>
@@ -429,16 +449,17 @@ export function MarketingPage() {
         <section className="workflow-section" id="how-it-works">
           <div className="container">
             <SectionHeading
+              className="section-heading--workflow"
               index="01"
               label="WORKFLOW"
               title={
                 <>
-                  From workstation to pocket.
-                  <br />
-                  <span>Same Session.</span>
+                  <span className="section-title-line section-title-line--ink">From PC to pocket.</span>
+                  <span className="section-title-line">Same Session. Same Terminal.</span>
+                  <span className="section-title-line">Full Control.</span>
                 </>
               }
-              body="Pair once, keep the terminal visible, move between Stations, and close the small loops that would otherwise send you back to the desk."
+              body="Pair once, keep the terminal visible, move between PCs, and close the small loops that would otherwise send you back to the desk."
             />
             <div className="workflow-layout">
               <div className="workflow-stage" aria-live="polite">
@@ -527,7 +548,7 @@ export function MarketingPage() {
                 label="TRUST MODEL"
                 title={
                   <>
-                    Your machine.
+                    Your PC.
                     <br />
                     Your phone.
                     <br />
@@ -543,7 +564,7 @@ export function MarketingPage() {
             <div className="security-model" data-reveal>
               <div
                 className="security-route"
-                aria-label="Secure connection from Station to Android"
+                aria-label="Secure connection from PC to Android"
               >
                 {securityFlow.map((node, index) => (
                   <div className="security-node-wrap" key={node.label}>
@@ -591,7 +612,7 @@ export function MarketingPage() {
                   <span>One scan.</span>
                 </>
               }
-              body="Start the CLI on your Station, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
+              body="Start the CLI on your PC, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
             />
             <div className="setup-console">
               <div className="setup-console-title">
@@ -601,7 +622,7 @@ export function MarketingPage() {
               <div className="setup-step">
                 <span>01</span>
                 <div>
-                  <strong>RUN ON YOUR STATION</strong>
+                  <strong>RUN ON YOUR PC</strong>
                   <CommandBlock command={site.command} />
                 </div>
               </div>
@@ -675,9 +696,9 @@ export function MarketingPage() {
             <p>A secure Android companion for terminal-based development.</p>
           </div>
           <p className="footer-statement">
-            THE TERMINAL
+            NEVER MISS A
             <br />
-            STAYS WITH YOU.
+            CODING SESSION.
           </p>
           <div className="footer-links">
             <a href={site.urls.repository} target="_blank" rel="noreferrer">

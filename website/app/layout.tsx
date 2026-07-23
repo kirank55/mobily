@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const socialImage = `${origin}/og.png`;
 
   return {
-    title: 'Mobily — The terminal stays with you',
+    title: 'Mobily — Never miss a coding session',
     description: site.description,
     applicationName: site.name,
     keywords: [
@@ -49,20 +49,20 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       type: 'website',
       siteName: site.name,
-      title: 'The terminal stays with you.',
+      title: 'Never miss a coding session.',
       description: site.description,
       images: [
         {
           url: socialImage,
           width: 1536,
           height: 1024,
-          alt: 'Mobily — The terminal stays with you',
+          alt: 'Mobily — Never miss a coding session',
         },
       ],
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'The terminal stays with you.',
+      title: 'Never miss a coding session.',
       description: site.description,
       images: [socialImage],
     },

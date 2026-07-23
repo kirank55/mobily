@@ -59,8 +59,10 @@ describe('copyText', () => {
 describe('MarketingPage', () => {
   it('renders the rewritten conversion path and required sections', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
-    expect(markup).toContain('The terminal');
-    expect(markup).toContain('stays with you.');
+    expect(markup).toContain('Never miss a');
+    expect(markup).toContain('coding session.');
+    expect(markup).toContain('Tired of sitting at your PC');
+    expect(markup).toContain('Use Mobily.');
     expect(markup).toContain('id="features"');
     expect(markup).toContain('id="how-it-works"');
     expect(markup).toContain('id="security"');
