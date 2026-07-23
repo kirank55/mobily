@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Keyboard, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
@@ -51,6 +51,7 @@ export default function TerminalRoute() {
     null,
   );
   const [selectionMode, setSelectionMode] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [fontSize, setFontSize] = useState<number | null>(null);
   const sessionSize = useRef({ cols: 120, rows: 40 });
   const pendingSnapshot = useRef<SessionSnapshotFrame | null>(null);
@@ -96,6 +97,15 @@ export default function TerminalRoute() {
     });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
     };
   }, []);
 
@@ -194,6 +204,15 @@ export default function TerminalRoute() {
       if (data) termRef.current?.paste(data);
     });
   }, []);
+
+  const toggleKeyboard = useCallback(() => {
+    if (keyboardVisible) {
+      termRef.current?.hideKeyboard();
+      Keyboard.dismiss();
+    } else {
+      termRef.current?.showKeyboard();
+    }
+  }, [keyboardVisible]);
 
   // ── Terminal input → send to WS ─────────────────────────────────────────
   const handleTermInput = useCallback(
@@ -333,6 +352,17 @@ export default function TerminalRoute() {
             accessibilityLabel="Increase font size"
           >
             <Text style={styles.controlText}>A+</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.controlButton, keyboardVisible && styles.controlButtonActive]}
+            onPress={toggleKeyboard}
+            accessibilityRole="button"
+            accessibilityState={{ selected: keyboardVisible }}
+            accessibilityLabel={keyboardVisible ? 'Hide keyboard' : 'Show keyboard'}
+          >
+            <Text style={[styles.controlText, keyboardVisible && styles.controlActive]}>
+              {keyboardVisible ? 'Hide' : 'Keys'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.controlButton, selectionMode && styles.controlButtonActive]}

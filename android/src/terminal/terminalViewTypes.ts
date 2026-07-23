@@ -23,6 +23,8 @@ export interface TerminalViewHandle {
   setSelectionMode(enabled: boolean): void;
   copySelection(): void;
   paste(data: string): void;
+  showKeyboard(): void;
+  hideKeyboard(): void;
   /** Query current P50/P95 latency stats (result arrives via onLatencyStats). */
   getLatencyStats(): void;
 }

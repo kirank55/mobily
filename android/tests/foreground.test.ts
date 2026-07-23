@@ -23,22 +23,12 @@ describe('foreground notification module', () => {
     native.stop.mockResolvedValue(undefined);
   });
 
-  it('bounds and sanitizes notification text before crossing the native boundary', async () => {
+  it('sends only the Station name and clean status to Android', async () => {
     await foregroundNotification.start(`\u001b[31m${'S'.repeat(100)}\u001b[0m`);
-    await foregroundNotification.update(
-      'connected\nignored',
-      'working\nignored',
-      `\u001b[32m${'L'.repeat(220)}\u001b[0m`,
-      `\u0007${'A'.repeat(600)}`,
-    );
+    await foregroundNotification.update('connected\nignored', 'working\nignored');
 
     expect(native.start).toHaveBeenCalledWith('S'.repeat(80));
-    expect(native.update).toHaveBeenCalledWith(
-      'connected ignored',
-      'working ignored',
-      'L'.repeat(160),
-      'A'.repeat(512),
-    );
+    expect(native.update).toHaveBeenCalledWith('connected ignored', 'working ignored', false);
   });
 });
 
@@ -52,9 +42,9 @@ describe('ForegroundConnectionController', () => {
     };
   }
 
-  it('owns permission, service lifecycle, connection state, and alert updates', async () => {
+  it('owns permission, service lifecycle, connection status, and generic alerts', async () => {
     const notifications = createNotifications();
-    const controller = new ForegroundConnectionController(notifications, 25);
+    const controller = new ForegroundConnectionController(notifications);
 
     await controller.connect('Workstation');
     await controller.updateState('connected');
@@ -63,55 +53,20 @@ describe('ForegroundConnectionController', () => {
 
     expect(notifications.requestNotificationPermission).toHaveBeenCalledOnce();
     expect(notifications.start).toHaveBeenCalledWith('Workstation');
-    expect(notifications.update).toHaveBeenLastCalledWith(
-      'connected',
-      '',
-      'Waiting for terminal output',
-      'Approve the deployment?',
-    );
+    expect(notifications.update).toHaveBeenLastCalledWith('connected', '', true);
     expect(notifications.stop).toHaveBeenCalledOnce();
   });
 
   it('surfaces session phase updates in the ongoing notification payload', async () => {
     const notifications = createNotifications();
-    const controller = new ForegroundConnectionController(notifications, 25);
+    const controller = new ForegroundConnectionController(notifications);
     await controller.connect('Workstation');
     await controller.updateState('connected');
     vi.mocked(notifications.update).mockClear();
 
     await controller.updatePhase('waiting', 'Approve tool call?');
 
-    expect(notifications.update).toHaveBeenCalledWith(
-      'connected',
-      'waiting',
-      'Approve tool call?',
-      undefined,
-    );
-  });
-
-  it('coalesces output chunks and keeps the latest meaningful terminal line', async () => {
-    vi.useFakeTimers();
-    try {
-      const notifications = createNotifications();
-      const controller = new ForegroundConnectionController(notifications, 25);
-      await controller.connect('Workstation');
-      vi.mocked(notifications.update).mockClear();
-
-      controller.recordOutput('\u001b[32mcompiling\u001b[0m\n');
-      controller.recordOutput('tests ');
-      controller.recordOutput('passed\r\n');
-      await vi.advanceTimersByTimeAsync(25);
-
-      expect(notifications.update).toHaveBeenCalledOnce();
-      expect(notifications.update).toHaveBeenCalledWith(
-        'connecting',
-        '',
-        'tests passed',
-        undefined,
-      );
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(notifications.update).toHaveBeenCalledWith('connected', 'waiting', false);
   });
 
   it('does not start a stale service when disconnect wins a permission race', async () => {

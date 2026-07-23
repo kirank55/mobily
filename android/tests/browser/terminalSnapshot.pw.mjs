@@ -53,6 +53,72 @@ test('re-announces readiness when React Native probes after page load', async ({
     .toBe(true);
 });
 
+test('uses explicit keyboard controls and sends terminal button taps as mouse input', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify(message),
+        }),
+      );
+    dispatchMessage({ type: 'write', data: '\u001b[?1000;1006h' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    dispatchMessage({ type: 'keyboard', visible: true });
+    const focused = document.activeElement?.classList.contains('xterm-helper-textarea') === true;
+    dispatchMessage({ type: 'keyboard', visible: false });
+    const blurred = document.activeElement?.classList.contains('xterm-helper-textarea') !== true;
+
+    window.__mobilyMessages = [];
+    document.querySelector('[data-seq="CTRL_C"]').click();
+    const shortcut = window.__mobilyMessages.find((message) => message.type === 'input')?.data;
+
+    window.__mobilyMessages = [];
+    window.__mobilyTerminal.focus();
+    const viewport = document.getElementById('viewport');
+    const screen = document.querySelector('.xterm-screen');
+    const rect = screen.getBoundingClientRect();
+    const touch = {
+      clientX: rect.left + rect.width / window.__mobilyTerminal.cols / 2,
+      clientY: rect.top + rect.height / window.__mobilyTerminal.rows / 2,
+    };
+    const start = new Event('touchstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(start, 'touches', { value: [touch] });
+    Object.defineProperty(start, 'changedTouches', { value: [touch] });
+    viewport.dispatchEvent(start);
+    const end = new Event('touchend', { bubbles: true, cancelable: true });
+    Object.defineProperty(end, 'touches', { value: [] });
+    Object.defineProperty(end, 'changedTouches', { value: [touch] });
+    viewport.dispatchEvent(end);
+    const click = window.__mobilyMessages.find((message) => message.type === 'input')?.data;
+
+    return {
+      focused,
+      blurred,
+      shortcut,
+      click,
+      terminalBlurred: document.activeElement?.classList.contains('xterm-helper-textarea') !== true,
+    };
+  });
+
+  expect(result).toEqual({
+    focused: true,
+    blurred: true,
+    shortcut: '\u0003',
+    click: '\u001b[<0;1;1M\u001b[<0;1;1m',
+    terminalBlurred: true,
+  });
+});
+
 test('renders a detailed OpenCode-like Session Snapshot in the production document', async ({
   page,
 }) => {

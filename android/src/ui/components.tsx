@@ -166,7 +166,9 @@ export function StatePanel({
   return (
     <View style={styles.statePanel} accessibilityLiveRegion="polite">
       {loading ? <ActivityIndicator color={colors.ink} /> : null}
-      <Status label={label} tone={tone} />
+      <View style={styles.stateStatus}>
+        <Status label={label} tone={tone} />
+      </View>
       {detail ? <Text style={styles.stateDetail}>{detail}</Text> : null}
       {action}
     </View>
@@ -272,5 +274,6 @@ const styles = StyleSheet.create({
     padding: spacing.x8,
     backgroundColor: colors.canvas,
   },
+  stateStatus: { alignSelf: 'stretch', alignItems: 'center' },
   stateDetail: { ...type.body, color: colors.muted, textAlign: 'center', maxWidth: 440 },
 });

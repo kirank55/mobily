@@ -112,7 +112,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
           }
         },
         onOutput: (data, latencyTags) => {
-          foreground.current.recordOutput(data);
           for (const listener of outputListeners.current) listener(data, latencyTags);
         },
         onResize: (cols, rows) => {

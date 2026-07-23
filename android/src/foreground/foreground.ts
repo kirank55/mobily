@@ -4,7 +4,7 @@ import { notificationText } from './text';
 interface MobilyForegroundModule {
   requestNotificationPermission(): Promise<boolean>;
   start(stationName: string): Promise<void>;
-  update(state: string, phase: string, lastLine: string, alert?: string): Promise<void>;
+  update(state: string, phase: string, alert: boolean): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -23,12 +23,11 @@ export const foregroundNotification = {
     await nativeModule().start(notificationText(stationName, 80, 'Station'));
   },
 
-  async update(state: string, phase: string, lastLine: string, alert?: string): Promise<void> {
+  async update(state: string, phase: string, alert = false): Promise<void> {
     await nativeModule().update(
       notificationText(state, 40, 'connected'),
       notificationText(phase, 40, ''),
-      notificationText(lastLine, 160, 'Waiting for terminal output'),
-      alert === undefined ? undefined : notificationText(alert, 512),
+      alert,
     );
   },
 

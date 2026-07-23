@@ -37,15 +37,14 @@ class MobilyForegroundModule : Module() {
       MobilyForegroundService.start(context, bounded(stationName, 80, "Station"))
     }
 
-    AsyncFunction("update") { state: String, phase: String, lastLine: String, alert: String? ->
+    AsyncFunction("update") { state: String, phase: String, alert: Boolean ->
       val context = appContext.reactContext
         ?: throw ForegroundModuleException("Android application context is unavailable")
       MobilyForegroundService.update(
         context,
         bounded(state, 40, "connected"),
         bounded(phase, 40, ""),
-        bounded(lastLine, 160, "Waiting for terminal output"),
-        alert?.let { bounded(it, 512, "") }
+        alert
       )
     }
 

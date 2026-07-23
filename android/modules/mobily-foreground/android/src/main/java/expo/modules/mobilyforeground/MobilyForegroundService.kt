@@ -18,7 +18,6 @@ class MobilyForegroundService : Service() {
   private var stationName = "Station"
   private var state = "connecting"
   private var phase = ""
-  private var lastLine = "Waiting for terminal output"
 
   override fun onCreate() {
     super.onCreate()
@@ -31,7 +30,6 @@ class MobilyForegroundService : Service() {
       ACTION_UPDATE -> {
         state = intent.getStringExtra(EXTRA_STATE) ?: state
         phase = intent.getStringExtra(EXTRA_PHASE) ?: phase
-        lastLine = intent.getStringExtra(EXTRA_LAST_LINE) ?: lastLine
       }
     }
 
@@ -42,7 +40,7 @@ class MobilyForegroundService : Service() {
     }
     ServiceCompat.startForeground(this, SERVICE_NOTIFICATION_ID, serviceNotification(), serviceType)
 
-    intent?.getStringExtra(EXTRA_ALERT)?.takeIf(String::isNotBlank)?.let(::postAlert)
+    if (intent?.getBooleanExtra(EXTRA_ALERT, false) == true) postAlert()
     return START_STICKY
   }
 
@@ -58,17 +56,14 @@ class MobilyForegroundService : Service() {
     val builder = NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
       .setSmallIcon(R.drawable.ic_notification_terminal)
       .setColor(phaseColor())
-      .setContentTitle(contentTitle())
-      .setContentText(lastLine)
-      .setStyle(NotificationCompat.BigTextStyle().bigText(lastLine))
+      .setContentTitle(stationName)
+      .setContentText(statusLabel())
       .setContentIntent(launchIntent())
       .setCategory(NotificationCompat.CATEGORY_SERVICE)
       .setPriority(NotificationCompat.PRIORITY_LOW)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
       .setShowWhen(false)
-
-    connectionSubText()?.let(builder::setSubText)
 
     if (working) {
       builder.setProgress(0, 0, true)
@@ -79,9 +74,9 @@ class MobilyForegroundService : Service() {
     return builder.build()
   }
 
-  private fun contentTitle(): String {
+  private fun statusLabel(): String {
     if (state == "connecting" || state == "reconnecting") {
-      return "$stationName · ${humanizeConnection(state)}"
+      return humanizeConnection(state)
     }
     val phaseLabel = when (phase) {
       "working" -> "Working"
@@ -90,13 +85,7 @@ class MobilyForegroundService : Service() {
       "idle" -> "Idle"
       else -> humanizeConnection(state)
     }
-    return "$stationName · $phaseLabel"
-  }
-
-  private fun connectionSubText(): String? = when (state) {
-    "connecting" -> "Connecting"
-    "reconnecting" -> "Reconnecting"
-    else -> null
+    return phaseLabel
   }
 
   private fun humanizeConnection(value: String): String = when (value) {
@@ -113,13 +102,12 @@ class MobilyForegroundService : Service() {
     else -> Color.parseColor("#191917")
   }
 
-  private fun postAlert(message: String) {
+  private fun postAlert() {
     val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
       .setSmallIcon(R.drawable.ic_notification_terminal)
       .setColor(Color.parseColor("#7A5918"))
-      .setContentTitle("$stationName needs attention")
-      .setContentText(message)
-      .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+      .setContentTitle(stationName)
+      .setContentText("Needs attention")
       .setContentIntent(launchIntent())
       .setCategory(NotificationCompat.CATEGORY_MESSAGE)
       .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -156,7 +144,6 @@ class MobilyForegroundService : Service() {
     private const val EXTRA_STATION_NAME = "stationName"
     private const val EXTRA_STATE = "state"
     private const val EXTRA_PHASE = "phase"
-    private const val EXTRA_LAST_LINE = "lastLine"
     private const val EXTRA_ALERT = "alert"
     private const val SERVICE_CHANNEL_ID = "mobily-terminal-session"
     private const val ALERT_CHANNEL_ID = "mobily-terminal-alerts"
@@ -170,13 +157,12 @@ class MobilyForegroundService : Service() {
       ContextCompat.startForegroundService(context, intent)
     }
 
-    fun update(context: Context, state: String, phase: String, lastLine: String, alert: String?) {
+    fun update(context: Context, state: String, phase: String, alert: Boolean) {
       val intent = Intent(context, MobilyForegroundService::class.java)
         .setAction(ACTION_UPDATE)
         .putExtra(EXTRA_STATE, state)
         .putExtra(EXTRA_PHASE, phase)
-        .putExtra(EXTRA_LAST_LINE, lastLine)
-      if (alert != null) intent.putExtra(EXTRA_ALERT, alert)
+        .putExtra(EXTRA_ALERT, alert)
       context.startService(intent)
     }
 

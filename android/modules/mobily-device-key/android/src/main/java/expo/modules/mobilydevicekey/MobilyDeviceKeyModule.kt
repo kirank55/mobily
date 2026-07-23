@@ -7,6 +7,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
+import android.security.keystore.UserNotAuthenticatedException
 import android.util.Base64
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -22,6 +23,7 @@ import java.security.KeyStore
 import java.security.Signature
 import java.security.UnrecoverableKeyException
 import java.security.spec.RSAKeyGenParameterSpec
+import java.util.Collections
 
 private class DeviceKeyException(message: String, cause: Throwable? = null) :
   CodedException(message, cause)
@@ -36,6 +38,8 @@ private class BiometricAuthenticationException(message: String, cause: Throwable
   CodedException(message, cause)
 
 class MobilyDeviceKeyModule : Module() {
+  private val authenticatedAliases = Collections.synchronizedSet(mutableSetOf<String>())
+
   override fun definition() = ModuleDefinition {
     Name("MobilyDeviceKey")
 
@@ -44,6 +48,7 @@ class MobilyDeviceKeyModule : Module() {
         validateAlias(alias)
         val keyStore = keyStore()
         if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+        authenticatedAliases.remove(alias)
         val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
         val keySpec = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
           .setDigests(KeyProperties.DIGEST_SHA256)
@@ -51,7 +56,13 @@ class MobilyDeviceKeyModule : Module() {
           .setAlgorithmParameterSpec(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
           .setUserAuthenticationRequired(true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-          keySpec.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+          keySpec.setUserAuthenticationParameters(
+            SESSION_AUTH_VALIDITY_SECONDS,
+            KeyProperties.AUTH_BIOMETRIC_STRONG,
+          )
+        } else {
+          @Suppress("DEPRECATION")
+          keySpec.setUserAuthenticationValidityDurationSeconds(SESSION_AUTH_VALIDITY_SECONDS)
         }
         generator.initialize(keySpec.build())
         val keyPair = generator.generateKeyPair()
@@ -98,6 +109,7 @@ class MobilyDeviceKeyModule : Module() {
       val keyStore = keyStore()
       val existed = keyStore.containsAlias(alias)
       if (existed) keyStore.deleteEntry(alias)
+      authenticatedAliases.remove(alias)
       existed
     }
 
@@ -121,6 +133,14 @@ class MobilyDeviceKeyModule : Module() {
           ?: throw DeviceKeyException("A foreground Activity is required for authentication")
         val privateKey = keyStore().getKey(alias, null)
           ?: throw DeviceKeyUnavailableException("Device Key is unavailable; pair this Station again")
+        if (authenticatedAliases.contains(alias)) {
+          try {
+            promise.resolve(signPayload(privateKey as java.security.PrivateKey, payload))
+            return@AsyncFunction
+          } catch (_: UserNotAuthenticatedException) {
+            authenticatedAliases.remove(alias)
+          }
+        }
         val signature = Signature.getInstance("SHA256withRSA")
         signature.initSign(privateKey as java.security.PrivateKey)
         val executor = ContextCompat.getMainExecutor(activity)
@@ -130,7 +150,9 @@ class MobilyDeviceKeyModule : Module() {
               val authenticated = result.cryptoObject?.signature
                 ?: throw DeviceKeyException("Biometric authentication did not unlock the Device Key")
               authenticated.update(payload.toByteArray(Charsets.UTF_8))
-              promise.resolve(Base64.encodeToString(authenticated.sign(), Base64.NO_WRAP))
+              val encoded = Base64.encodeToString(authenticated.sign(), Base64.NO_WRAP)
+              authenticatedAliases.add(alias)
+              promise.resolve(encoded)
             } catch (error: Throwable) {
               if (error is KeyPermanentlyInvalidatedException) {
                 promise.reject(
@@ -248,9 +270,22 @@ class MobilyDeviceKeyModule : Module() {
 
   private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+  private fun signPayload(privateKey: java.security.PrivateKey, payload: String): String {
+    val signature = Signature.getInstance("SHA256withRSA")
+    signature.initSign(privateKey)
+    signature.update(payload.toByteArray(Charsets.UTF_8))
+    return Base64.encodeToString(signature.sign(), Base64.NO_WRAP)
+  }
+
   private fun validateAlias(alias: String) {
     if (!alias.matches(Regex("^[A-Za-z0-9_.-]{1,255}$"))) {
       throw DeviceKeyException("Invalid Device Key alias")
     }
+  }
+
+  companion object {
+    // The in-memory alias set still forces one biometric check per app process.
+    // This validity window lets reconnect challenges sign without prompting again.
+    private const val SESSION_AUTH_VALIDITY_SECONDS = 24 * 60 * 60
   }
 }
