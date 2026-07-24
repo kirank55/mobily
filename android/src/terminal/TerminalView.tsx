@@ -119,6 +119,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       paste(data: string) {
         postToWebView({ type: 'paste', data });
       },
+      showKeyboard() {
+        postToWebView({ type: 'keyboard', visible: true });
+      },
+      hideKeyboard() {
+        postToWebView({ type: 'keyboard', visible: false });
+      },
       getLatencyStats() {
         postToWebView({ type: 'get-latency-stats' });
       },

@@ -20,10 +20,13 @@
  *
  * Phase 5 frames:
  *   alert              — background notification content
+ *
+ * Phase 6 frames:
+ *   session-status     — heuristic Session activity phase for notifications
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Maximum encoded JSON frame size accepted from either peer. */
 export const MAX_ENCODED_FRAME_CHARS = 2 * 1024 * 1024;
@@ -63,8 +66,13 @@ export const FRAME_TYPES = [
   'rpc',
   'rpc-stream',
   'alert',
+  'session-status',
 ] as const;
 export type FrameType = (typeof FRAME_TYPES)[number];
+
+/** Heuristic Session activity phase inferred from PTY text (not agent APIs). */
+export const SESSION_PHASES = ['working', 'waiting', 'finished', 'idle'] as const;
+export type SessionPhase = (typeof SESSION_PHASES)[number];
 
 // ---------------------------------------------------------------------------
 // Individual frame shapes
@@ -247,6 +255,14 @@ export interface AlertFrame {
   message: string;
 }
 
+/** CLI to client: heuristic Session phase for background notification UI. */
+export interface SessionStatusFrame {
+  type: 'session-status';
+  phase: SessionPhase;
+  /** Optional latest-line hint for notification body (≤160 chars). */
+  detail?: string;
+}
+
 /** Union of all wire frames. */
 export type Frame =
   | InputFrame
@@ -266,7 +282,8 @@ export type Frame =
   | RpcRequestFrame
   | RpcResponseFrame
   | RpcStreamFrame
-  | AlertFrame;
+  | AlertFrame
+  | SessionStatusFrame;
 
 // ---------------------------------------------------------------------------
 // Encode
@@ -345,6 +362,8 @@ export function decodeFrame(raw: string): Frame {
       return validateRpcStreamFrame(obj);
     case 'alert':
       return validateAlertFrame(obj);
+    case 'session-status':
+      return validateSessionStatusFrame(obj);
     default:
       throw new TypeError(`mobily/protocol: unknown frame type "${String(obj['type'])}"`);
   }
@@ -711,6 +730,23 @@ function validateAlertFrame(obj: Record<string, unknown>): AlertFrame {
     throw new TypeError('mobily/protocol: AlertFrame.message must be a non-empty bounded string');
   }
   return { type: 'alert', message };
+}
+
+function validateSessionStatusFrame(obj: Record<string, unknown>): SessionStatusFrame {
+  const phase = obj['phase'];
+  if (typeof phase !== 'string' || !SESSION_PHASES.includes(phase as SessionPhase)) {
+    throw new TypeError('mobily/protocol: SessionStatusFrame.phase must be a known session phase');
+  }
+  const detail = obj['detail'];
+  if (detail === undefined) {
+    return { type: 'session-status', phase: phase as SessionPhase };
+  }
+  if (typeof detail !== 'string' || detail.length === 0 || detail.length > 160) {
+    throw new TypeError(
+      'mobily/protocol: SessionStatusFrame.detail must be a non-empty string ≤160 chars',
+    );
+  }
+  return { type: 'session-status', phase: phase as SessionPhase, detail };
 }
 
 function validateRpcId(value: unknown): string {

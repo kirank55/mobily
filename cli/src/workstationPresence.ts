@@ -20,7 +20,6 @@ import {
   attachTmuxWorkstation,
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
-  scheduleConnectedPanelDismiss,
   shouldAttachTmuxWorkstation,
 } from './tmuxWorkstationAttach.js';
 
@@ -141,22 +140,14 @@ function startTmuxAttach(options: BeginWorkstationPresenceOptions): IDisposable 
     throw new Error('tmux workstation attach requires sessionName and attachCommand');
   }
   options.log?.('Phone connected — attaching workstation…');
-  options.backend.showPairingPanel?.(CONNECTED_WORKSTATION_PANEL, CONNECTED_WORKSTATION_PANEL_HEIGHT);
-  const attached = attachTmuxWorkstation({
+  options.backend.showPairingPanel?.(
+    CONNECTED_WORKSTATION_PANEL,
+    CONNECTED_WORKSTATION_PANEL_HEIGHT,
+  );
+  return attachTmuxWorkstation({
     sessionName,
     attachCommand,
     cwd: options.cwd,
     onDetach: options.onTmuxDetach,
   });
-  const dismissSuccess = scheduleConnectedPanelDismiss({
-    hidePanel: () => {
-      options.backend.hidePairingPanel?.();
-    },
-  });
-  return {
-    dispose(): void {
-      dismissSuccess.dispose();
-      attached.dispose();
-    },
-  };
 }

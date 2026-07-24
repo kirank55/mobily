@@ -5,10 +5,14 @@ import { Terminal } from '@xterm/headless';
 import { MAX_SESSION_SCROLLBACK_CHARS, type SessionSnapshotFrame } from '@mobily/shared';
 
 import {
+  applyTerminalMouseControls,
   buildTerminalDocument,
   clampTerminalScale,
+  createTerminalMouseModeState,
   fitTerminalScale,
+  isTerminalMouseReportingActive,
   pinchTerminalScale,
+  sgrMouseClickSequence,
   stripTerminalMouseControls,
   snapshotToAnsi,
   scrollbackAndSnapshotToAnsi,
@@ -30,7 +34,17 @@ describe('terminal document', () => {
     expect(production).toContain("msg.type==='font-delta'");
     expect(production).toContain("msg.type==='size-ownership'");
     expect(production).toContain("msg.type==='selection-mode'");
-    expect(production).toContain('stripMouseModes');
+    expect(production).toContain('prepareOutput');
+    expect(production).toContain('hardenTerminalTextarea');
+    expect(production).toContain('data-seq="ENTER">&#9166;</button>');
+    expect(production).toContain("ENTER:'\\r'");
+    expect(production).toContain("CTRL_C:'\\x03'");
+    expect(production).toContain('data-seq="CTRL_C">Ctrl+C</button>');
+    expect(production).not.toContain('data-seq="HOME"');
+    expect(production).toContain('sgrMouseClickSequence');
+    expect(production).toContain("msg.type==='keyboard'");
+    expect(production).toContain("addEventListener('touchstart'");
+    expect(production).toContain('capture:true');
     expect(production).toContain('touchmove');
     expect(production).toContain("msg.type==='paste'");
     expect(production).toContain('proposeOwnerGrid');
@@ -80,11 +94,26 @@ describe('terminal document', () => {
     expect(pinchTerminalScale(2, 100, 400)).toBe(3);
   });
 
-  it('preserves generic ANSI output while suppressing terminal mouse ownership', () => {
+  it('strips mouse modes for workstation embeds while Android tracking preserves them', () => {
     const fixture = '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1002;1049h';
     expect(stripTerminalMouseControls(fixture)).toBe(
       '\u001b[2J\u001b[31mwide TUI\u001b[0m\u001b[?1049h',
     );
+
+    const state = createTerminalMouseModeState();
+    expect(isTerminalMouseReportingActive(state)).toBe(false);
+    expect(applyTerminalMouseControls(state, fixture)).toBe(fixture);
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+    applyTerminalMouseControls(state, '\u001b[?1000;1002h');
+    applyTerminalMouseControls(state, '\u001b[?1000l');
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+    applyTerminalMouseControls(state, '\u001b[?1002l');
+    expect(isTerminalMouseReportingActive(state)).toBe(false);
+  });
+
+  it('formats SGR mouse click press and release sequences', () => {
+    expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
+    expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
   });
 
   it('reconstructs a styled nonblank first frame in the production terminal parser', async () => {

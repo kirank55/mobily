@@ -93,7 +93,7 @@ export const features = [
     mark: '!',
     title: 'Alerts',
     description:
-      'Keep connection state, recent output, and prompts visible through an Android foreground notification.',
+      'Keep session progress, recent output, and prompts visible through an Android foreground notification.',
     meta: 'BACKGROUND',
   },
   {

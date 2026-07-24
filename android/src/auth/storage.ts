@@ -18,6 +18,7 @@ export interface PairingRecord {
 const LEGACY_STORAGE_KEY = 'mobily.pairing';
 const PAIRINGS_STORAGE_KEY = 'mobily.pairings.v2';
 const SELECTED_STORAGE_KEY = 'mobily.selected-pairing.v2';
+export const PAIRING_RETENTION_MS = 2 * 24 * 60 * 60 * 1_000;
 
 /** Accepts wss:// always; ws:// only for persisted insecure local (Expo web) records. */
 function isPersistedTunnelUrl(endpoint: string): boolean {
@@ -25,11 +26,7 @@ function isPersistedTunnelUrl(endpoint: string): boolean {
   try {
     const url = new URL(endpoint);
     return (
-      url.protocol === 'ws:' &&
-      Boolean(url.hostname) &&
-      !url.username &&
-      !url.password &&
-      !url.hash
+      url.protocol === 'ws:' && Boolean(url.hostname) && !url.username && !url.password && !url.hash
     );
   } catch {
     return false;
@@ -99,6 +96,31 @@ export async function markConnected(
   await writePairings(pairings);
 }
 
+/**
+ * Remove Stations that have not been opened within the retention window.
+ * The removed records are returned so callers can also delete their Keystore keys.
+ */
+export async function pruneStalePairings(now = Date.now()): Promise<PairingRecord[]> {
+  const pairings = await listPairings();
+  const cutoff = now - PAIRING_RETENTION_MS;
+  const removed = pairings.filter((entry) => (entry.lastConnectedAt ?? entry.pairedAt) < cutoff);
+  if (removed.length === 0) return [];
+
+  const removedIds = new Set(removed.map((entry) => entry.deviceBindingId));
+  const remaining = pairings.filter((entry) => !removedIds.has(entry.deviceBindingId));
+  await writePairings(remaining);
+
+  const selected = await SecureStore.getItemAsync(SELECTED_STORAGE_KEY);
+  if (selected && removed.some((entry) => entry.deviceBindingId === selected)) {
+    if (remaining[0]) {
+      await SecureStore.setItemAsync(SELECTED_STORAGE_KEY, remaining[0].deviceBindingId);
+    } else {
+      await SecureStore.deleteItemAsync(SELECTED_STORAGE_KEY);
+    }
+  }
+  return removed;
+}
+
 /** Phase 3 compatibility: remove only the currently selected pairing. */
 export async function clearPairing(): Promise<PairingRecord | null> {
   const selected = await loadPairing();
@@ -140,9 +162,7 @@ function isPairingRecord(value: unknown): value is PairingRecord {
   return isLegacyPairingRecord(value) && isKeyAlias((value as Record<string, unknown>)['keyAlias']);
 }
 
-function isLegacyPairingRecord(
-  value: unknown,
-): value is Omit<PairingRecord, 'keyAlias'> {
+function isLegacyPairingRecord(value: unknown): value is Omit<PairingRecord, 'keyAlias'> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return (

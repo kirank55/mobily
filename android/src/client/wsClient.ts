@@ -25,6 +25,7 @@ import {
   type RpcRequestFrame,
   type RpcResponseFrame,
   type RpcStreamFrame,
+  type SessionPhase,
   type SessionSnapshotFrame,
   type TerminalSizeOwnerFrame,
 } from '@mobily/shared';
@@ -63,6 +64,8 @@ export interface WsClientOptions {
   onTerminalSizeOwner?: (state: Omit<TerminalSizeOwnerFrame, 'type'>) => void;
   /** Callback when the Station detects terminal output that needs attention. */
   onAlert?: (message: string) => void;
+  /** Callback when the Station publishes a heuristic Session activity phase. */
+  onSessionStatus?: (phase: SessionPhase, detail?: string) => void;
   /** Callback for structured RPC responses after authentication. */
   onRpcFrame?: (frame: RpcResponseFrame | RpcStreamFrame) => void;
   /** Callback when the handshake completes (ready to send input). */
@@ -394,6 +397,14 @@ export class WsClient {
           return;
         }
         this.opts.onAlert?.(frame.message);
+        break;
+
+      case 'session-status':
+        if (this.handshakeState !== 'ready') {
+          socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'session-status before authentication');
+          return;
+        }
+        this.opts.onSessionStatus?.(frame.phase, frame.detail);
         break;
 
       case 'rpc':

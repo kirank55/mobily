@@ -5,15 +5,9 @@ import type { SessionRuntime } from '../src/mux/runtime.js';
 import {
   attachTmuxWorkstation,
   CONNECTED_HELP_LINE,
-  CONNECTED_SUCCESS_DISMISS_MS,
   CONNECTED_SUCCESS_LINE,
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
-  DOUBLE_CTRL_C_EXIT_SCRIPT,
-  EXIT_CONFIRM_MESSAGE,
-  EXIT_CONFIRM_WINDOW_SECONDS,
-  EXIT_KEY_SEQUENCE,
-  scheduleConnectedPanelDismiss,
   shouldAttachTmuxWorkstation,
 } from '../src/tmuxWorkstationAttach.js';
 
@@ -30,9 +24,7 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function fakeRuntime(
-  responses: Record<string, string> = {},
-): {
+function fakeRuntime(responses: Record<string, string> = {}): {
   value: SessionRuntime;
   commands: Array<{ file: string; args: string[] }>;
 } {
@@ -88,87 +80,20 @@ describe('shouldAttachTmuxWorkstation()', () => {
 });
 
 describe('connected workstation panel', () => {
-  it('shows Connected Successfully plus the help line until dismiss', () => {
+  it('shows Connected Successfully plus the help line until explicit clear', () => {
     expect(CONNECTED_SUCCESS_LINE).toBe('Connected Successfully');
-    expect(CONNECTED_HELP_LINE).toBe(
-      'Run mobily -h for help. Press Ctrl+C twice to exit',
-    );
+    expect(CONNECTED_HELP_LINE).toBe('Run mobily -h for help. Run mobily exit to exit');
     expect(CONNECTED_WORKSTATION_PANEL.split('\n')).toEqual([
       'Connected Successfully',
-      'Run mobily -h for help. Press Ctrl+C twice to exit',
+      'Run mobily -h for help. Run mobily exit to exit',
     ]);
     expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(2);
-    expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(
-      CONNECTED_WORKSTATION_PANEL.split('\n').length,
-    );
-  });
-
-  it('hides the whole panel after 10 seconds by default', () => {
-    vi.useFakeTimers();
-    try {
-      const hidePanel = vi.fn();
-      const dismiss = scheduleConnectedPanelDismiss({ hidePanel });
-
-      expect(CONNECTED_SUCCESS_DISMISS_MS).toBe(10_000);
-      expect(hidePanel).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(CONNECTED_SUCCESS_DISMISS_MS - 1);
-      expect(hidePanel).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(1);
-      expect(hidePanel).toHaveBeenCalledTimes(1);
-
-      dismiss.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('supports a custom dismiss delay', () => {
-    vi.useFakeTimers();
-    try {
-      const hidePanel = vi.fn();
-      const dismiss = scheduleConnectedPanelDismiss({ hidePanel, delayMs: 500 });
-
-      vi.advanceTimersByTime(499);
-      expect(hidePanel).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(1);
-      expect(hidePanel).toHaveBeenCalledTimes(1);
-
-      dismiss.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not dismiss after dispose cancels the timer', () => {
-    vi.useFakeTimers();
-    try {
-      const hidePanel = vi.fn();
-      const dismiss = scheduleConnectedPanelDismiss({ hidePanel });
-
-      dismiss.dispose();
-      vi.advanceTimersByTime(CONNECTED_SUCCESS_DISMISS_MS);
-      expect(hidePanel).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe('double Ctrl+C exit binding', () => {
-  it('warns on the first press and detaches on the second within the confirm window', () => {
-    expect(EXIT_KEY_SEQUENCE).toBe('C-c');
-    expect(EXIT_CONFIRM_WINDOW_SECONDS).toBe(2);
-    expect(EXIT_CONFIRM_MESSAGE).toBe('Press Ctrl+C again to exit');
-    expect(DOUBLE_CTRL_C_EXIT_SCRIPT).toContain('display-message');
-    expect(DOUBLE_CTRL_C_EXIT_SCRIPT).toContain('detach-client');
-    expect(DOUBLE_CTRL_C_EXIT_SCRIPT).toContain(`-le ${EXIT_CONFIRM_WINDOW_SECONDS}`);
+    expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(CONNECTED_WORKSTATION_PANEL.split('\n').length);
   });
 });
 
 describe('attachTmuxWorkstation()', () => {
-  it('binds double Ctrl+C, spawns an inherited attach, and cleans up on dispose', () => {
+  it('spawns an inherited attach and leaves Ctrl+C available to the shared session', () => {
     const child = new FakeChild();
     const spawn = vi.fn(() => child as unknown as ChildProcess);
     const runtime = fakeRuntime();
@@ -183,14 +108,13 @@ describe('attachTmuxWorkstation()', () => {
       onDetach,
     });
 
-    expect(runtime.commands[0]).toEqual(
-      expect.objectContaining({
-        file: 'tmux',
-        args: expect.arrayContaining(['bind-key', '-n', EXIT_KEY_SEQUENCE, 'run-shell']),
-      }),
-    );
+    expect(runtime.commands.some(({ args }) => args[0] === 'bind-key')).toBe(false);
     expect(runtime.commands).toEqual(
       expect.arrayContaining([
+        {
+          file: 'tmux',
+          args: ['set-environment', '-t', 'mobily-demo', 'MOBILY_CLI_PID', String(process.pid)],
+        },
         {
           file: 'tmux',
           args: ['list-panes', '-t', 'mobily-demo', '-F', '#{pane_id} #{@mobily_role}'],
@@ -213,12 +137,11 @@ describe('attachTmuxWorkstation()', () => {
 
     attachment.dispose();
     expect(child.killed).toBe(false);
-    expect(runtime.commands).toEqual(
-      expect.arrayContaining([
-        { file: 'tmux', args: ['unbind-key', '-n', EXIT_KEY_SEQUENCE] },
-        { file: 'tmux', args: ['set-environment', '-gu', 'MOBILY_EXIT_AT'] },
-      ]),
-    );
+    expect(runtime.commands.some(({ args }) => args[0] === 'unbind-key')).toBe(false);
+    expect(runtime.commands).toContainEqual({
+      file: 'tmux',
+      args: ['set-environment', '-u', '-t', 'mobily-demo', 'MOBILY_CLI_PID'],
+    });
   });
 
   it('kills a still-running attach child when disposed during shutdown', () => {
@@ -257,10 +180,6 @@ describe('attachTmuxWorkstation()', () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(runtime.commands).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          file: 'tmux',
-          args: expect.arrayContaining(['bind-key', '-n', EXIT_KEY_SEQUENCE, 'run-shell']),
-        }),
         {
           file: 'tmux',
           args: [
@@ -281,10 +200,7 @@ describe('attachTmuxWorkstation()', () => {
 
     attachment.dispose();
     expect(runtime.commands).toEqual(
-      expect.arrayContaining([
-        { file: 'tmux', args: ['kill-pane', '-t', '%42'] },
-        { file: 'tmux', args: ['unbind-key', '-n', EXIT_KEY_SEQUENCE] },
-      ]),
+      expect.arrayContaining([{ file: 'tmux', args: ['kill-pane', '-t', '%42'] }]),
     );
   });
 });

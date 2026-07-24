@@ -57,6 +57,19 @@ export function pinchTerminalScale(
   currentDistance: number,
 ): number;
 export function stripTerminalMouseControls(data: string): string;
+export interface TerminalMouseModeState {
+  modes: Record<string, number>;
+}
+export function createTerminalMouseModeState(): TerminalMouseModeState;
+export function applyTerminalMouseControls(state: TerminalMouseModeState, data: string): string;
+export function isTerminalMouseReportingActive(
+  state: TerminalMouseModeState | null | undefined,
+): boolean;
+export function sgrMouseClickSequence(col: number, row: number): string;
+export function hardenTerminalTextarea(term: {
+  textarea?: { setAttribute(name: string, value: string): void } | null;
+  element?: { querySelector(selectors: string): { setAttribute(name: string, value: string): void } | null } | null;
+} | null): void;
 export function snapshotToAnsi(snapshot: SessionSnapshotFrame): string | null;
 export function scrollbackAndSnapshotToAnsi(
   scrollback: string,

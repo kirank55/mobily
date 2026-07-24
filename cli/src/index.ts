@@ -26,6 +26,7 @@ import {
 } from './workstationPresence.js';
 import {
   createSessionBackend,
+  exitCurrentMobily,
   hideCurrentQrPanel,
   killTmuxSession,
   validateSessionName,
@@ -56,6 +57,13 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
 
   if (values.help) {
     console.log(formatCliHelp(pkg.version));
+    return;
+  }
+
+  if (positionals[0] === 'exit') {
+    if (!exitCurrentMobily()) {
+      throw new UserFacingError("'mobily exit' must be run inside an attached tmux terminal.");
+    }
     return;
   }
 
@@ -279,7 +287,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     );
     console.log();
   } else if (presencePlan.mode === 'tmux-attach') {
-    console.log('Controls:     Ctrl+C once warns, twice exits Mobily.');
+    console.log('Controls:     Ctrl+C interrupts the shared session; mobily exit exits Mobily.');
     console.log(
       'Waiting for the Android app to authenticate; this terminal will attach automatically.',
     );

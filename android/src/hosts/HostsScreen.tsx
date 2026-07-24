@@ -1,11 +1,18 @@
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { listPairings, selectPairing, type PairingRecord } from '@/auth/storage';
+import { deleteKey } from '@/auth/deviceKey';
+import {
+  listPairings,
+  pruneStalePairings,
+  selectPairing,
+  type PairingRecord,
+} from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
 import { Button, Screen, StatePanel, Status, TopBar } from '@/ui/components';
 import { colors, fonts, spacing, type } from '@/ui/theme';
 import { probeStation } from './probe';
+import { buildPairingSections } from './recency';
 
 type Reachability = 'checking' | 'online' | 'offline';
 
@@ -20,6 +27,14 @@ export default function HostsScreen() {
       let cancelled = false;
       const controller = new AbortController();
       void (async () => {
+        const stale = await pruneStalePairings();
+        await Promise.all(
+          stale.map((record) =>
+            deleteKey(record.keyAlias).catch((error) => {
+              console.warn('[Mobily][Stations] Failed to delete an expired Device Key', error);
+            }),
+          ),
+        );
         const records = await listPairings();
         if (cancelled) return;
         setPairings(records);
@@ -80,8 +95,8 @@ export default function HostsScreen() {
           />
         }
       />
-      <FlatList
-        data={pairings}
+      <SectionList
+        sections={buildPairingSections(pairings)}
         keyExtractor={(record) => record.deviceBindingId}
         contentContainerStyle={pairings.length === 0 ? styles.emptyList : styles.list}
         ListEmptyComponent={
@@ -91,6 +106,9 @@ export default function HostsScreen() {
             <Button label="Add Station" variant="primary" onPress={() => router.push('/scanner')} />
           </View>
         }
+        renderSectionHeader={({ section }) => (
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+        )}
         renderItem={({ item }) => {
           const active = connectedPairing?.deviceBindingId === item.deviceBindingId;
           const reachability =
@@ -139,6 +157,12 @@ const styles = StyleSheet.create({
   },
   subtitle: { ...type.body, color: colors.muted, textAlign: 'center' },
   list: { padding: spacing.x4 },
+  sectionTitle: {
+    ...type.label,
+    paddingTop: spacing.x4,
+    paddingBottom: spacing.x2,
+    backgroundColor: colors.canvas,
+  },
   emptyList: { flexGrow: 1 },
   emptyTitle: { ...type.title, textAlign: 'center' },
   card: {

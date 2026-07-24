@@ -20,6 +20,7 @@ import {
   listPairings,
   loadPairing,
   removePairing,
+  pruneStalePairings,
   savePairing,
   selectPairing,
   type PairingRecord,
@@ -62,7 +63,10 @@ describe('pairing storage', () => {
     memory.set('mobily.pairing', JSON.stringify(legacy));
 
     await expect(listPairings()).resolves.toEqual([
-      expect.objectContaining({ deviceBindingId: legacy.deviceBindingId, keyAlias: LEGACY_KEY_ALIAS }),
+      expect.objectContaining({
+        deviceBindingId: legacy.deviceBindingId,
+        keyAlias: LEGACY_KEY_ALIAS,
+      }),
     ]);
     expect(memory.has('mobily.pairing')).toBe(false);
     expect(memory.has('mobily.pairings.v2')).toBe(true);
@@ -105,5 +109,19 @@ describe('pairing storage', () => {
     };
     await savePairing(insecure);
     await expect(loadPairing()).resolves.toEqual(insecure);
+  });
+
+  it('removes Stations that have not been opened in more than two days', async () => {
+    const now = 1_700_259_200_000;
+    const recent = { ...record('recent'), lastConnectedAt: now - 60_000 };
+    const stale = { ...record('stale'), lastConnectedAt: now - 2 * 86_400_000 - 1 };
+    const neverOpened = { ...record('new'), pairedAt: now - 3 * 86_400_000 };
+    await savePairing(recent);
+    await savePairing(stale);
+    await savePairing(neverOpened);
+
+    await expect(pruneStalePairings(now)).resolves.toEqual([stale, neverOpened]);
+    await expect(listPairings()).resolves.toEqual([recent]);
+    await expect(loadPairing()).resolves.toEqual(recent);
   });
 });

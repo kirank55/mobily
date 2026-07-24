@@ -14,9 +14,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 
 class MobilyForegroundService : Service() {
-  private var stationName = "Station"
-  private var state = "connecting"
-  private var lastLine = "Waiting for terminal output"
+  private var connected = false
 
   override fun onCreate() {
     super.onCreate()
@@ -25,11 +23,7 @@ class MobilyForegroundService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
-      ACTION_START -> stationName = intent.getStringExtra(EXTRA_STATION_NAME) ?: stationName
-      ACTION_UPDATE -> {
-        state = intent.getStringExtra(EXTRA_STATE) ?: state
-        lastLine = intent.getStringExtra(EXTRA_LAST_LINE) ?: lastLine
-      }
+      ACTION_UPDATE -> connected = intent.getBooleanExtra(EXTRA_CONNECTED, false)
     }
 
     val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -39,7 +33,6 @@ class MobilyForegroundService : Service() {
     }
     ServiceCompat.startForeground(this, SERVICE_NOTIFICATION_ID, serviceNotification(), serviceType)
 
-    intent?.getStringExtra(EXTRA_ALERT)?.takeIf(String::isNotBlank)?.let(::postAlert)
     return START_STICKY
   }
 
@@ -50,31 +43,18 @@ class MobilyForegroundService : Service() {
     super.onDestroy()
   }
 
-  private fun serviceNotification() = NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
-    .setSmallIcon(applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.stat_notify_sync)
-    .setContentTitle("$stationName terminal: $state")
-    .setContentText(lastLine)
-    .setStyle(NotificationCompat.BigTextStyle().bigText(lastLine))
-    .setContentIntent(launchIntent())
-    .setCategory(NotificationCompat.CATEGORY_SERVICE)
-    .setPriority(NotificationCompat.PRIORITY_LOW)
-    .setOngoing(true)
-    .setOnlyAlertOnce(true)
-    .build()
-
-  private fun postAlert(message: String) {
-    val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
-      .setSmallIcon(applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.stat_notify_sync)
-      .setContentTitle("$stationName needs attention")
-      .setContentText(message)
-      .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+  private fun serviceNotification(): android.app.Notification =
+    NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
+      .setSmallIcon(R.drawable.ic_notification_terminal)
+      .setContentTitle("Terminal")
+      .setContentText(if (connected) "Connected" else "Not connected")
       .setContentIntent(launchIntent())
-      .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-      .setPriority(NotificationCompat.PRIORITY_HIGH)
-      .setAutoCancel(true)
+      .setCategory(NotificationCompat.CATEGORY_SERVICE)
+      .setPriority(NotificationCompat.PRIORITY_LOW)
+      .setOngoing(true)
+      .setOnlyAlertOnce(true)
+      .setShowWhen(false)
       .build()
-    getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, notification)
-  }
 
   private fun launchIntent(): PendingIntent? {
     val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return null
@@ -93,36 +73,25 @@ class MobilyForegroundService : Service() {
     manager.createNotificationChannel(
       NotificationChannel(SERVICE_CHANNEL_ID, "Active terminal", NotificationManager.IMPORTANCE_LOW)
     )
-    manager.createNotificationChannel(
-      NotificationChannel(ALERT_CHANNEL_ID, "Terminal alerts", NotificationManager.IMPORTANCE_HIGH)
-    )
   }
 
   companion object {
     private const val ACTION_START = "expo.modules.mobilyforeground.START"
     private const val ACTION_UPDATE = "expo.modules.mobilyforeground.UPDATE"
-    private const val EXTRA_STATION_NAME = "stationName"
-    private const val EXTRA_STATE = "state"
-    private const val EXTRA_LAST_LINE = "lastLine"
-    private const val EXTRA_ALERT = "alert"
+    private const val EXTRA_CONNECTED = "connected"
     private const val SERVICE_CHANNEL_ID = "mobily-terminal-session"
-    private const val ALERT_CHANNEL_ID = "mobily-terminal-alerts"
     private const val SERVICE_NOTIFICATION_ID = 7011
-    private const val ALERT_NOTIFICATION_ID = 7012
 
-    fun start(context: Context, stationName: String) {
+    fun start(context: Context) {
       val intent = Intent(context, MobilyForegroundService::class.java)
         .setAction(ACTION_START)
-        .putExtra(EXTRA_STATION_NAME, stationName)
       ContextCompat.startForegroundService(context, intent)
     }
 
-    fun update(context: Context, state: String, lastLine: String, alert: String?) {
+    fun update(context: Context, connected: Boolean) {
       val intent = Intent(context, MobilyForegroundService::class.java)
         .setAction(ACTION_UPDATE)
-        .putExtra(EXTRA_STATE, state)
-        .putExtra(EXTRA_LAST_LINE, lastLine)
-      if (alert != null) intent.putExtra(EXTRA_ALERT, alert)
+        .putExtra(EXTRA_CONNECTED, connected)
       context.startService(intent)
     }
 

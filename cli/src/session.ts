@@ -34,6 +34,7 @@ import {
   type Frame,
   type OutputFrame,
   type ResizeFrame,
+  type SessionStatusFrame,
 } from '@mobily/shared';
 import type { ExitEvent, IDisposable, SpawnOptions } from './pty/node-pty.js';
 import type { AuthManager } from './auth.js';
@@ -41,7 +42,8 @@ import type { RpcRouter } from './rpc/router.js';
 import { BareBackend } from './mux/bare.js';
 import type { SessionBackend } from './mux/types.js';
 import type { SessionRuntime } from './mux/runtime.js';
-import { TerminalAlertDetector, type AlertDetector } from './alerts/detector.js';
+import type { AlertDetector } from './alerts/detector.js';
+import { SessionPhaseTracker } from './alerts/phase.js';
 import { CanonicalTerminalScreen } from './terminal/screen.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
@@ -154,9 +156,15 @@ export class Session {
     this.stationRows = rows;
     this.backend = backend ?? new BareBackend({ ...spawnOpts, cols, rows }, runtime);
     this.screen = new CanonicalTerminalScreen(cols, rows);
-    this.alertDetector = new TerminalAlertDetector((message) =>
-      this.broadcast({ type: 'alert', message }),
-    );
+    this.alertDetector = new SessionPhaseTracker({
+      onPhase: (phase, detail) =>
+        this.broadcast({
+          type: 'session-status',
+          phase,
+          ...(detail === undefined ? {} : { detail }),
+        }),
+      onAlert: (message) => this.broadcast({ type: 'alert', message }),
+    });
 
     let initializingScreen = true;
     const pendingInitialOutput: string[] = [];
@@ -509,6 +517,9 @@ export class Session {
       case 'alert':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected alert frame');
         break;
+      case 'session-status':
+        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected session-status frame');
+        break;
       case 'session-snapshot':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot');
         break;
@@ -678,7 +689,9 @@ export class Session {
   // Outbound: PTY → clients
   // -------------------------------------------------------------------------
 
-  private broadcast(frame: OutputFrame | AlertFrame | ResizeFrame): void {
+  private broadcast(
+    frame: OutputFrame | AlertFrame | SessionStatusFrame | ResizeFrame,
+  ): void {
     for (const ws of [...this.subscribers]) {
       if (frame.type === 'output') {
         const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);

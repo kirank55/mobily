@@ -64,8 +64,7 @@ describe('MarketingPage', () => {
     expect(markup).toContain('Same Session.');
     expect(markup).toContain('Same Terminal.');
     expect(markup).toContain('Full Control.');
-    expect(markup).toContain('Control the live terminal on your PC from Android securely,');
-    expect(markup).toContain('wherever you are.');
+    expect(markup).toContain('Control the live terminal on your PC from Android securely.');
     expect(markup).not.toContain('START A SESSION');
     expect(markup).toContain('DOWNLOAD ANDROID APK');
     expect(markup).toContain('hero-data-path');

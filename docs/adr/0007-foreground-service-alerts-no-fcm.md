@@ -5,3 +5,5 @@ Background and lock-screen presence use an Android foreground-service notificati
 Push would require a Mobily-operated or third-party relay and would not improve the connected-session case, where the phone already holds a live tunnel. A foreground service matches the product model: the phone is an active viewer of a Station Session, not a dormant push client.
 
 **Consequences:** Alerts only work while the app's connection path is alive (or recovering). Offline push is an explicit non-goal unless a future ADR reopens it.
+
+The ongoing notification may show a heuristic Session phase (`working` / `waiting` / `finished` / `idle`) inferred from PTY text on the Station. That inference is not an agent integration and does not reverse ADR 0008.
