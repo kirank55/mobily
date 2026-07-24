@@ -59,6 +59,6 @@
     "test": "vitest run && playwright test",
     "prebuild": "expo prebuild --platform android",
     "build:android": "expo run:android",
-    "eas-dev": "pnpm exec expo prebuild --platform android --clean && pnpm exec expo install --check && eas build --profile development --platform android"
+    "eas-dev": "pnpm exec expo prebuild --platform android --clean && pnpm exec expo install --check && pnpm install --frozen-lockfile && pnpm exec eas build --profile development --platform android"
   }
 }
