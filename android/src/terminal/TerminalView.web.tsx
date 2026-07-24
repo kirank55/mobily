@@ -95,6 +95,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       paste(data: string) {
         postToTerminal({ type: 'paste', data });
       },
+      showKeyboard() {
+        postToTerminal({ type: 'keyboard', visible: true });
+      },
+      hideKeyboard() {
+        postToTerminal({ type: 'keyboard', visible: false });
+      },
       getLatencyStats() {
         postToTerminal({ type: 'get-latency-stats' });
       },

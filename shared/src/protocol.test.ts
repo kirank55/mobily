@@ -18,6 +18,7 @@ import {
   type RpcStreamFrame,
   type ResizeFrame,
   type SessionSnapshotFrame,
+  type SessionStatusFrame,
 } from './protocol.js';
 
 // ---------------------------------------------------------------------------
@@ -302,6 +303,18 @@ describe('round-trip: alert frame', () => {
   });
 });
 
+describe('round-trip: session-status frame', () => {
+  it('preserves a session phase with optional detail', () => {
+    const frames: SessionStatusFrame[] = [
+      { type: 'session-status', phase: 'working' },
+      { type: 'session-status', phase: 'waiting', detail: 'Approve the agent tool call?' },
+      { type: 'session-status', phase: 'finished', detail: 'Build completed' },
+      { type: 'session-status', phase: 'idle', detail: 'last line' },
+    ];
+    for (const frame of frames) expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
+  });
+});
+
 describe('round-trip: rpc frames', () => {
   it('preserves an RPC request with nested JSON parameters', () => {
     const frame: RpcRequestFrame = {
@@ -352,7 +365,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-    expect(PROTOCOL_VERSION).toBe(6);
+    expect(PROTOCOL_VERSION).toBe(7);
   });
 });
 
@@ -438,6 +451,17 @@ describe('decodeFrame errors: malformed alert frames', () => {
     '{"type":"alert","message":""}',
     '{"type":"alert","message":42}',
     JSON.stringify({ type: 'alert', message: 'x'.repeat(513) }),
+  ])('rejects %s', (raw) => {
+    expect(() => decodeFrame(raw)).toThrow(TypeError);
+  });
+});
+
+describe('decodeFrame errors: malformed session-status frames', () => {
+  it.each([
+    '{"type":"session-status","phase":"running"}',
+    '{"type":"session-status","phase":42}',
+    '{"type":"session-status","phase":"working","detail":""}',
+    JSON.stringify({ type: 'session-status', phase: 'working', detail: 'x'.repeat(161) }),
   ])('rejects %s', (raw) => {
     expect(() => decodeFrame(raw)).toThrow(TypeError);
   });

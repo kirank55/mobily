@@ -52,6 +52,7 @@ function createClient() {
   const errors: ErrorKind[] = [];
   const outputs: { data: string; tags?: readonly string[] }[] = [];
   const alerts: string[] = [];
+  const sessionStatuses: { phase: string; detail?: string }[] = [];
   const resizes: [number, number][] = [];
   const snapshots: SessionSnapshotFrame[] = [];
   const scrollbacks: string[] = [];
@@ -67,6 +68,8 @@ function createClient() {
       terminalEvents.push(`output:${data}`);
     },
     onAlert: (message) => alerts.push(message),
+    onSessionStatus: (phase, detail) =>
+      sessionStatuses.push({ phase, ...(detail === undefined ? {} : { detail }) }),
     onResize: (cols, rows) => {
       resizes.push([cols, rows]);
       terminalEvents.push(`resize:${cols}x${rows}`);
@@ -84,6 +87,7 @@ function createClient() {
     errors,
     outputs,
     alerts,
+    sessionStatuses,
     resizes,
     snapshots,
     scrollbacks,
@@ -365,6 +369,27 @@ describe('WsClient', () => {
     socket.receive({ type: 'alert', message: 'Approve the deployment?' });
 
     expect(alerts).toEqual(['Approve the deployment?']);
+  });
+
+  it('delivers authenticated session-status phases to the app', async () => {
+    const { client, sessionStatuses } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
+
+    socket.receive({ type: 'session-status', phase: 'working', detail: 'Thinking' });
+    socket.receive({ type: 'session-status', phase: 'waiting', detail: 'Approve tool call?' });
+
+    expect(sessionStatuses).toEqual([
+      { phase: 'working', detail: 'Thinking' },
+      { phase: 'waiting', detail: 'Approve tool call?' },
+    ]);
   });
 
   it('rejects terminal alerts before authentication completes', () => {

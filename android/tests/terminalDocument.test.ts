@@ -36,10 +36,15 @@ describe('terminal document', () => {
     expect(production).toContain("msg.type==='selection-mode'");
     expect(production).toContain('prepareOutput');
     expect(production).toContain('hardenTerminalTextarea');
-    expect(production).toContain('data-seq="ENTER"');
+    expect(production).toContain('data-seq="ENTER">&#9166;</button>');
     expect(production).toContain("ENTER:'\\r'");
+    expect(production).toContain("CTRL_C:'\\x03'");
+    expect(production).toContain('data-seq="CTRL_C">Ctrl+C</button>');
     expect(production).not.toContain('data-seq="HOME"');
     expect(production).toContain('sgrMouseClickSequence');
+    expect(production).toContain("msg.type==='keyboard'");
+    expect(production).toContain("addEventListener('touchstart'");
+    expect(production).toContain('capture:true');
     expect(production).toContain('touchmove');
     expect(production).toContain("msg.type==='paste'");
     expect(production).toContain('proposeOwnerGrid');

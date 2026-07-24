@@ -31,21 +31,16 @@ class MobilyForegroundModule : Module() {
       }, Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    AsyncFunction("start") { stationName: String ->
+    AsyncFunction("start") {
       val context = appContext.reactContext
         ?: throw ForegroundModuleException("Android application context is unavailable")
-      MobilyForegroundService.start(context, bounded(stationName, 80, "Station"))
+      MobilyForegroundService.start(context)
     }
 
-    AsyncFunction("update") { state: String, lastLine: String, alert: String? ->
+    AsyncFunction("update") { connected: Boolean ->
       val context = appContext.reactContext
         ?: throw ForegroundModuleException("Android application context is unavailable")
-      MobilyForegroundService.update(
-        context,
-        bounded(state, 40, "connected"),
-        bounded(lastLine, 160, "Waiting for terminal output"),
-        alert?.let { bounded(it, 512, "") }
-      )
+      MobilyForegroundService.update(context, connected)
     }
 
     AsyncFunction("stop") {
@@ -53,10 +48,4 @@ class MobilyForegroundModule : Module() {
     }
   }
 
-  private fun bounded(value: String, maxLength: Int, fallback: String): String {
-    val plain = value.filter { it.code >= 0x20 && it.code != 0x7f }
-      .replace(Regex("\\s+"), " ")
-      .trim()
-    return (plain.ifEmpty { fallback }).take(maxLength)
-  }
 }

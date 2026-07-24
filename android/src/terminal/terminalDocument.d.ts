@@ -57,13 +57,13 @@ export function pinchTerminalScale(
   currentDistance: number,
 ): number;
 export function stripTerminalMouseControls(data: string): string;
-export function createTerminalMouseModeState(): { modes: Record<string, number> };
-export function applyTerminalMouseControls(
-  state: { modes: Record<string, number> },
-  data: string,
-): string;
+export interface TerminalMouseModeState {
+  modes: Record<string, number>;
+}
+export function createTerminalMouseModeState(): TerminalMouseModeState;
+export function applyTerminalMouseControls(state: TerminalMouseModeState, data: string): string;
 export function isTerminalMouseReportingActive(
-  state: { modes: Record<string, number> } | null | undefined,
+  state: TerminalMouseModeState | null | undefined,
 ): boolean;
 export function sgrMouseClickSequence(col: number, row: number): string;
 export function hardenTerminalTextarea(term: {

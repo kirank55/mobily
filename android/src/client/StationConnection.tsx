@@ -112,7 +112,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
           }
         },
         onOutput: (data, latencyTags) => {
-          foreground.current.recordOutput(data);
           for (const listener of outputListeners.current) listener(data, latencyTags);
         },
         onResize: (cols, rows) => {
@@ -126,6 +125,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
           for (const listener of scrollbackListeners.current) listener(data);
         },
         onAlert: (message) => void foreground.current.alert(message),
+        onSessionStatus: (phase, detail) => void foreground.current.updatePhase(phase, detail),
         onRpcFrame: (frame) => nextRpc.handleFrame(frame),
         onReady: () => {
           void markConnected(nextPairing.deviceBindingId).catch((error) => {
