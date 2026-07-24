@@ -94,8 +94,12 @@ export function pinchTerminalScale(initialScale, initialDistance, currentDistanc
 }
 
 /** DEC private modes that enable click / drag / motion mouse reporting. */
-var TERMINAL_MOUSE_REPORTING_PARAMS = { 1000: 1, 1002: 1, 1003: 1 };
+var TERMINAL_MOUSE_REPORTING_PARAMS = { '1000': 1, '1002': 1, '1003': 1 };
 
+/**
+ * Strip mouse tracking DECSET/DECRST params (used by the workstation embed).
+ * The Android WebView path preserves these and tracks them instead.
+ */
 export function stripTerminalMouseControls(data) {
   return data.replace(/\x1b\[\?([0-9;]+)([hl])/g, function (_sequence, parameters, command) {
     var remaining = parameters.split(';').filter(function (parameter) {
@@ -138,6 +142,19 @@ export function sgrMouseClickSequence(col, row) {
   var c = Math.max(0, col | 0) + 1;
   var r = Math.max(0, row | 0) + 1;
   return '\x1b[<0;' + c + ';' + r + 'M\x1b[<0;' + c + ';' + r + 'm';
+}
+
+/** Disable mobile IME word suggestions on xterm's helper textarea. */
+export function hardenTerminalTextarea(term) {
+  var textarea = term && term.textarea;
+  if (!textarea && term && term.element) {
+    textarea = term.element.querySelector('.xterm-helper-textarea');
+  }
+  if (!textarea || !textarea.setAttribute) return;
+  textarea.setAttribute('autocomplete', 'off');
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocapitalize', 'off');
+  textarea.setAttribute('spellcheck', 'false');
 }
 
 export function terminalSelectionRange(start, end, cols) {
@@ -292,9 +309,7 @@ export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '
 
 export function buildTerminalHelpersSource() {
   return [
-    'var TERMINAL_MOUSE_REPORTING_PARAMS = ' +
-      JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) +
-      ';',
+    'var TERMINAL_MOUSE_REPORTING_PARAMS = ' + JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) + ';',
     clampTerminalScale,
     clampTerminalFontSize,
     estimateTerminalCellSize,
@@ -308,12 +323,13 @@ export function buildTerminalHelpersSource() {
     applyTerminalMouseControls,
     isTerminalMouseReportingActive,
     sgrMouseClickSequence,
+    hardenTerminalTextarea,
     terminalSelectionRange,
     terminalCellSgr,
     snapshotToAnsi,
     scrollbackAndSnapshotToAnsi,
   ]
-    .map((helper) => helper.toString())
+    .map((helper) => (typeof helper === 'string' ? helper : helper.toString()))
     .join('\n');
 }
 
@@ -507,7 +523,7 @@ ${VIEWPORT_HELPERS}
   }
   function openTerminal(container,cols,rows){
     var next=new Terminal(terminalOptions(cols,rows));
-    next.loadAddon(new FitAddon.FitAddon());next.open(container);return next;
+    next.loadAddon(new FitAddon.FitAddon());next.open(container);hardenTerminalTextarea(next);return next;
   }
   function bindTerminalInput(target){
     target.onData(function(d){sendInput(d);});

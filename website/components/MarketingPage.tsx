@@ -116,19 +116,23 @@ function SectionHeading({
   title,
   body,
   inverse = false,
+  className = '',
 }: {
   index: string;
   label: string;
   title: React.ReactNode;
   body?: string;
   inverse?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={`section-heading${inverse ? ' section-heading--inverse' : ''}`}>
+    <div
+      className={`section-heading${inverse ? ' section-heading--inverse' : ''}${className ? ` ${className}` : ''}`}
+    >
       <p className="section-kicker">
         <span>{index}</span> / {label}
       </p>
-      <h2>{title}</h2>
+      <h2 className="section-title">{title}</h2>
       {body && <p className="section-body">{body}</p>}
     </div>
   );
@@ -429,13 +433,16 @@ export function MarketingPage() {
         <section className="workflow-section" id="how-it-works">
           <div className="container">
             <SectionHeading
+              className="section-heading--workflow"
               index="01"
               label="WORKFLOW"
               title={
                 <>
-                  From workstation to pocket.
-                  <br />
-                  <span>Same Session.</span>
+                  <span className="section-title-line section-title-line--ink">From PC to</span>
+                  <span className="section-title-line section-title-line--ink">pocket.</span>
+                  <span className="section-title-line">Same Session.</span>
+                  <span className="section-title-line">Same Terminal.</span>
+                  <span className="section-title-line">Full Control.</span>
                 </>
               }
               body="Pair once, keep the terminal visible, move between Stations, and close the small loops that would otherwise send you back to the desk."
@@ -457,9 +464,22 @@ export function MarketingPage() {
                     </div>
                   ))}
                 </div>
-                <div className="workflow-meter" aria-hidden="true">
+                <div className="workflow-meter" role="tablist" aria-label="Workflow steps">
                   {workflow.map((item) => (
-                    <span data-active={item.id === activeStory} key={item.id} />
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={item.id === activeStory}
+                      aria-label={`${item.number} ${item.eyebrow}`}
+                      data-active={item.id === activeStory}
+                      key={item.id}
+                      onClick={() => {
+                        setActiveStory(item.id);
+                        document
+                          .querySelector<HTMLElement>(`[data-story-chapter="${item.id}"]`)
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -494,9 +514,10 @@ export function MarketingPage() {
               label="CONTROL SURFACES"
               title={
                 <>
-                  Built for the moments
-                  <br />
-                  <span>that unblock work.</span>
+                  <span className="section-title-line section-title-line--ink">
+                    Built for the moments
+                  </span>
+                  <span className="section-title-line">that unblock work.</span>
                 </>
               }
               body="Mobily does not shrink a desktop dashboard into a phone. It gives consequential terminal and Git actions a direct mobile surface."
@@ -527,11 +548,11 @@ export function MarketingPage() {
                 label="TRUST MODEL"
                 title={
                   <>
-                    Your machine.
-                    <br />
-                    Your phone.
-                    <br />
-                    <span>Your keys.</span>
+                    <span className="section-title-line section-title-line--ink">
+                      Your machine.
+                    </span>
+                    <span className="section-title-line section-title-line--ink">Your phone.</span>
+                    <span className="section-title-line">Your keys.</span>
                   </>
                 }
                 body="The private Device Key stays in Android Keystore. Each reconnect signs a fresh challenge; the CLI verifies it before opening the Session."
@@ -586,9 +607,8 @@ export function MarketingPage() {
               inverse
               title={
                 <>
-                  One command.
-                  <br />
-                  <span>One scan.</span>
+                  <span className="section-title-line section-title-line--ink">One command.</span>
+                  <span className="section-title-line">One scan.</span>
                 </>
               }
               body="Start the CLI on your Station, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
@@ -639,9 +659,8 @@ export function MarketingPage() {
                 label="FAQ"
                 title={
                   <>
-                    The details
-                    <br />
-                    <span>developers ask.</span>
+                    <span className="section-title-line section-title-line--ink">The details</span>
+                    <span className="section-title-line">developers ask.</span>
                   </>
                 }
                 body="Mobily is intentionally small, explicit, and open. The repository carries the complete technical story."

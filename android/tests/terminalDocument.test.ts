@@ -35,10 +35,13 @@ describe('terminal document', () => {
     expect(production).toContain("msg.type==='size-ownership'");
     expect(production).toContain("msg.type==='selection-mode'");
     expect(production).toContain('prepareOutput');
+    expect(production).toContain('hardenTerminalTextarea');
     expect(production).toContain('data-seq="ENTER">&#9166;</button>');
     expect(production).toContain("ENTER:'\\r'");
     expect(production).toContain("CTRL_C:'\\x03'");
     expect(production).toContain('data-seq="CTRL_C">Ctrl+C</button>');
+    expect(production).not.toContain('data-seq="HOME"');
+    expect(production).toContain('sgrMouseClickSequence');
     expect(production).toContain("msg.type==='keyboard'");
     expect(production).toContain("addEventListener('touchstart'");
     expect(production).toContain('capture:true');
@@ -100,6 +103,9 @@ describe('terminal document', () => {
     const state = createTerminalMouseModeState();
     expect(isTerminalMouseReportingActive(state)).toBe(false);
     expect(applyTerminalMouseControls(state, fixture)).toBe(fixture);
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+    applyTerminalMouseControls(state, '\u001b[?1000;1002h');
+    applyTerminalMouseControls(state, '\u001b[?1000l');
     expect(isTerminalMouseReportingActive(state)).toBe(true);
     applyTerminalMouseControls(state, '\u001b[?1002l');
     expect(isTerminalMouseReportingActive(state)).toBe(false);

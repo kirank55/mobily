@@ -426,6 +426,17 @@ function sgrMouseClickSequence(col, row) {
   var r = Math.max(0, row | 0) + 1;
   return '\x1b[<0;' + c + ';' + r + 'M\x1b[<0;' + c + ';' + r + 'm';
 }
+function hardenTerminalTextarea(term) {
+  var textarea = term && term.textarea;
+  if (!textarea && term && term.element) {
+    textarea = term.element.querySelector('.xterm-helper-textarea');
+  }
+  if (!textarea || !textarea.setAttribute) return;
+  textarea.setAttribute('autocomplete', 'off');
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocapitalize', 'off');
+  textarea.setAttribute('spellcheck', 'false');
+}
 function terminalSelectionRange(start, end, cols) {
   var first = start;
   var last = end;
@@ -659,7 +670,7 @@ function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '') {
   }
   function openTerminal(container,cols,rows){
     var next=new Terminal(terminalOptions(cols,rows));
-    next.loadAddon(new FitAddon.FitAddon());next.open(container);return next;
+    next.loadAddon(new FitAddon.FitAddon());next.open(container);hardenTerminalTextarea(next);return next;
   }
   function bindTerminalInput(target){
     target.onData(function(d){sendInput(d);});

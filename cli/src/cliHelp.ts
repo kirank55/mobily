@@ -4,7 +4,7 @@ export function formatCliHelp(version: string): string {
     `mobily v${version}`,
     '',
     'Workstation session',
-    '  Ctrl+C twice     Exit Mobily (first press warns, second exits)',
+    '  mobily exit      Exit Mobily from an attached tmux terminal',
     '  mobily qr hide   Hide the status header pane',
     '  mobily qr clear  Hide the header and clear the terminal',
     '',
