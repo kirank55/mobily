@@ -4,7 +4,7 @@ import type { SpawnOptions } from '../pty/node-pty.js';
 import { BareBackend } from './bare.js';
 import { defaultSessionRuntime, type SessionRuntime } from './runtime.js';
 import { removePairingPanel, TmuxBackend } from './tmux.js';
-import type { SessionBackend } from './types.js';
+import { MOBILY_CLI_PID_ENV, type SessionBackend } from './types.js';
 
 const SESSION_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
@@ -65,6 +65,26 @@ export function killTmuxSession(
   runtime: SessionRuntime = defaultSessionRuntime,
 ): void {
   runtime.execFile('tmux', ['kill-session', '-t', validateSessionName(name)]);
+}
+
+type SignalProcess = (pid: number, signal: NodeJS.Signals) => boolean;
+
+/** Ask the Mobily CLI that owns the current tmux Session to shut down. */
+export function exitCurrentMobily(
+  runtime: SessionRuntime = defaultSessionRuntime,
+  signalProcess: SignalProcess = process.kill,
+): boolean {
+  try {
+    const owner = runtime.execFile('tmux', ['show-environment', MOBILY_CLI_PID_ENV]).trim();
+    const match = owner.match(new RegExp(`^${MOBILY_CLI_PID_ENV}=(\\d+)$`));
+    if (!match) return false;
+    const pid = Number(match[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+    signalProcess(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Remove the QR pane from the tmux session containing the current shell. */

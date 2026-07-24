@@ -23,7 +23,9 @@ npx mobily --tunnel devtunnels
 
 After printing tunnel and pairing details, Mobily hands its interactive console
 to the shared terminal. Commands and PTY output are visible on both Android and
-the workstation. Ctrl+C interrupts the shared session; Ctrl+X exits Mobily.
+the workstation. Ctrl+C interrupts the shared session. In a tmux-backed
+workstation terminal, run `mobily exit` to exit Mobily; in the bare PTY fallback,
+Ctrl+X exits Mobily.
 
 When tmux is available, this terminal attaches to the shared Session after the
 phone authenticates (QR header above the shell). Mobily also prints the exact

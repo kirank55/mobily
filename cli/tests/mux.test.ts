@@ -8,13 +8,19 @@ import { BareBackend } from '../src/mux/bare.js';
 import {
   createSessionBackend,
   defaultSessionName,
+  exitCurrentMobily,
   hideCurrentQrPanel,
   isTmuxAvailable,
   killTmuxSession,
   validateSessionName,
   type SessionRuntime,
 } from '../src/mux/factory.js';
-import { clearShellPane, resizePairingPanel, resizePairingPanelLines, TmuxBackend } from '../src/mux/tmux.js';
+import {
+  clearShellPane,
+  resizePairingPanel,
+  resizePairingPanelLines,
+  TmuxBackend,
+} from '../src/mux/tmux.js';
 import {
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
@@ -359,6 +365,24 @@ describe('TmuxBackend', () => {
 });
 
 describe('Session backend factory', () => {
+  it('signals the owning CLI process for mobily exit', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        return 'MOBILY_CLI_PID=4242\n';
+      }),
+    });
+    const signalProcess = vi.fn();
+
+    expect(exitCurrentMobily(fake.value, signalProcess)).toBe(true);
+
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['show-environment', 'MOBILY_CLI_PID'],
+    });
+    expect(signalProcess).toHaveBeenCalledWith(4242, 'SIGTERM');
+  });
+
   it('uses a stable validated cwd-derived name and selects tmux when available', () => {
     const fake = runtime();
     const first = defaultSessionName('/work/My Project', (path) => path);

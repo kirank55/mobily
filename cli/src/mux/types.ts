@@ -1,5 +1,7 @@
 import type { ExitEvent, IDisposable } from '../pty/node-pty.js';
 
+export const MOBILY_CLI_PID_ENV = 'MOBILY_CLI_PID';
+
 export type SessionBackendKind = 'bare' | 'tmux';
 
 /** Terminal behavior consumed by Session, independent of its process adapter. */

@@ -5,7 +5,7 @@ describe('formatCliHelp()', () => {
   it('prints a short guide for workstation controls and common commands', () => {
     const help = formatCliHelp('0.0.0');
     expect(help).toContain('mobily v0.0.0');
-    expect(help).toContain('Ctrl+C twice');
+    expect(help).toContain('mobily exit');
     expect(help).toContain('mobily qr hide');
     expect(help).toContain('mobily --tunnel devtunnels');
     expect(help).toContain('mobily --list-bindings');
