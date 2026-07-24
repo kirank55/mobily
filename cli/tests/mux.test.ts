@@ -26,6 +26,7 @@ import {
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
 } from '../src/tmuxWorkstationAttach.js';
+import { defaultSessionRuntime } from '../src/mux/runtime.js';
 
 class FakePty implements PtyProcess {
   readonly raw = {} as PtyProcess['raw'];
@@ -286,11 +287,12 @@ describe('TmuxBackend', () => {
     );
   });
 
-  it('prints lines into the shell pane so a later clear can dismiss them', () => {
+  it('writes a formatted banner to the pane TTY without typing a command into the shell', () => {
     const fake = runtime({
       execFile: vi.fn((file: string, args: string[]) => {
         fake.commands.push({ file, args });
         if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        if (args[0] === 'display-message') return '/dev/pts/42\t80\n';
         return '';
       }),
     });
@@ -301,24 +303,30 @@ describe('TmuxBackend', () => {
         fake.value,
       ),
     ).toBe(true);
-    expect(fake.commands).toEqual(
-      expect.arrayContaining([
-        {
-          file: 'tmux',
-          args: [
-            'send-keys',
-            '-t',
-            '%1',
-            '-l',
-            "printf '%s\\n' 'Connected Successfully' 'Run mobily -h for help. Run mobily exit to exit'",
-          ],
-        },
-        { file: 'tmux', args: ['send-keys', '-t', '%1', 'Enter'] },
-      ]),
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['display-message', '-p', '-t', '%1', '#{pane_tty}\t#{pane_width}'],
+    });
+    expect(fake.commands).toContainEqual(
+      expect.objectContaining({
+        file: 'sh',
+        args: expect.arrayContaining([
+          expect.stringContaining('printf'),
+          expect.stringContaining('Connected Successfully'),
+          expect.stringContaining('Run mobily -h for help. Run mobily exit to exit'),
+          expect.stringContaining('\u001b[90m'),
+          '/dev/pts/42',
+        ]),
+      }),
     );
-    expect(fake.commands.some(({ args }) => args.includes('%2') && args[0] === 'send-keys')).toBe(
-      false,
-    );
+    expect(
+      fake.commands.some(
+        ({ file, args }) =>
+          file === 'tmux' &&
+          args[0] === 'send-keys' &&
+          args.some((arg) => arg.includes('Connected Successfully')),
+      ),
+    ).toBe(false);
   });
 
   it('pins the connected workstation panel at the initial two-line height', () => {
@@ -517,6 +525,34 @@ describe.skipIf(!tmuxAvailable)('real tmux integration', () => {
       { encoding: 'utf8' },
     );
     expect(panes).toContain(' qr');
+    backend.dispose();
+  });
+
+  it('shows the connected banner until the shell executes clear', async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mobily-tmux-banner-')));
+    directories.push(cwd);
+    const name = `mobily-banner-${process.pid}-${Date.now()}`;
+    names.push(name);
+    const backend = new TmuxBackend({ cwd, sessionName: name, cols: 80, rows: 12 });
+
+    expect(clearShellPane(name, defaultSessionRuntime)).toBe(true);
+    expect(
+      printShellPaneLines(
+        name,
+        ['Connected Successfully', 'Run mobily -h for help. Run mobily exit to exit'],
+        defaultSessionRuntime,
+      ),
+    ).toBe(true);
+
+    const capture = (): string =>
+      execFileSync('tmux', ['capture-pane', '-p', '-t', name], { encoding: 'utf8' });
+    await vi.waitFor(() => expect(capture()).toContain('Connected Successfully'));
+    expect(capture()).toContain('────────────────');
+
+    execFileSync('tmux', ['send-keys', '-t', name, '-l', 'clear']);
+    execFileSync('tmux', ['send-keys', '-t', name, 'Enter']);
+    await vi.waitFor(() => expect(capture()).not.toContain('Connected Successfully'));
+
     backend.dispose();
   });
 });

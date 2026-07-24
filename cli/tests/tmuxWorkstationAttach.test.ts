@@ -40,6 +40,7 @@ function fakeRuntime(responses: Record<string, string> = {}): {
         const key = args[0] ?? '';
         if (key in responses) return responses[key]!;
         if (key === 'list-panes') return '%1 qr\n%2 \n';
+        if (key === 'display-message') return '/dev/pts/42\t80\n';
         if (key === 'split-window') return '%42\n';
         return '';
       }),
@@ -124,18 +125,29 @@ describe('attachTmuxWorkstation()', () => {
         { file: 'tmux', args: ['send-keys', '-t', '%2', '-l', 'clear'] },
         { file: 'tmux', args: ['send-keys', '-t', '%2', 'Enter'] },
         { file: 'tmux', args: ['clear-history', '-t', '%2'] },
-        {
-          file: 'tmux',
-          args: [
-            'send-keys',
-            '-t',
-            '%2',
-            '-l',
-            "printf '%s\\n' 'Connected Successfully' 'Run mobily -h for help. Run mobily exit to exit'",
-          ],
-        },
-        { file: 'tmux', args: ['send-keys', '-t', '%2', 'Enter'] },
       ]),
+    );
+    expect(
+      runtime.commands.some(
+        ({ file, args }) =>
+          file === 'tmux' &&
+          args[0] === 'send-keys' &&
+          args.some((arg) => arg.includes('Connected Successfully')),
+      ),
+    ).toBe(false);
+    expect(runtime.commands).toContainEqual({
+      file: 'tmux',
+      args: ['display-message', '-p', '-t', '%2', '#{pane_tty}\t#{pane_width}'],
+    });
+    expect(runtime.commands).toContainEqual(
+      expect.objectContaining({
+        file: 'sh',
+        args: expect.arrayContaining([
+          expect.stringContaining('printf'),
+          expect.stringContaining('Connected Successfully'),
+          '/dev/pts/42',
+        ]),
+      }),
     );
     expect(spawn).toHaveBeenCalledWith(
       'tmux',

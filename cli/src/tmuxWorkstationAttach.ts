@@ -15,9 +15,9 @@ export type SpawnFn = (
 export const CONNECTED_SUCCESS_LINE = 'Connected Successfully';
 
 /** Help/exit hint shown with the success line. */
-export const CONNECTED_HELP_LINE = ['Run mobily -h for help.', 'Run mobily exit to exit'].join(' ');
+export const CONNECTED_HELP_LINE = ["'mobily -h' for help ·", "'mobily exit' to exit"].join(' ');
 
-/** Success lines printed into the shell after phone auth (not a sticky status pane). */
+/** Success lines rendered as a dismissible shell banner after phone auth. */
 export const CONNECTED_WORKSTATION_LINES = [CONNECTED_SUCCESS_LINE, CONNECTED_HELP_LINE] as const;
 
 /** Joined form of {@link CONNECTED_WORKSTATION_LINES} (e.g. mux panel height fixtures). */
@@ -51,10 +51,10 @@ export function shouldAttachTmuxWorkstation(
  * Inside outer tmux: split the current window 50/50 and attach in the bottom
  * pane with `TMUX` cleared to avoid nesting the outer client.
  *
- * Clears the shell, prints the Connected Successfully lines into the shell
- * (so a later `clear` dismisses them), then attaches. Ctrl+C remains available
- * to interrupt the shared Session. `mobily exit` signals the owning CLI so
- * both direct and outer-tmux attachments exit cleanly.
+ * Clears the shell, renders the Connected Successfully banner directly on its
+ * TTY (so a later `clear` dismisses it), then attaches. Ctrl+C remains
+ * available to interrupt the shared Session. `mobily exit` signals the owning
+ * CLI so both direct and outer-tmux attachments exit cleanly.
  */
 export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): IDisposable {
   const env = options.env ?? process.env;

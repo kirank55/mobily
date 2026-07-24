@@ -288,8 +288,11 @@ export function clearShellPane(sessionName: string, runtime: SessionRuntime): bo
 }
 
 /**
- * Print lines into the shell pane as normal output so a later shell `clear`
- * dismisses them (unlike the sticky QR/status pane).
+ * Render a compact status banner directly on the shell pane's TTY.
+ *
+ * Writing through the pane TTY keeps the banner in normal terminal content,
+ * so `clear` dismisses it, without typing an implementation command into the
+ * user's interactive shell. Enter redraws the prompt below the divider.
  */
 export function printShellPaneLines(
   sessionName: string,
@@ -299,9 +302,16 @@ export function printShellPaneLines(
   const pane = findShellPane(sessionName, runtime);
   if (!pane || lines.length === 0) return false;
   try {
-    const escaped = lines.map((line) => `'${line.replaceAll("'", "'\\''")}'`).join(' ');
-    const snippet = `printf '%s\\n' ${escaped}`;
-    runtime.execFile('tmux', ['send-keys', '-t', pane, '-l', snippet]);
+    const [tty, widthText] = runtime
+      .execFile('tmux', ['display-message', '-p', '-t', pane, '#{pane_tty}\t#{pane_width}'])
+      .trim()
+      .split('\t');
+    if (!tty) return false;
+    const width = Number.parseInt(widthText ?? '', 10);
+    const dividerWidth = Number.isFinite(width) ? Math.max(1, width - 1) : 79;
+    const divider = `\u001b[90m${'─'.repeat(dividerWidth)}\u001b[0m`;
+    const banner = `\r\u001b[2K${lines.join('\r\n')}\r\n${divider}`;
+    runtime.execFile('sh', ['-c', 'printf %s "$1" > "$2"', 'mobily', banner, tty]);
     runtime.execFile('tmux', ['send-keys', '-t', pane, 'Enter']);
     return true;
   } catch {
