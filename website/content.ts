@@ -1,7 +1,7 @@
 export const site = {
   name: 'Mobily',
   description:
-    'Mobily keeps the live Session on your Station within reach from Android—through a secure tunnel, without routing your work through a Mobily-operated cloud.',
+    'Never waste your time in a coding session. Control the live terminal on your PC from Android—through a secure tunnel, without routing your work through a Mobily-operated cloud.',
   command: 'npx mobily --tunnel devtunnels',
   localCommand: 'npx mobily --tunnel local',
   urls: {
@@ -32,7 +32,7 @@ export const workflow = [
     id: 'pair',
     number: '01',
     eyebrow: 'PAIR ONCE',
-    title: 'Bind this phone to the Station.',
+    title: 'Bind your phone to the terminal.',
     description:
       'Scan the one-time QR code. Mobily creates a Device Key in Android Keystore and sends only its public key to the CLI.',
     src: '/product/pairing.webp',
@@ -54,12 +54,12 @@ export const workflow = [
     id: 'stations',
     number: '03',
     eyebrow: 'MOVE BETWEEN',
-    title: 'Keep every paired Station close.',
+    title: 'Keep every paired PC close.',
     description:
-      'Switch among your workstation, devbox, home server, or travel laptop without scanning the pairing code again.',
+      'Switch among terminals on your PC, cloud machine, home server, or laptop without scanning the pairing code again.',
     src: '/product/stations.webp',
-    alt: 'Mobily Stations showing multiple paired developer machines and their status',
-    status: 'PAIRED STATIONS',
+    alt: 'Mobily showing multiple paired PCs and terminals and their status',
+    status: 'PAIRED PCS',
   },
   {
     id: 'git',
@@ -105,10 +105,10 @@ export const features = [
   },
   {
     mark: '02',
-    title: 'Stations',
+    title: 'PCs',
     description:
-      'Keep multiple Station pairings on one phone and move between them without re-pairing.',
-    meta: 'MULTI-STATION',
+      'Keep multiple PCs paired on one phone—and reach terminals on cloud machines the same way—without re-pairing.',
+    meta: 'MULTI-PC',
   },
   {
     mark: '↗',
@@ -116,12 +116,6 @@ export const features = [
     description: 'Choose Dev Tunnels away from the desk or pinned TLS on the same Wi-Fi network.',
     meta: 'LAN / REMOTE',
   },
-] as const;
-
-export const securityFlow = [
-  { label: 'Station', detail: 'Your workstation', mark: '>_' },
-  { label: 'Secure transport', detail: 'Dev Tunnel or pinned LAN TLS', mark: 'TLS' },
-  { label: 'Android', detail: 'Device Key in Android Keystore', mark: 'KEY' },
 ] as const;
 
 export const securityPoints = [
@@ -133,12 +127,12 @@ export const securityPoints = [
   {
     title: 'Reconnects prove device identity.',
     description:
-      'The Station sends a fresh challenge and opens the Session only after Android signs it successfully.',
+      'Your PC sends a fresh challenge and opens the Session only after Android signs it successfully.',
   },
   {
     title: 'Mobily operates no relay.',
     description:
-      'Remote access currently uses Microsoft Dev Tunnels. Same-network access uses a Station certificate with a pinned SHA-256 identity.',
+      'Remote access currently uses Microsoft Dev Tunnels. Same-network access uses a PC certificate with a pinned SHA-256 identity.',
   },
 ] as const;
 
@@ -146,7 +140,7 @@ export const faqs = [
   {
     question: 'Is Mobily Android-only?',
     answer:
-      'The mobile client currently targets Android. The workstation CLI runs on Node.js 20+ across macOS, Linux, Windows, and WSL, subject to native PTY support.',
+      'The mobile client currently targets Android. The CLI on your PC runs on Node.js 20+ across macOS, Linux, Windows, and WSL, subject to native PTY support.',
   },
   {
     question: 'Does Mobily only work with coding agents?',

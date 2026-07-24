@@ -7,7 +7,6 @@ import {
   features,
   navigation,
   proofPoints,
-  securityFlow,
   securityPoints,
   site,
   workflow,
@@ -344,74 +343,129 @@ export function MarketingPage() {
           <div className="container hero-grid">
             <div className="hero-copy">
               <p className="hero-kicker">
-                <span className="status-dot status-dot--success" /> OPEN SOURCE · ANDROID · TERMINAL
-                COMPANION
+                <span className="status-dot status-dot--success" /> Same Session. Same Terminal.
+                {/* <span className="status-dot status-dot--success" /> Never miss a coding session. */}
               </p>
               <h1>
-                <span>The terminal</span>
-                <span>stays with you.</span>
+                {/* <span>PC to pocket.</span> */}
+                <span>PC to pocket. Full Control.</span>
+                <span>Never miss a coding session.</span>
+                {/* <span>Same Session. Same Terminal.</span> */}
               </h1>
-              <p className="hero-lede">{site.description}</p>
-              <div className="hero-actions">
-                <a className="button button--inverse" href="#get-started">
-                  START A SESSION ↓
-                </a>
-                <a className="button" href={site.urls.releases} target="_blank" rel="noreferrer">
-                  GET ANDROID APK ↗
+              <p className="hero-lede">
+                Control the live terminal on your PC from Android securely.
+              </p>
+              <div className="hero-cta-row">
+                <CommandBlock command={site.command} compact />
+                <a
+                  className="button button--inverse"
+                  href={site.urls.releases}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  DOWNLOAD ANDROID APK &darr;
                 </a>
               </div>
-              <CommandBlock command={site.command} compact />
-              <p className="hero-note">
-                FIRST REMOTE RUN MAY REQUEST GITHUB OR MICROSOFT AUTHENTICATION.
-              </p>
             </div>
 
-            <div className="hero-product" aria-label="Mobily product preview">
-              <div className="hero-product-meta">
-                <span>LIVE / 01</span>
-                <span>ANDROID BETA</span>
+            <div
+              className="hero-product"
+              aria-label="Live terminal session data flowing securely from a desktop PC to an Android phone"
+            >
+              <div className="hero-product-bar" aria-hidden="true">
+                <span>SESSION ROUTE / 001</span>
+                <strong>
+                  <i className="status-dot status-dot--success" /> DEVICE LINK ACTIVE
+                </strong>
+                <span>28 MS / LIVE</span>
               </div>
-              <div className="hero-terminal" aria-hidden="true">
-                <div className="terminal-title">
-                  <span>STATION</span>
-                  <span>studio-workstation</span>
+              <div className="hero-transfer" aria-hidden="true">
+                <div className="hero-endpoint hero-endpoint--desktop">
+                  <div className="hero-endpoint-label">
+                    <span>01 / WORKSTATION</span>
+                    <b>STUDIO-PC</b>
+                  </div>
+                  <div className="hero-desktop">
+                    <div className="hero-desktop-bar">
+                      <span>
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <b>~/CODE/MOBILY — PNPM TEST</b>
+                    </div>
+                    <div className="hero-desktop-screen">
+                      <p>
+                        <span className="hero-terminal-prompt">›</span> pnpm test
+                      </p>
+                      <p className="hero-terminal-muted">mobily@0.9.0 / studio-pc</p>
+                      <p>
+                        <span className="hero-terminal-pass">✓</span> protocol.test.ts{' '}
+                        <small>18 tests</small>
+                      </p>
+                      <p>
+                        <span className="hero-terminal-pass">✓</span> pairing.test.ts{' '}
+                        <small>9 tests</small>
+                      </p>
+                      <p>
+                        <span className="hero-terminal-pass">✓</span> auth.test.ts{' '}
+                        <small>14 tests</small>
+                      </p>
+                      <p className="hero-terminal-summary">Tests 74 passed</p>
+                      <p>
+                        <span className="hero-terminal-prompt">›</span>{' '}
+                        <i className="hero-terminal-cursor" />
+                      </p>
+                    </div>
+                    <div className="hero-desktop-stand">
+                      <i />
+                      <span />
+                    </div>
+                  </div>
                 </div>
-                <code>
-                  <b>$</b> npx mobily --tunnel devtunnels
-                </code>
-                <code>
-                  <i>✓</i> secure transport ready
-                </code>
-                <code>
-                  <i>✓</i> Session mobily-main live
-                </code>
-                <code>
-                  <span>›</span> scan the one-time QR to pair
-                </code>
-              </div>
-              <div className="hero-phone">
-                <Image
-                  src="/product/terminal.webp"
-                  alt="A live Mobily terminal Session on an Android phone"
-                  width={920}
-                  height={2048}
-                  sizes="(max-width: 900px) 62vw, 310px"
-                  loading="eager"
-                />
-              </div>
-              <div className="hero-status">
-                <span className="status-dot status-dot--success" />
-                <div>
-                  <strong>SESSION LIVE</strong>
-                  <small>studio-workstation</small>
+                <div className="hero-data-path">
+                  <span className="hero-route-label hero-route-label--out">LIVE OUTPUT</span>
+                  <div className="hero-data-track">
+                    <span />
+                    <i className="hero-packet hero-packet--one">01</i>
+                    <i className="hero-packet hero-packet--two">10</i>
+                    <i className="hero-packet hero-packet--three">01</i>
+                  </div>
+                  {/* <div className="hero-route-key">
+                    <span>KEY</span>
+                    <small>SIGNED</small>
+                  </div> */}
+                  <div className="hero-data-track hero-data-track--reverse">
+                    <span />
+                    <i className="hero-packet hero-packet--return">10</i>
+                  </div>
+                  <span className="hero-route-label hero-route-label--in">SIGNED INPUT</span>
                 </div>
+                <div className="hero-endpoint hero-endpoint--phone">
+                  <div className="hero-endpoint-label">
+                    <span>02 / ANDROID</span>
+                    <b>POCKET TERMINAL</b>
+                  </div>
+                  <div className="hero-phone">
+                    <div className="hero-phone-speaker" />
+                    <Image
+                      className="hero-device-screenshot"
+                      src="/product/terminal.webp"
+                      alt=""
+                      width={920}
+                      height={2048}
+                      sizes="(max-width: 900px) 38vw, 180px"
+                      loading="eager"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="hero-product-footer" aria-hidden="true">
+                <span>NO MOBILY RELAY</span>
+                <span>ANDROID KEYSTORE</span>
+                <span>SESSION: SECURE</span>
               </div>
             </div>
-          </div>
-          <div className="container hero-index" aria-hidden="true">
-            <span>01</span>
-            <span>REMOTE TERMINAL / ANDROID</span>
-            <span>SCROLL ↓</span>
           </div>
         </section>
 
@@ -445,7 +499,7 @@ export function MarketingPage() {
                   <span className="section-title-line">Full Control.</span>
                 </>
               }
-              body="Pair once, keep the terminal visible, move between Stations, and close the small loops that would otherwise send you back to the desk."
+              body="Pair once, keep the terminal visible, move between PCs, and close the small loops that would otherwise send you back to the desk."
             />
             <div className="workflow-layout">
               <div className="workflow-stage" aria-live="polite">
@@ -548,9 +602,7 @@ export function MarketingPage() {
                 label="TRUST MODEL"
                 title={
                   <>
-                    <span className="section-title-line section-title-line--ink">
-                      Your machine.
-                    </span>
+                    <span className="section-title-line section-title-line--ink">Your PC.</span>
                     <span className="section-title-line section-title-line--ink">Your phone.</span>
                     <span className="section-title-line">Your keys.</span>
                   </>
@@ -564,25 +616,50 @@ export function MarketingPage() {
             <div className="security-model" data-reveal>
               <div
                 className="security-route"
-                aria-label="Secure connection from Station to Android"
+                role="img"
+                aria-label="Security illustration: your PC sends an encrypted challenge through a TLS tunnel; the non-exportable key on your Android phone signs it and the PC verifies the response"
               >
-                {securityFlow.map((node, index) => (
-                  <div className="security-node-wrap" key={node.label}>
-                    <div className="security-node">
-                      <span>{node.mark}</span>
-                      <div>
-                        <strong>{node.label}</strong>
-                        <small>{node.detail}</small>
-                      </div>
+                <div className="security-route-meta" aria-hidden="true">
+                  <span>AUTHENTICATED SESSION</span>
+                  <span>NO MOBILY RELAY</span>
+                </div>
+                <div className="security-route-canvas" aria-hidden="true">
+                  <div className="security-device security-device--pc">
+                    <div className="security-monitor">
+                      <span>&gt;_</span>
+                      <i />
+                      <i />
+                      <i />
                     </div>
-                    {index < securityFlow.length - 1 && (
-                      <div className="security-connector" aria-hidden="true">
-                        <i />
-                        <b>{index === 0 ? 'ENCRYPT' : 'VERIFY'}</b>
-                      </div>
-                    )}
+                    <div className="security-monitor-stand" />
+                    <strong>YOUR PC</strong>
+                    <small>CLI + PUBLIC KEY</small>
                   </div>
-                ))}
+                  <div className="security-tunnel">
+                    <strong>TLS CHANNEL</strong>
+                    <div className="security-tunnel-track">
+                      <span />
+                      <i>01</i>
+                      <i>10</i>
+                      <i>01</i>
+                    </div>
+                    <small>CHALLENGE &rarr; SIGN &rarr; VERIFY</small>
+                  </div>
+                  <div className="security-device security-device--phone">
+                    <div className="security-key-phone">
+                      <span>KEY</span>
+                      <i />
+                    </div>
+                    <strong>YOUR PHONE</strong>
+                    <small>ANDROID KEYSTORE</small>
+                  </div>
+                </div>
+                <div className="security-route-legend" aria-hidden="true">
+                  <span>
+                    <i className="status-dot status-dot--success" /> PRIVATE KEY NEVER LEAVES
+                  </span>
+                  <span>FRESH CHALLENGE / EVERY RECONNECT</span>
+                </div>
               </div>
               <div className="security-proofs">
                 {securityPoints.map((point, index) => (
@@ -611,7 +688,7 @@ export function MarketingPage() {
                   <span className="section-title-line">One scan.</span>
                 </>
               }
-              body="Start the CLI on your Station, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
+              body="Start the CLI on your PC, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
             />
             <div className="setup-console">
               <div className="setup-console-title">
@@ -621,7 +698,7 @@ export function MarketingPage() {
               <div className="setup-step">
                 <span>01</span>
                 <div>
-                  <strong>RUN ON YOUR STATION</strong>
+                  <strong>RUN ON YOUR PC</strong>
                   <CommandBlock command={site.command} />
                 </div>
               </div>
@@ -694,9 +771,9 @@ export function MarketingPage() {
             <p>A secure Android companion for terminal-based development.</p>
           </div>
           <p className="footer-statement">
-            THE TERMINAL
+            NEVER MISS A
             <br />
-            STAYS WITH YOU.
+            CODING SESSION.
           </p>
           <div className="footer-links">
             <a href={site.urls.repository} target="_blank" rel="noreferrer">

@@ -59,8 +59,29 @@ describe('copyText', () => {
 describe('MarketingPage', () => {
   it('renders the rewritten conversion path and required sections', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
-    expect(markup).toContain('The terminal');
-    expect(markup).toContain('stays with you.');
+    expect(markup).toContain('Never miss a coding session.');
+    expect(markup).toContain('PC to pocket. Full Control.');
+    expect(markup).toContain('Same Session.');
+    expect(markup).toContain('Same Terminal.');
+    expect(markup).toContain('Full Control.');
+    expect(markup).toContain('Control the live terminal on your PC from Android securely.');
+    expect(markup).not.toContain('START A SESSION');
+    expect(markup).toContain('DOWNLOAD ANDROID APK');
+    expect(markup).toContain('hero-data-path');
+    expect(markup).toContain('hero-data-track--reverse');
+    expect(markup).toContain('DEVICE LINK ACTIVE');
+    expect(markup).toContain('LIVE OUTPUT');
+    expect(markup).toContain('SIGNED INPUT');
+    expect(markup).toContain('NO MOBILY RELAY');
+    expect(markup.match(/hero-device-screenshot/g)).toHaveLength(1);
+    expect(markup).toContain('security-route-canvas');
+    expect(markup).not.toContain('Tired of sitting at your PC');
+    expect(markup).not.toContain('Use Mobily.');
+    expect(markup).not.toContain('hero-problem');
+    expect(markup).not.toContain('hero-note');
+    expect(markup).not.toContain('hero-product-meta');
+    expect(markup).not.toContain('hero-status');
+    expect(markup).not.toContain('hero-index');
     expect(markup).toContain('id="features"');
     expect(markup).toContain('id="how-it-works"');
     expect(markup).toContain('id="security"');
