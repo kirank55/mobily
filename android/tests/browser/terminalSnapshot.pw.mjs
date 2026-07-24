@@ -119,6 +119,50 @@ test('uses explicit keyboard controls and sends terminal button taps as mouse in
   });
 });
 
+test('pans the terminal horizontally with one finger after zooming in', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'zoom', delta: 2 }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const viewport = document.getElementById('viewport');
+    const startTouch = { clientX: 300, clientY: 250 };
+    const endTouch = { clientX: 80, clientY: 250 };
+    const start = new Event('touchstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(start, 'touches', { value: [startTouch] });
+    Object.defineProperty(start, 'changedTouches', { value: [startTouch] });
+    viewport.dispatchEvent(start);
+
+    const move = new Event('touchmove', { bubbles: true, cancelable: true });
+    Object.defineProperty(move, 'touches', { value: [endTouch] });
+    Object.defineProperty(move, 'changedTouches', { value: [endTouch] });
+    viewport.dispatchEvent(move);
+
+    const end = new Event('touchend', { bubbles: true, cancelable: true });
+    Object.defineProperty(end, 'touches', { value: [] });
+    Object.defineProperty(end, 'changedTouches', { value: [endTouch] });
+    viewport.dispatchEvent(end);
+
+    return {
+      hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+      scrollLeft: viewport.scrollLeft,
+    };
+  });
+
+  expect(result.hasHorizontalOverflow).toBe(true);
+  expect(result.scrollLeft).toBeGreaterThan(0);
+});
+
 test('renders a detailed OpenCode-like Session Snapshot in the production document', async ({
   page,
 }) => {

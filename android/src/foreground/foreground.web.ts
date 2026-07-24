@@ -5,9 +5,9 @@ export const foregroundNotification = {
     return false;
   },
 
-  async start(_stationName: string): Promise<void> {},
+  async start(): Promise<void> {},
 
-  async update(_state: string, _phase: string, _alert = false): Promise<void> {},
+  async update(_connected: boolean): Promise<void> {},
 
   async stop(): Promise<void> {},
 };

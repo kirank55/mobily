@@ -23,12 +23,12 @@ describe('foreground notification module', () => {
     native.stop.mockResolvedValue(undefined);
   });
 
-  it('sends only the Station name and clean status to Android', async () => {
-    await foregroundNotification.start(`\u001b[31m${'S'.repeat(100)}\u001b[0m`);
-    await foregroundNotification.update('connected\nignored', 'working\nignored');
+  it('sends only whether the terminal is connected to Android', async () => {
+    await foregroundNotification.start();
+    await foregroundNotification.update(true);
 
-    expect(native.start).toHaveBeenCalledWith('S'.repeat(80));
-    expect(native.update).toHaveBeenCalledWith('connected ignored', 'working ignored', false);
+    expect(native.start).toHaveBeenCalledWith();
+    expect(native.update).toHaveBeenCalledWith(true);
   });
 });
 
@@ -42,7 +42,7 @@ describe('ForegroundConnectionController', () => {
     };
   }
 
-  it('owns permission, service lifecycle, connection status, and generic alerts', async () => {
+  it('owns permission, service lifecycle, and binary connection updates', async () => {
     const notifications = createNotifications();
     const controller = new ForegroundConnectionController(notifications);
 
@@ -52,12 +52,12 @@ describe('ForegroundConnectionController', () => {
     await controller.disconnect();
 
     expect(notifications.requestNotificationPermission).toHaveBeenCalledOnce();
-    expect(notifications.start).toHaveBeenCalledWith('Workstation');
-    expect(notifications.update).toHaveBeenLastCalledWith('connected', '', true);
+    expect(notifications.start).toHaveBeenCalledWith();
+    expect(notifications.update).toHaveBeenLastCalledWith(true);
     expect(notifications.stop).toHaveBeenCalledOnce();
   });
 
-  it('surfaces session phase updates in the ongoing notification payload', async () => {
+  it('does not expose session phases or alert contents in notifications', async () => {
     const notifications = createNotifications();
     const controller = new ForegroundConnectionController(notifications);
     await controller.connect('Workstation');
@@ -65,8 +65,9 @@ describe('ForegroundConnectionController', () => {
     vi.mocked(notifications.update).mockClear();
 
     await controller.updatePhase('waiting', 'Approve tool call?');
+    await controller.alert('Approve the deployment?');
 
-    expect(notifications.update).toHaveBeenCalledWith('connected', 'waiting', false);
+    expect(notifications.update).not.toHaveBeenCalled();
   });
 
   it('does not start a stale service when disconnect wins a permission race', async () => {

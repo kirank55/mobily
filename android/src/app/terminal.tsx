@@ -360,8 +360,14 @@ export default function TerminalRoute() {
             accessibilityState={{ selected: keyboardVisible }}
             accessibilityLabel={keyboardVisible ? 'Hide keyboard' : 'Show keyboard'}
           >
-            <Text style={[styles.controlText, keyboardVisible && styles.controlActive]}>
-              {keyboardVisible ? 'Hide' : 'Keys'}
+            <Text
+              style={[
+                styles.controlText,
+                styles.keyboardIcon,
+                keyboardVisible && styles.controlActive,
+              ]}
+            >
+              ⌨
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -451,6 +457,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.monoMedium,
     fontSize: 11,
   },
+  keyboardIcon: { fontSize: 18, lineHeight: 22 },
   controlActive: {
     color: colors.canvas,
     fontFamily: fonts.monoBold,

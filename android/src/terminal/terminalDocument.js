@@ -423,7 +423,7 @@ ${VIEWPORT_HELPERS}
   var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',ENTER:'\\r',CTRL_C:'\\x03',CTRL_D:'\\x04',CTRL_Z:'\\x1a',CTRL_L:'\\x0c',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
   var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
-  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,mouseTapStart=null,pinchDistance=0,pinchScale=1;
+  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,mouseTapStart=null,panStart=null,pinchDistance=0,pinchScale=1;
   var fontSize=DEFAULT_READABLE_FONT_SIZE,ownsSize=false,SURFACE_PAD=8;
   var gridProposer=createDebouncedGridProposer(function(cols,rows){
     if(!term)return;
@@ -493,6 +493,7 @@ ${VIEWPORT_HELPERS}
     mouseCarry='';
     mouseModeState=createTerminalMouseModeState();
     mouseTapStart=null;
+    panStart=null;
   }
   function terminalOptions(cols,rows){
     return {allowProposedApi:true,cursorBlink:true,fontSize:fontSize,cols:cols,rows:rows,
@@ -691,16 +692,30 @@ ${VIEWPORT_HELPERS}
   }
   document.getElementById('viewport').addEventListener('touchstart',function(e){
     if(selectionMode&&e.touches.length===1){selectionStart=terminalCell(e.touches[0]);selectTo(selectionStart);e.preventDefault();e.stopPropagation();}
-    else if(e.touches.length===2){mouseTapStart=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
+    else if(e.touches.length===2){mouseTapStart=null;panStart=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
     else if(!selectionMode&&isTerminalMouseReportingActive(mouseModeState)&&e.touches.length===1){
       mouseTapStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
       e.preventDefault();e.stopPropagation();
       if(term)term.blur();
     }
+    else if(!selectionMode&&e.touches.length===1){
+      var viewport=document.getElementById('viewport');
+      if(viewport.scrollWidth>viewport.clientWidth+1||viewport.scrollHeight>viewport.clientHeight+1){
+        panStart={x:e.touches[0].clientX,y:e.touches[0].clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
+        e.preventDefault();e.stopPropagation();
+        if(term)term.blur();
+      }
+    }
   },{passive:false,capture:true});
   document.getElementById('viewport').addEventListener('touchmove',function(e){
     if(selectionMode&&selectionStart&&e.touches.length===1){selectTo(terminalCell(e.touches[0]));e.preventDefault();}
     else if(e.touches.length===2&&pinchDistance>0){mouseTapStart=null;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
+    else if(panStart&&e.touches.length===1){
+      var viewport=document.getElementById('viewport');
+      viewport.scrollLeft=panStart.left-(e.touches[0].clientX-panStart.x);
+      viewport.scrollTop=panStart.top-(e.touches[0].clientY-panStart.y);
+      e.preventDefault();e.stopPropagation();
+    }
     else if(mouseTapStart&&e.touches.length===1){
       if(Math.hypot(e.touches[0].clientX-mouseTapStart.x,e.touches[0].clientY-mouseTapStart.y)>12)mouseTapStart=null;
     }
@@ -715,7 +730,7 @@ ${VIEWPORT_HELPERS}
         term.blur();
       }
     }
-    if(!e.touches.length){selectionStart=null;mouseTapStart=null;pinchDistance=0;}
+    if(!e.touches.length){selectionStart=null;mouseTapStart=null;panStart=null;pinchDistance=0;}
   },{passive:false,capture:true});
   document.getElementById('key-row').addEventListener('click',function(e){
     var btn=e.target.closest('.key-btn');if(!btn)return;
