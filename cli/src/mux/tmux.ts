@@ -287,6 +287,28 @@ export function clearShellPane(sessionName: string, runtime: SessionRuntime): bo
   }
 }
 
+/**
+ * Print lines into the shell pane as normal output so a later shell `clear`
+ * dismisses them (unlike the sticky QR/status pane).
+ */
+export function printShellPaneLines(
+  sessionName: string,
+  lines: readonly string[],
+  runtime: SessionRuntime,
+): boolean {
+  const pane = findShellPane(sessionName, runtime);
+  if (!pane || lines.length === 0) return false;
+  try {
+    const escaped = lines.map((line) => `'${line.replaceAll("'", "'\\''")}'`).join(' ');
+    const snippet = `printf '%s\\n' ${escaped}`;
+    runtime.execFile('tmux', ['send-keys', '-t', pane, '-l', snippet]);
+    runtime.execFile('tmux', ['send-keys', '-t', pane, 'Enter']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function findShellPane(sessionName: string, runtime: SessionRuntime): string | null {
   let panes = '';
   try {

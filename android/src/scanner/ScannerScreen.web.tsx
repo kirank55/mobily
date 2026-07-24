@@ -40,6 +40,9 @@ export default function ScannerScreen() {
       router.replace('/terminal');
       return;
     }
+    console.warn('[Mobily][WebPair] Pairing did not complete', {
+      reason: result.error ?? 'Pairing failed',
+    });
     setStatus('error');
     setErrorMsg(result.error ?? 'Pairing failed');
   }

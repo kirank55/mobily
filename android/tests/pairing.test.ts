@@ -45,6 +45,22 @@ beforeEach(() => {
 });
 
 describe('pairWithStation()', () => {
+  it('logs protocol versions when the QR version does not match the app', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      pairWithStation({ ...pairing, protocolVersion: PROTOCOL_VERSION + 1 }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Please update the app or CLI before pairing.',
+    });
+    expect(errorSpy).toHaveBeenCalledWith('[Mobily][Pairing] Protocol version mismatch', {
+      qrProtocolVersion: PROTOCOL_VERSION + 1,
+      appProtocolVersion: PROTOCOL_VERSION,
+    });
+    expect(deviceKey.getDeviceKeyAvailability).not.toHaveBeenCalled();
+  });
+
   it('stops before key generation when a secure lock screen is not configured', async () => {
     deviceKey.getDeviceKeyAvailability.mockResolvedValue({
       available: false,

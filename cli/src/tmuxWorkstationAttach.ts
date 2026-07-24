@@ -1,7 +1,7 @@
 import { spawn as defaultSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { MOBILY_CLI_PID_ENV, type SessionBackend } from './mux/types.js';
 import { defaultSessionRuntime, type SessionRuntime } from './mux/runtime.js';
-import { clearShellPane, resizePairingPanelLines } from './mux/tmux.js';
+import { clearShellPane, printShellPaneLines, resizePairingPanelLines } from './mux/tmux.js';
 import type { IDisposable } from './pty/node-pty.js';
 import type { WorkstationInput, WorkstationOutput } from './workstationTerminal.js';
 
@@ -11,16 +11,19 @@ export type SpawnFn = (
   options: SpawnOptions,
 ) => ChildProcess;
 
-/** Shown in the status header until the user runs `mobily qr clear`. */
+/** Printed into the shell after phone auth; dismissed by a normal shell `clear`. */
 export const CONNECTED_SUCCESS_LINE = 'Connected Successfully';
 
 /** Help/exit hint shown with the success line. */
 export const CONNECTED_HELP_LINE = ['Run mobily -h for help.', 'Run mobily exit to exit'].join(' ');
 
-/** Status shown after the phone connects until the user explicitly clears it. */
-export const CONNECTED_WORKSTATION_PANEL = [CONNECTED_SUCCESS_LINE, CONNECTED_HELP_LINE].join('\n');
+/** Success lines printed into the shell after phone auth (not a sticky status pane). */
+export const CONNECTED_WORKSTATION_LINES = [CONNECTED_SUCCESS_LINE, CONNECTED_HELP_LINE] as const;
 
-export const CONNECTED_WORKSTATION_PANEL_HEIGHT = 2;
+/** Joined form of {@link CONNECTED_WORKSTATION_LINES} (e.g. mux panel height fixtures). */
+export const CONNECTED_WORKSTATION_PANEL = CONNECTED_WORKSTATION_LINES.join('\n');
+
+export const CONNECTED_WORKSTATION_PANEL_HEIGHT = CONNECTED_WORKSTATION_LINES.length;
 
 export interface AttachTmuxWorkstationOptions {
   sessionName: string;
@@ -44,12 +47,14 @@ export function shouldAttachTmuxWorkstation(
 /**
  * Bring the Station TTY into the Mobily tmux Session after a phone authenticates.
  *
- * Outside an outer tmux client: spawn `tmux attach` with inherited stdio (status
- * panel on top, shell below). Inside outer tmux: split the current window 50/50 and
- * attach in the bottom pane with `TMUX` cleared to avoid nesting the outer client.
+ * Outside an outer tmux client: spawn `tmux attach` with inherited stdio.
+ * Inside outer tmux: split the current window 50/50 and attach in the bottom
+ * pane with `TMUX` cleared to avoid nesting the outer client.
  *
- * Ctrl+C remains available to interrupt the shared Session. `mobily exit`
- * signals the owning CLI so both direct and outer-tmux attachments exit cleanly.
+ * Clears the shell, prints the Connected Successfully lines into the shell
+ * (so a later `clear` dismisses them), then attaches. Ctrl+C remains available
+ * to interrupt the shared Session. `mobily exit` signals the owning CLI so
+ * both direct and outer-tmux attachments exit cleanly.
  */
 export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): IDisposable {
   const env = options.env ?? process.env;
@@ -70,6 +75,7 @@ export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): ID
     // `mobily exit` registration is best-effort; attach still proceeds.
   }
   try {
+    // No-op when the QR/status pane was already hidden on auth.
     resizePairingPanelLines(options.sessionName, CONNECTED_WORKSTATION_PANEL_HEIGHT, runtime);
   } catch {
     // Status-pane clamp is best-effort; attach still proceeds.
@@ -78,6 +84,11 @@ export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): ID
     clearShellPane(options.sessionName, runtime);
   } catch {
     // Shell clear is best-effort; attach still proceeds.
+  }
+  try {
+    printShellPaneLines(options.sessionName, CONNECTED_WORKSTATION_LINES, runtime);
+  } catch {
+    // Success banner is best-effort; attach still proceeds.
   }
 
   const attachment =

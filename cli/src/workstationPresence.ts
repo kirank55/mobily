@@ -16,12 +16,7 @@ import {
   type WorkstationOutput,
   type WorkstationShutdownCause,
 } from './workstationTerminal.js';
-import {
-  attachTmuxWorkstation,
-  CONNECTED_WORKSTATION_PANEL,
-  CONNECTED_WORKSTATION_PANEL_HEIGHT,
-  shouldAttachTmuxWorkstation,
-} from './tmuxWorkstationAttach.js';
+import { attachTmuxWorkstation, shouldAttachTmuxWorkstation } from './tmuxWorkstationAttach.js';
 
 export type WorkstationPresenceMode = 'embedded' | 'tmux-attach' | 'none';
 
@@ -140,10 +135,9 @@ function startTmuxAttach(options: BeginWorkstationPresenceOptions): IDisposable 
     throw new Error('tmux workstation attach requires sessionName and attachCommand');
   }
   options.log?.('Phone connected — attaching workstation…');
-  options.backend.showPairingPanel?.(
-    CONNECTED_WORKSTATION_PANEL,
-    CONNECTED_WORKSTATION_PANEL_HEIGHT,
-  );
+  // Drop the sticky QR/status pane; success lines are printed into the shell
+  // so a normal `clear` dismisses them.
+  options.backend.hidePairingPanel?.();
   return attachTmuxWorkstation({
     sessionName,
     attachCommand,

@@ -65,12 +65,17 @@ export async function pairWithStation(
     pinnedTransport: Boolean(pairing.certificatePin),
   });
   if (pairing.protocolVersion !== PROTOCOL_VERSION) {
-    console.warn('[Mobily][Pairing] Protocol version mismatch');
+    console.error('[Mobily][Pairing] Protocol version mismatch', {
+      qrProtocolVersion: pairing.protocolVersion,
+      appProtocolVersion: PROTOCOL_VERSION,
+    });
     return { ok: false, error: 'Please update the app or CLI before pairing.' };
   }
   const insecureDevelopmentOverride = __DEV__ && options.allowInsecureTransport === true;
   if (!isSecureWebSocketUrl(pairing.endpoint) && !insecureDevelopmentOverride) {
-    console.warn('[Mobily][Pairing] Refused insecure Station transport');
+    console.warn('[Mobily][Pairing] Refused insecure Station transport', {
+      endpoint: pairing.endpoint,
+    });
     return { ok: false, error: 'Refusing insecure Station transport.' };
   }
 
@@ -87,6 +92,11 @@ export async function pairWithStation(
   }
   console.info('[Mobily][Pairing] Device security check completed', availability);
   if (!availability.available) {
+    console.warn('[Mobily][Pairing] Device security requirements not met', {
+      reason: availability.reason,
+      biometricStatus: availability.biometricStatus,
+      deviceSecure: availability.deviceSecure,
+    });
     return {
       ok: false,
       error:
@@ -180,19 +190,27 @@ export async function pairWithStation(
 
   if (!resp.ok) {
     let error = `Pairing failed (HTTP ${resp.status})`;
+    let responseBody: unknown;
     try {
-      const body = (await resp.json()) as { error?: string };
+      responseBody = await resp.json();
+      const body = responseBody as { error?: string };
       if (body.error) error = body.error;
     } catch {
       // ignore JSON parse errors
     }
+    console.warn('[Mobily][Pairing] Station rejected pairing', {
+      status: resp.status,
+      error,
+      responseBody,
+    });
     return await fail(error);
   }
 
   let payload: PairingResponse;
   try {
     payload = (await resp.json()) as PairingResponse;
-  } catch {
+  } catch (error) {
+    console.warn('[Mobily][Pairing] Station returned non-JSON pairing response', error);
     return await fail('Station returned an invalid pairing response.');
   }
   if (
@@ -204,6 +222,22 @@ export async function pairWithStation(
     payload.tunnelUrl !== pairing.endpoint ||
     payload.protocolVersion !== PROTOCOL_VERSION
   ) {
+    console.warn('[Mobily][Pairing] Station returned an invalid pairing response', {
+      stationName:
+        payload && typeof payload === 'object' && 'stationName' in payload
+          ? payload.stationName
+          : undefined,
+      tunnelUrl:
+        payload && typeof payload === 'object' && 'tunnelUrl' in payload
+          ? payload.tunnelUrl
+          : undefined,
+      expectedTunnelUrl: pairing.endpoint,
+      protocolVersion:
+        payload && typeof payload === 'object' && 'protocolVersion' in payload
+          ? payload.protocolVersion
+          : undefined,
+      expectedProtocolVersion: PROTOCOL_VERSION,
+    });
     return await fail('Station returned an invalid pairing response.');
   }
 

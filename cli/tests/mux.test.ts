@@ -17,6 +17,7 @@ import {
 } from '../src/mux/factory.js';
 import {
   clearShellPane,
+  printShellPaneLines,
   resizePairingPanel,
   resizePairingPanelLines,
   TmuxBackend,
@@ -278,6 +279,41 @@ describe('TmuxBackend', () => {
         { file: 'tmux', args: ['send-keys', '-t', '%1', '-l', 'clear'] },
         { file: 'tmux', args: ['send-keys', '-t', '%1', 'Enter'] },
         { file: 'tmux', args: ['clear-history', '-t', '%1'] },
+      ]),
+    );
+    expect(fake.commands.some(({ args }) => args.includes('%2') && args[0] === 'send-keys')).toBe(
+      false,
+    );
+  });
+
+  it('prints lines into the shell pane so a later clear can dismiss them', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        return '';
+      }),
+    });
+    expect(
+      printShellPaneLines(
+        'mobily-work-1234',
+        ['Connected Successfully', 'Run mobily -h for help. Run mobily exit to exit'],
+        fake.value,
+      ),
+    ).toBe(true);
+    expect(fake.commands).toEqual(
+      expect.arrayContaining([
+        {
+          file: 'tmux',
+          args: [
+            'send-keys',
+            '-t',
+            '%1',
+            '-l',
+            "printf '%s\\n' 'Connected Successfully' 'Run mobily -h for help. Run mobily exit to exit'",
+          ],
+        },
+        { file: 'tmux', args: ['send-keys', '-t', '%1', 'Enter'] },
       ]),
     );
     expect(fake.commands.some(({ args }) => args.includes('%2') && args[0] === 'send-keys')).toBe(

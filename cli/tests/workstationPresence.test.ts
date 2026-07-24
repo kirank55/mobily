@@ -1,6 +1,16 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
+
+const attachTmuxWorkstation = vi.hoisted(() => vi.fn(() => ({ dispose() {} })));
+
+vi.mock('../src/tmuxWorkstationAttach.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/tmuxWorkstationAttach.js')>();
+  return {
+    ...actual,
+    attachTmuxWorkstation,
+  };
+});
 
 import {
   beginWorkstationPresence,
@@ -15,6 +25,7 @@ class RecordingBackend implements SessionBackend {
   readonly sessionName: string | null;
   readonly attachCommand: string | null;
   pairingPanels: Array<{ content: string; height: number }> = [];
+  hidePairingPanelCalls = 0;
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(event: ExitEvent) => void>();
 
@@ -47,7 +58,9 @@ class RecordingBackend implements SessionBackend {
   showPairingPanel(content: string, height: number): void {
     this.pairingPanels.push({ content, height });
   }
-  hidePairingPanel(): void {}
+  hidePairingPanel(): void {
+    this.hidePairingPanelCalls += 1;
+  }
   dispose(): void {}
   emit(data: string): void {
     for (const listener of this.dataListeners) listener(data);
@@ -107,6 +120,10 @@ describe('planWorkstationPresence', () => {
 });
 
 describe('beginWorkstationPresence', () => {
+  beforeEach(() => {
+    attachTmuxWorkstation.mockClear();
+  });
+
   it('shows the pairing panel and attaches the embedded workstation on auth', async () => {
     const backend = new RecordingBackend('bare');
     const session = new Session({ backend, cols: 80, rows: 24 });
@@ -149,6 +166,39 @@ describe('beginWorkstationPresence', () => {
 
     session.attach(fakeOpenSocket());
     await vi.waitFor(() => expect(attachLocal).toHaveBeenCalledOnce());
+
+    presence.dispose();
+    session.dispose();
+  });
+
+  it('hides the pairing panel on tmux auth so success text is not a sticky pane', async () => {
+    const backend = new RecordingBackend(
+      'tmux',
+      'mobily-work',
+      'tmux attach-session -t mobily-work',
+    );
+    const session = new Session({ backend, cols: 80, rows: 24 });
+
+    const presence = beginWorkstationPresence({
+      session,
+      backend,
+      pairingPanel: 'PAIRING',
+      pairingPanelHeight: 4,
+      cwd: '/tmp',
+      onEmbeddedShutdown: () => undefined,
+      onTmuxDetach: () => undefined,
+      input: { isTTY: true },
+      output: { isTTY: true },
+    });
+
+    expect(presence.mode).toBe('tmux-attach');
+    expect(backend.pairingPanels).toEqual([{ content: 'PAIRING', height: 4 }]);
+    expect(backend.hidePairingPanelCalls).toBe(0);
+
+    session.attach(fakeOpenSocket());
+    await vi.waitFor(() => expect(attachTmuxWorkstation).toHaveBeenCalledOnce());
+    expect(backend.hidePairingPanelCalls).toBe(1);
+    expect(backend.pairingPanels).toEqual([{ content: 'PAIRING', height: 4 }]);
 
     presence.dispose();
     session.dispose();

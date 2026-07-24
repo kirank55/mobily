@@ -6,6 +6,7 @@ import {
   attachTmuxWorkstation,
   CONNECTED_HELP_LINE,
   CONNECTED_SUCCESS_LINE,
+  CONNECTED_WORKSTATION_LINES,
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
   shouldAttachTmuxWorkstation,
@@ -79,16 +80,16 @@ describe('shouldAttachTmuxWorkstation()', () => {
   });
 });
 
-describe('connected workstation panel', () => {
-  it('shows Connected Successfully plus the help line until explicit clear', () => {
+describe('connected workstation lines', () => {
+  it('defines Connected Successfully plus the help line for shell printing', () => {
     expect(CONNECTED_SUCCESS_LINE).toBe('Connected Successfully');
     expect(CONNECTED_HELP_LINE).toBe('Run mobily -h for help. Run mobily exit to exit');
-    expect(CONNECTED_WORKSTATION_PANEL.split('\n')).toEqual([
+    expect([...CONNECTED_WORKSTATION_LINES]).toEqual([
       'Connected Successfully',
       'Run mobily -h for help. Run mobily exit to exit',
     ]);
-    expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(2);
-    expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(CONNECTED_WORKSTATION_PANEL.split('\n').length);
+    expect(CONNECTED_WORKSTATION_PANEL.split('\n')).toEqual([...CONNECTED_WORKSTATION_LINES]);
+    expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(CONNECTED_WORKSTATION_LINES.length);
   });
 });
 
@@ -123,6 +124,17 @@ describe('attachTmuxWorkstation()', () => {
         { file: 'tmux', args: ['send-keys', '-t', '%2', '-l', 'clear'] },
         { file: 'tmux', args: ['send-keys', '-t', '%2', 'Enter'] },
         { file: 'tmux', args: ['clear-history', '-t', '%2'] },
+        {
+          file: 'tmux',
+          args: [
+            'send-keys',
+            '-t',
+            '%2',
+            '-l',
+            "printf '%s\\n' 'Connected Successfully' 'Run mobily -h for help. Run mobily exit to exit'",
+          ],
+        },
+        { file: 'tmux', args: ['send-keys', '-t', '%2', 'Enter'] },
       ]),
     );
     expect(spawn).toHaveBeenCalledWith(
