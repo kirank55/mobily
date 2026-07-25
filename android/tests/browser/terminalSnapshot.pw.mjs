@@ -53,7 +53,7 @@ test('re-announces readiness when React Native probes after page load', async ({
     .toBe(true);
 });
 
-test('uses explicit keyboard controls and sends terminal button taps as mouse input', async ({
+test('focuses the keyboard while sending terminal button taps as mouse input', async ({
   page,
 }) => {
   await page.setContent(terminalHtml, { waitUntil: 'load' });
@@ -106,7 +106,7 @@ test('uses explicit keyboard controls and sends terminal button taps as mouse in
       blurred,
       shortcut,
       click,
-      terminalBlurred: document.activeElement?.classList.contains('xterm-helper-textarea') !== true,
+      terminalFocused: document.activeElement?.classList.contains('xterm-helper-textarea') === true,
     };
   });
 
@@ -115,8 +115,178 @@ test('uses explicit keyboard controls and sends terminal button taps as mouse in
     blurred: true,
     shortcut: '\u0003',
     click: '\u001b[<0;1;1M\u001b[<0;1;1m',
-    terminalBlurred: true,
+    terminalFocused: true,
   });
+});
+
+test('focuses the keyboard from blank space without turning the tap into a TUI click', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify(message),
+        }),
+      );
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    dispatchMessage({ type: 'write', data: '\u001b[?1000;1006h' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const viewport = document.getElementById('viewport');
+    const screen = document.querySelector('.xterm-screen');
+    const viewportRect = viewport.getBoundingClientRect();
+    const screenRect = screen.getBoundingClientRect();
+    const blankTouch = {
+      clientX: viewportRect.left + viewportRect.width / 2,
+      clientY: Math.min(viewportRect.bottom - 2, screenRect.bottom + 8),
+    };
+
+    window.__mobilyMessages = [];
+    // Android IME needs focus during touchstart for blank-space taps, and the
+    // gesture must stay uncancelled so the soft keyboard can open.
+    const startPrevented = dispatchTouch(viewport, 'touchstart', [blankTouch]);
+    const focusedOnStart =
+      document.activeElement?.classList.contains('xterm-helper-textarea') === true;
+    const endPrevented = dispatchTouch(viewport, 'touchend', [], [blankTouch]);
+
+    return {
+      focusedOnStart,
+      focused: document.activeElement?.classList.contains('xterm-helper-textarea') === true,
+      startPrevented,
+      endPrevented,
+      inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
+    };
+  });
+
+  expect(result).toEqual({
+    focusedOnStart: true,
+    focused: true,
+    startPrevented: false,
+    endPrevented: false,
+    inputCount: 0,
+  });
+});
+
+test('scrolls terminal history with a vertical swipe while mouse reporting is active', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify(message),
+        }),
+      );
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+    };
+
+    dispatchMessage({
+      type: 'write',
+      data: Array.from({ length: 120 }, (_, index) => `history ${index}\r\n`).join(''),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    window.__mobilyTerminal.scrollToBottom();
+    dispatchMessage({ type: 'write', data: '\u001b[?1000;1006h' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const viewport = document.getElementById('viewport');
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const startTouch = {
+      clientX: screenRect.left + screenRect.width / 2,
+      clientY: screenRect.top + 100,
+    };
+    const endTouch = {
+      clientX: startTouch.clientX,
+      clientY: startTouch.clientY + 180,
+    };
+    const before = window.__mobilyTerminal.buffer.active.viewportY;
+
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [startTouch]);
+    dispatchTouch(viewport, 'touchmove', [endTouch]);
+    dispatchTouch(viewport, 'touchend', [], [endTouch]);
+
+    return {
+      before,
+      after: window.__mobilyTerminal.buffer.active.viewportY,
+      inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
+    };
+  });
+
+  expect(result.after).toBeLessThan(result.before);
+  expect(result.inputCount).toBe(0);
+});
+
+test('returns taps to keyboard focus after a mouse-enabled TUI exits', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (data) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify({ type: 'write', data }),
+        }),
+      );
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+    };
+
+    dispatchMessage('\u001b[?1000;1006;1049h');
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    dispatchMessage('\u001b[?1049l\r\n[mobily] shell$ ');
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const viewport = document.getElementById('viewport');
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const touch = {
+      clientX: screenRect.left + 20,
+      clientY: screenRect.top + 20,
+    };
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [touch]);
+    dispatchTouch(viewport, 'touchend', [], [touch]);
+
+    return {
+      focused: document.activeElement?.classList.contains('xterm-helper-textarea') === true,
+      inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
+    };
+  });
+
+  expect(result).toEqual({ focused: true, inputCount: 0 });
 });
 
 test('pans the terminal horizontally with one finger after zooming in', async ({ page }) => {
@@ -133,11 +303,17 @@ test('pans the terminal horizontally with one finger after zooming in', async ({
         data: JSON.stringify({ type: 'zoom', delta: 2 }),
       }),
     );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: '\u001b[?1000;1006h' }),
+      }),
+    );
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     const viewport = document.getElementById('viewport');
+    window.__mobilyMessages = [];
     const startTouch = { clientX: 300, clientY: 250 };
-    const endTouch = { clientX: 80, clientY: 250 };
+    const endTouch = { clientX: 80, clientY: 80 };
     const start = new Event('touchstart', { bubbles: true, cancelable: true });
     Object.defineProperty(start, 'touches', { value: [startTouch] });
     Object.defineProperty(start, 'changedTouches', { value: [startTouch] });
@@ -155,12 +331,18 @@ test('pans the terminal horizontally with one finger after zooming in', async ({
 
     return {
       hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+      hasVerticalOverflow: viewport.scrollHeight > viewport.clientHeight,
       scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+      inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
     };
   });
 
   expect(result.hasHorizontalOverflow).toBe(true);
+  expect(result.hasVerticalOverflow).toBe(true);
   expect(result.scrollLeft).toBeGreaterThan(0);
+  expect(result.scrollTop).toBeGreaterThan(0);
+  expect(result.inputCount).toBe(0);
 });
 
 test('renders a detailed OpenCode-like Session Snapshot in the production document', async ({
@@ -347,6 +529,9 @@ test('retains the old frame while reconnecting and atomically replaces it before
     );
   });
   await expect(page.locator('#connection-overlay')).toHaveAttribute('data-state', 'live');
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminalLines().join('\n')))
+    .toContain('LIVE ONCE');
 
   const result = await page.evaluate(() => ({
     rendered: window.__mobilyTerminalLines().join('\n'),
@@ -640,6 +825,105 @@ test('fits a desktop Session into the phone viewport without claiming size', asy
   expect(afterZoom.stageWidth).toBeGreaterThan(afterZoom.viewportWidth);
 });
 
+test('fits the initial grid and preserves scale and pan after viewport and snapshot changes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(400, 50));
+  const fitted = await readTerminalFit(page);
+  expect(fitted.scale).toBeLessThan(0.2);
+  expect(fitted.fittedWidth).toBeLessThanOrEqual(fitted.viewportWidth + 1);
+  expect(fitted.fittedHeight).toBeLessThanOrEqual(fitted.viewportHeight + 1);
+
+  const zoomed = await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'zoom', delta: 1 }),
+      }),
+    );
+    const viewport = document.getElementById('viewport');
+    viewport.scrollLeft = 100;
+    viewport.scrollTop = 100;
+    const tc = document.getElementById('tc');
+    const scaleMatch = /scale\(([^)]+)\)/.exec(tc.style.transform || '');
+    return {
+      scale: scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+  });
+  await page.setViewportSize({ width: 390, height: 480 });
+  await expect.poll(async () => (await readTerminalFit(page)).viewportHeight).toBeLessThan(720);
+
+  const resized = await readTerminalFit(page);
+  expect(resized.scale).toBeCloseTo(zoomed.scale, 5);
+  expect(resized.scrollLeft).toBe(zoomed.scrollLeft);
+  expect(resized.scrollTop).toBe(zoomed.scrollTop);
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(300, 40));
+
+  const snapshotPreserved = await readTerminalFit(page);
+  expect(snapshotPreserved.scale).toBeCloseTo(zoomed.scale, 5);
+  expect(snapshotPreserved.scrollLeft).toBe(zoomed.scrollLeft);
+  expect(snapshotPreserved.scrollTop).toBe(zoomed.scrollTop);
+});
+
+test('keeps the focused cursor visible when the keyboard shortens the viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const snapshot = openCodeSnapshotForGrid(40, 60);
+  snapshot.cursor = { col: 4, row: 59, visible: true, style: 'bar', blink: false };
+  await dispatchSnapshot(page, snapshot);
+  const before = await readTerminalFit(page);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'keyboard', visible: true }),
+      }),
+    );
+  });
+  await page.setViewportSize({ width: 390, height: 400 });
+  await expect.poll(async () => (await readTerminalFit(page)).viewportHeight).toBeLessThan(720);
+  await expect.poll(async () => (await readTerminalFit(page)).scrollTop).toBeGreaterThan(0);
+
+  const after = await page.evaluate(() => {
+    const terminal = window.__mobilyTerminal;
+    const viewport = document.getElementById('viewport');
+    const viewportRect = viewport.getBoundingClientRect();
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const cursorBottom =
+      screenRect.top +
+      ((terminal.buffer.active.cursorY + 1) * screenRect.height) / terminal.rows;
+    const scaleMatch = /scale\(([^)]+)\)/.exec(document.getElementById('tc').style.transform || '');
+    return {
+      rows: terminal.rows,
+      scale: scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1,
+      scrollTop: viewport.scrollTop,
+      cursorBottom,
+      viewportBottom: viewportRect.bottom,
+    };
+  });
+
+  expect(after.rows).toBe(60);
+  expect(after.scale).toBeCloseTo(before.scale, 5);
+  expect(after.scrollTop).toBeGreaterThan(0);
+  expect(after.cursorBottom).toBeLessThanOrEqual(after.viewportBottom - 2);
+});
+
 function openCodeSnapshotForGrid(cols, rows) {
   const grid = Array.from({ length: rows }, () =>
     Array.from({ length: cols }, () => ({ chars: ' ', width: 1 })),
@@ -662,6 +946,26 @@ function openCodeSnapshotForGrid(cols, rows) {
     cursor: { col: 4, row: Math.min(6, rows - 1), visible: false, style: 'bar', blink: false },
     grid,
   };
+}
+
+async function readTerminalFit(page) {
+  return page.evaluate(() => {
+    const tc = document.getElementById('tc');
+    const viewport = document.getElementById('viewport');
+    const scaleMatch = /scale\(([^)]+)\)/.exec(tc.style.transform || '');
+    const scale = scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1;
+    const width = Number.parseFloat(tc.style.width) || tc.offsetWidth;
+    const height = Number.parseFloat(tc.style.height) || tc.offsetHeight;
+    return {
+      scale,
+      fittedWidth: width * scale,
+      fittedHeight: height * scale,
+      viewportWidth: viewport.clientWidth,
+      viewportHeight: viewport.clientHeight,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+  });
 }
 
 function writeRow(row, text, style = {}, start = 0) {

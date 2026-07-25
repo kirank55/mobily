@@ -95,6 +95,10 @@ Plaintext remains available only for browser protocol development with
 Day-to-day validation without Android Studio: run the Station CLI and the Expo
 web app in Chrome. Requires Node ≥ 20 and pnpm.
 
+On Windows, run these commands **inside WSL** (`wsl`, then `cd ~/code-wsl/mobily`).
+Do not use PowerShell against `\\wsl.localhost\…` — Windows Node cannot resolve
+pnpm workspace symlinks there, and `npm`/`pnpm` fail on UNC paths.
+
 ```bash
 pnpm install
 pnpm build
@@ -147,6 +151,7 @@ docs/adr/  — Architectural decision records
 
 - [Domain Glossary](CONTEXT.md) — canonical terminology
 - [ADRs](docs/adr/) — architectural decision records
+- [Terminal testing via Dev Tunnels](docs/tunnel-terminal-testing.md) — manual validation plan
 - [Security](SECURITY.md) — dependency audit dispositions
 
 ## License

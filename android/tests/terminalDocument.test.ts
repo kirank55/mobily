@@ -10,6 +10,7 @@ import {
   clampTerminalScale,
   createTerminalMouseModeState,
   fitTerminalScale,
+  focusTerminalInput,
   isTerminalMouseReportingActive,
   pinchTerminalScale,
   sgrMouseClickSequence,
@@ -36,6 +37,7 @@ describe('terminal document', () => {
     expect(production).toContain("msg.type==='selection-mode'");
     expect(production).toContain('prepareOutput');
     expect(production).toContain('hardenTerminalTextarea');
+    expect(production).toContain('focusTerminalInput');
     expect(production).toContain('data-seq="ENTER">&#9166;</button>');
     expect(production).toContain("ENTER:'\\r'");
     expect(production).toContain("CTRL_C:'\\x03'");
@@ -87,6 +89,7 @@ describe('terminal document', () => {
 
   it('fits and zooms a stable grid without changing terminal dimensions', () => {
     expect(fitTerminalScale(360, 720, 1200, 640)).toBe(0.3);
+    expect(fitTerminalScale(360, 720, 12_000, 640)).toBe(0.03);
     expect(clampTerminalScale(0.05)).toBe(0.2);
     expect(clampTerminalScale(4)).toBe(3);
     expect(clampTerminalScale(1.25)).toBe(1.25);
@@ -109,11 +112,27 @@ describe('terminal document', () => {
     expect(isTerminalMouseReportingActive(state)).toBe(true);
     applyTerminalMouseControls(state, '\u001b[?1002l');
     expect(isTerminalMouseReportingActive(state)).toBe(false);
+
+    applyTerminalMouseControls(state, '\u001b[?1000;1006;1049h');
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+    applyTerminalMouseControls(state, '\u001b[?1049l');
+    expect(isTerminalMouseReportingActive(state)).toBe(false);
   });
 
   it('formats SGR mouse click press and release sequences', () => {
     expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
     expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
+  });
+
+  it('focuses the helper textarea for soft-keyboard input', () => {
+    const calls: string[] = [];
+    const textarea = { focus: () => calls.push('textarea') };
+    focusTerminalInput({
+      focus: () => calls.push('term'),
+      textarea,
+    });
+    expect(calls).toEqual(['term', 'textarea']);
+    expect(() => focusTerminalInput(null)).not.toThrow();
   });
 
   it('reconstructs a styled nonblank first frame in the production terminal parser', async () => {

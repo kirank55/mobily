@@ -84,10 +84,10 @@ describe('shouldAttachTmuxWorkstation()', () => {
 describe('connected workstation lines', () => {
   it('defines Connected Successfully plus the help line for shell printing', () => {
     expect(CONNECTED_SUCCESS_LINE).toBe('Connected Successfully');
-    expect(CONNECTED_HELP_LINE).toBe('Run mobily -h for help. Run mobily exit to exit');
+    expect(CONNECTED_HELP_LINE).toBe("'mobily -h' for help · 'mobily exit' to exit");
     expect([...CONNECTED_WORKSTATION_LINES]).toEqual([
       'Connected Successfully',
-      'Run mobily -h for help. Run mobily exit to exit',
+      "'mobily -h' for help · 'mobily exit' to exit",
     ]);
     expect(CONNECTED_WORKSTATION_PANEL.split('\n')).toEqual([...CONNECTED_WORKSTATION_LINES]);
     expect(CONNECTED_WORKSTATION_PANEL_HEIGHT).toBe(CONNECTED_WORKSTATION_LINES.length);

@@ -83,9 +83,15 @@ export function createDebouncedGridProposer(emit, debounceMs) {
 }
 
 export function fitTerminalScale(viewportWidth, viewportHeight, terminalWidth, terminalHeight) {
-  return clampTerminalScale(
-    Math.min(viewportWidth / terminalWidth, viewportHeight / terminalHeight),
-  );
+  if (
+    !(viewportWidth > 0) ||
+    !(viewportHeight > 0) ||
+    !(terminalWidth > 0) ||
+    !(terminalHeight > 0)
+  ) {
+    return 1;
+  }
+  return Math.min(3, viewportWidth / terminalWidth, viewportHeight / terminalHeight);
 }
 
 export function pinchTerminalScale(initialScale, initialDistance, currentDistance) {
@@ -94,7 +100,7 @@ export function pinchTerminalScale(initialScale, initialDistance, currentDistanc
 }
 
 /** DEC private modes that enable click / drag / motion mouse reporting. */
-var TERMINAL_MOUSE_REPORTING_PARAMS = { '1000': 1, '1002': 1, '1003': 1 };
+var TERMINAL_MOUSE_REPORTING_PARAMS = { 1000: 1, 1002: 1, 1003: 1 };
 
 /**
  * Strip mouse tracking DECSET/DECRST params (used by the workstation embed).
@@ -123,7 +129,12 @@ export function applyTerminalMouseControls(state, data) {
   if (!state.modes) state.modes = {};
   data.replace(/\x1b\[\?([0-9;]+)([hl])/g, function (_sequence, parameters, command) {
     var enable = command === 'h';
-    parameters.split(';').forEach(function (parameter) {
+    var values = parameters.split(';');
+    // Returning from an alternate-screen TUI is a safety boundary. If its
+    // mouse-disable sequence was lost or omitted, never forward stale mouse
+    // packets into the shell prompt that becomes visible next.
+    if (!enable && values.indexOf('1049') >= 0) state.modes = {};
+    values.forEach(function (parameter) {
       if (!TERMINAL_MOUSE_REPORTING_PARAMS[parameter]) return;
       if (enable) state.modes[parameter] = 1;
       else delete state.modes[parameter];
@@ -155,6 +166,27 @@ export function hardenTerminalTextarea(term) {
   textarea.setAttribute('autocorrect', 'off');
   textarea.setAttribute('autocapitalize', 'off');
   textarea.setAttribute('spellcheck', 'false');
+}
+
+/**
+ * Focus xterm's helper textarea so the soft keyboard can open.
+ * Must run synchronously inside a user gesture on Android WebView; calling
+ * focus only after touchstart preventDefault often sets activeElement without
+ * showing the IME.
+ */
+export function focusTerminalInput(term) {
+  if (!term) return;
+  try {
+    if (typeof term.focus === 'function') term.focus();
+  } catch (_) {}
+  var textarea = term.textarea;
+  if (!textarea && term.element) {
+    textarea = term.element.querySelector('.xterm-helper-textarea');
+  }
+  if (!textarea || typeof textarea.focus !== 'function') return;
+  try {
+    textarea.focus();
+  } catch (_) {}
 }
 
 export function terminalSelectionRange(start, end, cols) {
@@ -309,7 +341,9 @@ export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '
 
 export function buildTerminalHelpersSource() {
   return [
-    'var TERMINAL_MOUSE_REPORTING_PARAMS = ' + JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) + ';',
+    'var TERMINAL_MOUSE_REPORTING_PARAMS = ' +
+      JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) +
+      ';',
     clampTerminalScale,
     clampTerminalFontSize,
     estimateTerminalCellSize,
@@ -324,6 +358,7 @@ export function buildTerminalHelpersSource() {
     isTerminalMouseReportingActive,
     sgrMouseClickSequence,
     hardenTerminalTextarea,
+    focusTerminalInput,
     terminalSelectionRange,
     terminalCellSgr,
     snapshotToAnsi,
@@ -439,7 +474,7 @@ ${VIEWPORT_HELPERS}
   var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',ENTER:'\\r',CTRL_C:'\\x03',CTRL_D:'\\x04',CTRL_Z:'\\x1a',CTRL_L:'\\x0c',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
   var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
-  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,mouseTapStart=null,panStart=null,pinchDistance=0,pinchScale=1;
+  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,touchGesture=null,pinchDistance=0,pinchScale=1,viewportLayoutRaf=0,hasAppliedInitialFit=false;
   var fontSize=DEFAULT_READABLE_FONT_SIZE,ownsSize=false,SURFACE_PAD=8;
   var gridProposer=createDebouncedGridProposer(function(cols,rows){
     if(!term)return;
@@ -508,8 +543,7 @@ ${VIEWPORT_HELPERS}
   function resetMouseTracking(){
     mouseCarry='';
     mouseModeState=createTerminalMouseModeState();
-    mouseTapStart=null;
-    panStart=null;
+    touchGesture=null;
   }
   function terminalOptions(cols,rows){
     return {allowProposedApi:true,cursorBlink:true,fontSize:fontSize,cols:cols,rows:rows,
@@ -563,7 +597,7 @@ ${VIEWPORT_HELPERS}
       gridProposer.acknowledge(snapshot.cols,snapshot.rows);
       if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
       scheduleOutput();
-      requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
+      presentSessionLayout();
       sendRN({type:'snapshot-applied'});
     });
   }
@@ -588,7 +622,7 @@ ${VIEWPORT_HELPERS}
       gridProposer.acknowledge(snapshot.cols,snapshot.rows);
       if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
       scheduleOutput();
-      requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
+      presentSessionLayout();
     });
   }
   function terminalPixels(){
@@ -596,8 +630,11 @@ ${VIEWPORT_HELPERS}
     var cell=estimateTerminalCellSize(fontSize);
     return {width:Math.max(1,(screen&&screen.offsetWidth||term.cols*cell.width)+SURFACE_PAD),height:Math.max(1,(screen&&screen.offsetHeight||term.rows*cell.height)+SURFACE_PAD)};
   }
-  function applyScale(next){
-    if(!term)return;scale=clampTerminalScale(next);
+  function applyScale(next,exactFit){
+    if(!term)return;
+    scale=exactFit&&typeof next==='number'&&Number.isFinite(next)&&next>0
+      ? Math.min(3,next)
+      : clampTerminalScale(next);
     var px=terminalPixels(),tc=document.getElementById('tc'),stage=document.getElementById('stage');
     tc.style.width=px.width+'px';tc.style.height=px.height+'px';tc.style.transform='scale('+scale+')';
     stage.style.width=Math.max(document.getElementById('viewport').clientWidth,px.width*scale)+'px';
@@ -605,8 +642,40 @@ ${VIEWPORT_HELPERS}
   }
   function fitView(){
     if(!term)return;var viewport=document.getElementById('viewport'),px=terminalPixels();
-    applyScale(fitTerminalScale(viewport.clientWidth,viewport.clientHeight,px.width,px.height));
+    applyScale(fitTerminalScale(viewport.clientWidth,viewport.clientHeight,px.width,px.height),true);
     viewport.scrollLeft=0;viewport.scrollTop=0;
+  }
+  function keepFocusedCursorVisible(){
+    if(!term)return;
+    var textarea=term.textarea||(term.element&&term.element.querySelector('.xterm-helper-textarea'));
+    if(!textarea||document.activeElement!==textarea)return;
+    var viewport=document.getElementById('viewport');
+    var screen=term.element&&term.element.querySelector('.xterm-screen');
+    var screenRect=screen&&screen.getBoundingClientRect();
+    var viewportRect=viewport.getBoundingClientRect();
+    if(!screenRect||screenRect.height<=0||viewport.clientHeight<=0)return;
+    var cursorBottom=
+      viewport.scrollTop+
+      screenRect.top-viewportRect.top+
+      ((term.buffer.active.cursorY+1)*screenRect.height/term.rows);
+    var visibleBottom=viewport.scrollTop+viewport.clientHeight-4;
+    if(cursorBottom>visibleBottom)viewport.scrollTop+=cursorBottom-visibleBottom;
+  }
+  function refreshViewportLayout(){
+    if(!term)return;
+    applyScale(scale,true);
+    keepFocusedCursorVisible();
+  }
+  function presentSessionLayout(){
+    if(hasAppliedInitialFit)scheduleViewportLayout();
+    else{hasAppliedInitialFit=true;fitView();}
+  }
+  function scheduleViewportLayout(){
+    if(viewportLayoutRaf)return;
+    viewportLayoutRaf=requestAnimationFrame(function(){
+      viewportLayoutRaf=0;
+      if(ownsSize)proposeOwnerGrid();else refreshViewportLayout();
+    });
   }
   function cellMetrics(){
     try{
@@ -639,14 +708,14 @@ ${VIEWPORT_HELPERS}
     if(term)term.options.fontSize=fontSize;
     sendRN({type:'font-size',fontSize:fontSize});
     if(ownsSize)proposeOwnerGrid();
-    else requestAnimationFrame(fitView);
+    else scheduleViewportLayout();
   }
   function setSizeOwnership(owned){
     ownsSize=!!owned;
     if(ownsSize)proposeOwnerGrid();
     else{
       gridProposer.reset();
-      requestAnimationFrame(fitView);
+      scheduleViewportLayout();
     }
   }
   function setSelectionMode(enabled){
@@ -660,6 +729,15 @@ ${VIEWPORT_HELPERS}
     var col=Math.max(0,Math.min(term.cols-1,Math.floor((touch.clientX-rect.left)/(rect.width/term.cols))));
     var row=Math.max(0,Math.min(term.rows-1,Math.floor((touch.clientY-rect.top)/(rect.height/term.rows))));
     return {col:col,row:row};
+  }
+  function isTouchInsideTerminalScreen(touch){
+    var screen=term&&term.element&&term.element.querySelector('.xterm-screen');
+    var rect=screen&&screen.getBoundingClientRect();
+    return !!(
+      rect&&rect.width>0&&rect.height>0&&
+      touch.clientX>=rect.left&&touch.clientX<=rect.right&&
+      touch.clientY>=rect.top&&touch.clientY<=rect.bottom
+    );
   }
   function terminalCell(touch){
     var screen=terminalScreenCell(touch);
@@ -680,7 +758,8 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='connection-state'&&typeof msg.state==='string'&&(msg.detail===undefined||typeof msg.detail==='string'))setConnectionState(msg.state,msg.detail);
     else if(msg.type==='resize'&&term&&Number.isInteger(msg.cols)&&Number.isInteger(msg.rows)&&msg.cols>0&&msg.cols<=1000&&msg.rows>0&&msg.rows<=1000){
       term.resize(msg.cols,msg.rows);gridProposer.acknowledge(msg.cols,msg.rows);
-      requestAnimationFrame(function(){if(ownsSize){scale=1;applyScale(1);}else fitView();});
+      if(ownsSize)requestAnimationFrame(function(){scale=1;applyScale(1);});
+      else scheduleViewportLayout();
     }
     else if(msg.type==='size-ownership')setSizeOwnership(msg.owned);
     else if(msg.type==='font-size'&&typeof msg.fontSize==='number')setFontSize(msg.fontSize);
@@ -691,7 +770,7 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='copy-selection'&&term)sendRN({type:'copy',data:term.getSelection()});
     else if(msg.type==='paste'&&term&&typeof msg.data==='string'&&msg.data.length<=32768)term.paste(msg.data);
     else if(msg.type==='keyboard'&&typeof msg.visible==='boolean'&&term){
-      if(msg.visible)term.focus();else term.blur();
+      if(msg.visible)focusTerminalInput(term);else term.blur();
     }
     else if(msg.type==='get-latency-stats')emitLatStats();
   }
@@ -699,54 +778,87 @@ ${VIEWPORT_HELPERS}
     document.getElementById('key-row').style.display='flex';
     var grid=readableGridForViewport();
     term=openTerminal(document.getElementById('tc'),grid.cols,grid.rows);
-    requestAnimationFrame(function(){if(ownsSize)proposeOwnerGrid();else fitView();});
+    scheduleViewportLayout();
     if(typeof window.__mobilyInspectTerminal==='function')window.__mobilyInspectTerminal(term);
     bindTerminalInput(term);
-    new ResizeObserver(function(){if(ownsSize)proposeOwnerGrid();else fitView();}).observe(document.getElementById('viewport'));
+    new ResizeObserver(scheduleViewportLayout).observe(document.getElementById('viewport'));
+    window.addEventListener('resize',scheduleViewportLayout);
+    if(window.visualViewport)window.visualViewport.addEventListener('resize',scheduleViewportLayout);
     window.addEventListener('message',handleMsg);document.addEventListener('message',handleMsg);
     sendRN({type:'ready'});
   }
   document.getElementById('viewport').addEventListener('touchstart',function(e){
     if(selectionMode&&e.touches.length===1){selectionStart=terminalCell(e.touches[0]);selectTo(selectionStart);e.preventDefault();e.stopPropagation();}
-    else if(e.touches.length===2){mouseTapStart=null;panStart=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
-    else if(!selectionMode&&isTerminalMouseReportingActive(mouseModeState)&&e.touches.length===1){
-      mouseTapStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
-      e.preventDefault();e.stopPropagation();
-      if(term)term.blur();
-    }
+    else if(e.touches.length===2){touchGesture=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
     else if(!selectionMode&&e.touches.length===1){
-      var viewport=document.getElementById('viewport');
-      if(viewport.scrollWidth>viewport.clientWidth+1||viewport.scrollHeight>viewport.clientHeight+1){
-        panStart={x:e.touches[0].clientX,y:e.touches[0].clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
-        e.preventDefault();e.stopPropagation();
-        if(term)term.blur();
-      }
+      var touch=e.touches[0],viewport=document.getElementById('viewport');
+      var insideScreen=isTouchInsideTerminalScreen(touch);
+      var mouse=insideScreen&&isTerminalMouseReportingActive(mouseModeState);
+      var mayPan=viewport.scrollWidth>viewport.clientWidth+1||viewport.scrollHeight>viewport.clientHeight+1;
+      // Open the IME inside the user gesture before any preventDefault. Android
+      // WebView often focuses the textarea without showing the keyboard when
+      // focus only happens on touchend after a cancelled touchstart.
+      if(term)focusTerminalInput(term);
+      touchGesture={
+        kind:'pending',startX:touch.clientX,startY:touch.clientY,lastX:touch.clientX,lastY:touch.clientY,
+        left:viewport.scrollLeft,top:viewport.scrollTop,historyPixels:0,
+        mouse:mouse,claimed:!!(mouse||mayPan)
+      };
+      // Own the gesture only when we may send a mouse click or pan; leave
+      // plain shell taps uncancelled so the soft keyboard can appear.
+      if(touchGesture.claimed){e.preventDefault();e.stopPropagation();}
     }
   },{passive:false,capture:true});
   document.getElementById('viewport').addEventListener('touchmove',function(e){
     if(selectionMode&&selectionStart&&e.touches.length===1){selectTo(terminalCell(e.touches[0]));e.preventDefault();}
-    else if(e.touches.length===2&&pinchDistance>0){mouseTapStart=null;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
-    else if(panStart&&e.touches.length===1){
-      var viewport=document.getElementById('viewport');
-      viewport.scrollLeft=panStart.left-(e.touches[0].clientX-panStart.x);
-      viewport.scrollTop=panStart.top-(e.touches[0].clientY-panStart.y);
-      e.preventDefault();e.stopPropagation();
-    }
-    else if(mouseTapStart&&e.touches.length===1){
-      if(Math.hypot(e.touches[0].clientX-mouseTapStart.x,e.touches[0].clientY-mouseTapStart.y)>12)mouseTapStart=null;
+    else if(e.touches.length===2&&pinchDistance>0){touchGesture=null;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
+    else if(touchGesture&&e.touches.length===1){
+      var touch=e.touches[0],viewport=document.getElementById('viewport');
+      var dx=touch.clientX-touchGesture.startX,dy=touch.clientY-touchGesture.startY;
+      if(touchGesture.kind==='pending'&&Math.hypot(dx,dy)>12){
+        var horizontal=Math.abs(dx)>=Math.abs(dy);
+        var overflowX=viewport.scrollWidth>viewport.clientWidth+1;
+        var overflowY=viewport.scrollHeight>viewport.clientHeight+1;
+        if((horizontal&&overflowX)||(!horizontal&&overflowY))touchGesture.kind='pan';
+        else if(!horizontal&&term&&term.buffer.active.baseY>0)touchGesture.kind='history';
+        else touchGesture.kind='moved';
+        if(touchGesture.kind==='pan'||touchGesture.kind==='history')touchGesture.claimed=true;
+      }
+      if(touchGesture.kind==='pan'){
+        viewport.scrollLeft=touchGesture.left-dx;
+        viewport.scrollTop=touchGesture.top-dy;
+      }else if(touchGesture.kind==='history'&&term){
+        var cell=cellMetrics();
+        touchGesture.historyPixels+=touch.clientY-touchGesture.lastY;
+        var lines=Math.trunc(-touchGesture.historyPixels/Math.max(1,cell.height));
+        if(lines){
+          term.scrollLines(lines);
+          touchGesture.historyPixels+=lines*cell.height;
+        }
+      }
+      touchGesture.lastX=touch.clientX;touchGesture.lastY=touch.clientY;
+      if(touchGesture.claimed||touchGesture.kind==='pan'||touchGesture.kind==='history'){
+        e.preventDefault();e.stopPropagation();
+      }
     }
   },{passive:false,capture:true});
   document.getElementById('viewport').addEventListener('touchend',function(e){
-    if(mouseTapStart&&!e.touches.length&&!selectionMode&&isTerminalMouseReportingActive(mouseModeState)&&term){
+    if(touchGesture&&touchGesture.kind==='pending'&&!e.touches.length&&!selectionMode&&term){
       var touch=e.changedTouches[0];
-      if(touch&&Math.hypot(touch.clientX-mouseTapStart.x,touch.clientY-mouseTapStart.y)<=12){
-        var cell=terminalScreenCell(touch);
-        sendInput(sgrMouseClickSequence(cell.col,cell.row));
-        e.preventDefault();e.stopPropagation();
-        term.blur();
+      if(touch&&Math.hypot(touch.clientX-touchGesture.startX,touch.clientY-touchGesture.startY)<=12){
+        focusTerminalInput(term);
+        if(touchGesture.mouse&&isTouchInsideTerminalScreen(touch)){
+          var cell=terminalScreenCell(touch);
+          sendInput(sgrMouseClickSequence(cell.col,cell.row));
+          touchGesture.claimed=true;
+        }
       }
     }
-    if(!e.touches.length){selectionStart=null;mouseTapStart=null;panStart=null;pinchDistance=0;}
+    if(touchGesture&&touchGesture.claimed){e.preventDefault();e.stopPropagation();}
+    if(!e.touches.length){selectionStart=null;touchGesture=null;pinchDistance=0;}
+  },{passive:false,capture:true});
+  document.getElementById('viewport').addEventListener('touchcancel',function(){
+    selectionStart=null;touchGesture=null;pinchDistance=0;
   },{passive:false,capture:true});
   document.getElementById('key-row').addEventListener('click',function(e){
     var btn=e.target.closest('.key-btn');if(!btn)return;
