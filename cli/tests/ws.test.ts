@@ -19,8 +19,8 @@ import { createPairingProofPayload, PROTOCOL_VERSION, WS_CLOSE_CODES } from '@mo
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
-import type { SessionBackend } from '../src/mux/types.js';
-import type { IDisposable } from '../src/pty/node-pty.js';
+import type { SessionBackend } from '../src/sessionBackend/types.js';
+import type { IDisposable } from '../src/pty.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;

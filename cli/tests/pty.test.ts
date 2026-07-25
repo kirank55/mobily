@@ -13,7 +13,7 @@ import {
   defaultShell,
   spawn,
   type PtyProcess,
-} from '../src/pty/node-pty.js';
+} from '../src/pty.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

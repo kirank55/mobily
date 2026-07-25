@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GIT_RPC_METHODS, type GitStatusResult } from '@mobily/shared';
-import { GitService } from '../src/git/service.js';
+import { GitService } from '../src/gitService.js';
 
 const repositories: string[] = [];
 

@@ -124,7 +124,7 @@ export default function GitScreen() {
         <Button
           label="Choose Station"
           variant="primary"
-          onPress={() => router.navigate('/hosts' as never)}
+          onPress={() => router.navigate('/stations' as never)}
         />
       </Screen>
     );
@@ -153,7 +153,7 @@ export default function GitScreen() {
         </Pressable>
         <Pressable
           style={styles.navButton}
-          onPress={() => router.navigate('/hosts' as never)}
+          onPress={() => router.navigate('/stations' as never)}
           accessibilityRole="button"
         >
           <Text style={styles.link}>Stations</Text>

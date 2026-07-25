@@ -111,7 +111,7 @@ export default function ScannerScreen() {
           action={
             <View style={styles.errorActions}>
               <Button label="Scan again" variant="primary" onPress={retryScanning} />
-              <Button label="Stations" onPress={() => router.replace('/hosts')} />
+              <Button label="Stations" onPress={() => router.replace('/stations')} />
             </View>
           }
         />

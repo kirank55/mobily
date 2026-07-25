@@ -8,8 +8,8 @@ import { decodeFrame, encodeFrame, GIT_RPC_METHODS, WS_CLOSE_CODES, type Frame }
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
-import { GitService } from '../src/git/service.js';
-import { RpcRouter } from '../src/rpc/router.js';
+import { GitService } from '../src/gitService.js';
+import { RpcRouter } from '../src/rpcRouter.js';
 
 const repositories: string[] = [];
 const sessions: Session[] = [];

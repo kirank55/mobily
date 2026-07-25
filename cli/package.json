@@ -1,9 +1,29 @@
 {
   "name": "mobily",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Mobile remote-control for terminal-based development environments.",
   "type": "module",
   "license": "MIT",
+  "author": "Kiran",
+  "homepage": "https://github.com/kirank55/mobily#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kirank55/mobily.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/kirank55/mobily/issues"
+  },
+  "keywords": [
+    "cli",
+    "terminal",
+    "android",
+    "remote",
+    "tmux",
+    "pty",
+    "devtunnels",
+    "mobile"
+  ],
   "bin": {
     "mobily": "dist/index.js"
   },
@@ -13,16 +33,19 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "build": "tsup",
+    "prepublishOnly": "pnpm build",
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@mobily/shared": "workspace:*",
     "@xterm/headless": "5.5.0",
     "node-pty": "1.1.0",
     "qrcode": "^1.5.4",
@@ -32,6 +55,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
+    "@mobily/shared": "workspace:*",
     "@types/node": "^20.17.0",
     "@types/qrcode": "^1.5.5",
     "@types/ws": "^8.5.13",

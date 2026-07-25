@@ -128,9 +128,6 @@ importers:
 
   cli:
     dependencies:
-      '@mobily/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@xterm/headless':
         specifier: 5.5.0
         version: 5.5.0
@@ -153,6 +150,9 @@ importers:
       '@eslint/js':
         specifier: ^9.16.0
         version: 9.39.4
+      '@mobily/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@types/node':
         specifier: ^20.17.0
         version: 20.19.43

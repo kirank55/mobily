@@ -14,7 +14,7 @@ import { createPairingProofPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
-import { defaultSessionRuntime } from '../src/mux/runtime.js';
+import { defaultSessionRuntime } from '../src/sessionBackend/runtime.js';
 
 // ---------------------------------------------------------------------------
 // Test runtime: uses an explicit shell path so tests are not sensitive to

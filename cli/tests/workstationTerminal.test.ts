@@ -2,12 +2,12 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Session } from '../src/session.js';
-import type { SessionBackend } from '../src/mux/types.js';
-import type { ExitEvent, IDisposable } from '../src/pty/node-pty.js';
+import type { SessionBackend } from '../src/sessionBackend/types.js';
+import type { ExitEvent, IDisposable } from '../src/pty.js';
 import {
   attachWorkstationTerminal,
   shouldEmbedWorkstationTerminal,
-} from '../src/workstationTerminal.js';
+} from '../src/workstation/embedded.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;

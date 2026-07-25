@@ -27,8 +27,6 @@ import {
   encodeFrame,
   GIT_RPC_METHODS,
   MAX_SESSION_SCROLLBACK_CHARS,
-  MAX_SESSION_SCROLLBACK_CHUNK_CHARS,
-  PROTOCOL_VERSION,
   WS_CLOSE_CODES,
   type AlertFrame,
   type Frame,
@@ -36,15 +34,19 @@ import {
   type ResizeFrame,
   type SessionStatusFrame,
 } from '@mobily/shared';
-import type { ExitEvent, IDisposable, SpawnOptions } from './pty/node-pty.js';
+import type { ExitEvent, IDisposable, SpawnOptions } from './pty.js';
 import type { AuthManager } from './auth.js';
-import type { RpcRouter } from './rpc/router.js';
-import { BareBackend } from './mux/bare.js';
-import type { SessionBackend } from './mux/types.js';
-import type { SessionRuntime } from './mux/runtime.js';
+import type { RpcRouter } from './rpcRouter.js';
+import { BareBackend } from './sessionBackend/bare.js';
+import type { SessionBackend } from './sessionBackend/types.js';
+import type { SessionRuntime } from './sessionBackend/runtime.js';
 import type { AlertDetector } from './alerts/detector.js';
 import { SessionPhaseTracker } from './alerts/phase.js';
-import { CanonicalTerminalScreen } from './terminal/screen.js';
+import { CanonicalTerminalScreen } from './terminalScreen.js';
+import { SessionHandshake } from './sessionHandshake.js';
+import { SessionScrollback } from './sessionScrollback.js';
+import { SessionSizeOwnership, type SizeClaimant } from './sessionSize.js';
+import { errorText, rawToUtf8 } from './sessionUtils.js';
 
 /** `ws.WebSocket` readyState value for an open connection. */
 const READY_STATE_OPEN = 1;
@@ -89,11 +91,6 @@ interface LocalTerminalState {
   deactivate(): void;
 }
 
-interface SizeClaimant {
-  readonly sequence: number;
-  leaseTimer?: ReturnType<typeof setTimeout>;
-}
-
 /**
  * A live terminal session: one backend plus the WebSocket clients currently
  * streaming its output. Create one, attach clients as they connect, and call
@@ -128,6 +125,9 @@ export class Session {
   private exited = false;
   private exitEvent?: ExitEvent;
   private scrollbackTransferSequence = 0;
+  private readonly handshake?: SessionHandshake;
+  private readonly scrollback: SessionScrollback;
+  private readonly sizeOwnership: SessionSizeOwnership;
 
   constructor(opts: SessionOptions = {}) {
     const {
@@ -165,6 +165,50 @@ export class Session {
         }),
       onAlert: (message) => this.broadcast({ type: 'alert', message }),
     });
+    const session = this;
+    if (auth) {
+      this.handshake = new SessionHandshake({
+        auth,
+        handshakeTimeoutMs: this.handshakeTimeoutMs,
+        sendTo: (ws, frame) => session.sendTo(ws, frame),
+        attachAuthenticated: (ws) => session.attachAuthenticated(ws),
+      });
+    }
+    this.scrollback = new SessionScrollback({
+      sendTo: (ws, frame) => session.sendTo(ws, frame),
+      getPendingScrollback: (ws) => session.pendingScrollback.get(ws),
+      deletePendingScrollback: (ws) => session.pendingScrollback.delete(ws),
+      nextTransferId: () => `history-${++session.scrollbackTransferSequence}`,
+    });
+    this.sizeOwnership = new SessionSizeOwnership({
+      ownershipLeaseMs: this.ownershipLeaseMs,
+      get sizeOwner() {
+        return session.sizeOwner;
+      },
+      set sizeOwner(value) {
+        session.sizeOwner = value;
+      },
+      sizeClaimants: this.sizeClaimants,
+      nextClaimSequence: () => ++session.sizeClaimSequence,
+      get currentCols() {
+        return session.currentCols;
+      },
+      get currentRows() {
+        return session.currentRows;
+      },
+      get stationCols() {
+        return session.stationCols;
+      },
+      get stationRows() {
+        return session.stationRows;
+      },
+      sendTo: (ws, frame) => session.sendTo(ws, frame),
+      broadcast: (frame) => session.broadcast(frame),
+      applyResize: (cols, rows) => session.applyResize(cols, rows),
+      forEachViewer: (callback) => {
+        for (const viewer of session.pendingLatencyTags.keys()) callback(viewer);
+      },
+    });
 
     let initializingScreen = true;
     const pendingInitialOutput: string[] = [];
@@ -200,8 +244,8 @@ export class Session {
    * running.
    */
   attach(ws: WebSocket): void {
-    if (this.auth) {
-      this.startHandshake(ws);
+    if (this.handshake) {
+      this.handshake.startHandshake(ws);
     } else {
       this.attachAuthenticated(ws);
     }
@@ -276,119 +320,6 @@ export class Session {
   }
 
   // -------------------------------------------------------------------------
-  // Handshake: hello → hello-ack → auth-challenge → auth-response
-  // -------------------------------------------------------------------------
-
-  private startHandshake(ws: WebSocket): void {
-    const timeout = setTimeout(() => {
-      ws.close(WS_CLOSE_CODES.HANDSHAKE_TIMEOUT, 'handshake timeout');
-    }, this.handshakeTimeoutMs);
-    const clearHandshakeTimeout = (): void => clearTimeout(timeout);
-    ws.once('close', clearHandshakeTimeout);
-    ws.once('error', clearHandshakeTimeout);
-
-    const onMessage = (data: RawData): void => {
-      let frame: Frame;
-      try {
-        frame = decodeFrame(rawToUtf8(data));
-      } catch {
-        this.sendTo(ws, {
-          type: 'output',
-          data: 'mobily: malformed frame\r\n',
-        });
-        ws.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
-        return;
-      }
-
-      if (frame.type !== 'hello') {
-        this.sendTo(ws, {
-          type: 'output',
-          data: 'mobily: expected hello frame first\r\n',
-        });
-        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'protocol error');
-        return;
-      }
-
-      ws.off('message', onMessage);
-      this.handleHello(ws, frame.protocolVersion, clearHandshakeTimeout);
-    };
-
-    ws.on('message', onMessage);
-    ws.on('close', () => ws.off('message', onMessage));
-    ws.on('error', () => ws.off('message', onMessage));
-  }
-
-  private handleHello(
-    ws: WebSocket,
-    clientVersion: number,
-    clearHandshakeTimeout: () => void,
-  ): void {
-    if (clientVersion !== PROTOCOL_VERSION) {
-      this.sendTo(ws, {
-        type: 'output',
-        data:
-          `mobily: protocol version mismatch ` +
-          `(client ${clientVersion}, server ${PROTOCOL_VERSION}). ` +
-          `Please update.\r\n`,
-      });
-      ws.close(WS_CLOSE_CODES.VERSION_MISMATCH, 'version mismatch');
-      return;
-    }
-
-    this.sendTo(ws, { type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
-    this.startAuthChallenge(ws, clearHandshakeTimeout);
-  }
-
-  private startAuthChallenge(ws: WebSocket, clearHandshakeTimeout: () => void): void {
-    const nonce = this.auth!.createChallenge();
-    this.sendTo(ws, { type: 'auth-challenge', nonce });
-
-    const onMessage = (data: RawData): void => {
-      let frame: Frame;
-      try {
-        frame = decodeFrame(rawToUtf8(data));
-      } catch {
-        this.sendTo(ws, {
-          type: 'output',
-          data: 'mobily: malformed frame\r\n',
-        });
-        ws.close(WS_CLOSE_CODES.MALFORMED_FRAME, 'malformed frame');
-        return;
-      }
-
-      if (frame.type !== 'auth-response') {
-        this.sendTo(ws, {
-          type: 'output',
-          data: 'mobily: expected auth-response frame\r\n',
-        });
-        ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'protocol error');
-        return;
-      }
-
-      ws.off('message', onMessage);
-
-      const verified = this.auth!.verifyResponse(frame.deviceId, nonce, frame.signature);
-
-      if (!verified) {
-        this.sendTo(ws, {
-          type: 'output',
-          data: 'mobily: authentication failed — device not recognized. Scan QR to re-pair.\r\n',
-        });
-        ws.close(WS_CLOSE_CODES.AUTH_REJECTED, 'auth failed');
-        return;
-      }
-
-      clearHandshakeTimeout();
-      this.sendTo(ws, { type: 'auth-ok' });
-      this.attachAuthenticated(ws);
-    };
-
-    ws.on('message', onMessage);
-    ws.on('close', () => ws.off('message', onMessage));
-    ws.on('error', () => ws.off('message', onMessage));
-  }
-
-  // -------------------------------------------------------------------------
   // Authenticated viewer attach (ADR-0004):
   // auth-ok → prepare (workstation) → size owner → dimensions → freeze →
   // snapshot → subscribe → live I/O → scrollback after ack
@@ -411,7 +342,7 @@ export class Session {
       if (detached) return;
       detached = true;
       ws.off('message', messageHandler);
-      this.releaseSizeClaim(ws);
+      this.sizeOwnership.releaseSizeClaim(ws);
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
       this.pendingScrollback.delete(ws);
@@ -426,7 +357,7 @@ export class Session {
     // Session mutations are frozen into the snapshot, not streamed as live output.
     this.notifyAuthenticatedClient();
 
-    this.sendSizeOwnershipState(ws);
+    this.sizeOwnership.sendSizeOwnershipState(ws);
     this.sendTo(ws, { type: 'resize', cols: this.currentCols, rows: this.currentRows });
     this.screen.capture((snapshot) => {
       if (detached || this.exited || ws.readyState !== READY_STATE_OPEN) {
@@ -494,12 +425,12 @@ export class Session {
         break;
       case 'resize':
         if (this.sizeOwner !== ws) {
-          this.sendSizeOwnershipState(ws);
+          this.sizeOwnership.sendSizeOwnershipState(ws);
           break;
         }
         try {
           this.applyResize(frame.cols, frame.rows);
-          this.renewSizeOwnershipLease(ws);
+          this.sizeOwnership.renewSizeOwnershipLease(ws);
         } catch (err) {
           this.sendTo(ws, {
             type: 'output',
@@ -524,16 +455,16 @@ export class Session {
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot');
         break;
       case 'session-snapshot-applied':
-        this.sendPendingScrollback(ws);
+        this.scrollback.sendPendingScrollback(ws);
         break;
       case 'session-scrollback':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session scrollback');
         break;
       case 'terminal-size-claim':
-        this.claimSizeOwnership(ws);
+        this.sizeOwnership.claimSizeOwnership(ws);
         break;
       case 'terminal-size-release':
-        this.releaseSizeClaim(ws);
+        this.sizeOwnership.releaseSizeClaim(ws);
         break;
       case 'terminal-size-owner':
         ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Terminal Size Owner state');
@@ -547,107 +478,6 @@ export class Session {
       case 'auth-ok':
         break;
     }
-  }
-
-  private sendPendingScrollback(ws: WebSocket): void {
-    const history = this.pendingScrollback.get(ws);
-    if (history === undefined) {
-      ws.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected Session Snapshot acknowledgement');
-      return;
-    }
-    this.pendingScrollback.delete(ws);
-    const transferId = `history-${++this.scrollbackTransferSequence}`;
-    if (history.length === 0) {
-      this.sendTo(ws, {
-        type: 'session-scrollback',
-        transferId,
-        sequence: 0,
-        data: '',
-        done: true,
-      });
-      return;
-    }
-    let sequence = 0;
-    for (let offset = 0; offset < history.length; offset += MAX_SESSION_SCROLLBACK_CHUNK_CHARS) {
-      const data = history.slice(offset, offset + MAX_SESSION_SCROLLBACK_CHUNK_CHARS);
-      this.sendTo(ws, {
-        type: 'session-scrollback',
-        transferId,
-        sequence: sequence++,
-        data,
-        done: offset + data.length >= history.length,
-      });
-    }
-  }
-
-  private claimSizeOwnership(ws: WebSocket): void {
-    const existing = this.sizeClaimants.get(ws);
-    if (existing) {
-      this.renewSizeOwnershipLease(ws, existing);
-      return;
-    }
-    const claimant: SizeClaimant = {
-      sequence: ++this.sizeClaimSequence,
-    };
-    this.sizeClaimants.set(ws, claimant);
-    this.sizeOwner = ws;
-    this.renewSizeOwnershipLease(ws, claimant);
-    this.broadcastSizeOwnershipState();
-  }
-
-  private renewSizeOwnershipLease(ws: WebSocket, claimant = this.sizeClaimants.get(ws)): void {
-    if (!claimant) return;
-    clearTimeout(claimant.leaseTimer);
-    claimant.leaseTimer = setTimeout(() => this.releaseSizeClaim(ws), this.ownershipLeaseMs);
-    claimant.leaseTimer.unref?.();
-  }
-
-  private releaseSizeClaim(ws: WebSocket): void {
-    const claimant = this.sizeClaimants.get(ws);
-    if (!claimant) return;
-    clearTimeout(claimant.leaseTimer);
-    this.sizeClaimants.delete(ws);
-    if (this.sizeOwner !== ws) return;
-
-    this.sizeOwner = this.mostRecentSizeClaimant();
-    if (this.sizeOwner) {
-      this.broadcastSizeOwnershipState();
-      return;
-    }
-    try {
-      if (this.currentCols !== this.stationCols || this.currentRows !== this.stationRows) {
-        this.applyResize(this.stationCols, this.stationRows);
-      }
-    } catch (error) {
-      this.broadcast({
-        type: 'output',
-        data: `mobily: failed to restore Station dimensions — ${errorText(error)}\r\n`,
-      });
-    } finally {
-      this.broadcastSizeOwnershipState();
-    }
-  }
-
-  private mostRecentSizeClaimant(): WebSocket | undefined {
-    let newest: { ws: WebSocket; sequence: number } | undefined;
-    for (const [ws, claimant] of this.sizeClaimants) {
-      if (!newest || claimant.sequence > newest.sequence) {
-        newest = { ws, sequence: claimant.sequence };
-      }
-    }
-    return newest?.ws;
-  }
-
-  private broadcastSizeOwnershipState(): void {
-    for (const viewer of this.pendingLatencyTags.keys()) this.sendSizeOwnershipState(viewer);
-  }
-
-  private sendSizeOwnershipState(ws: WebSocket): void {
-    this.sendTo(ws, {
-      type: 'terminal-size-owner',
-      owner: this.sizeOwner ? 'android' : 'station',
-      ownedByRequester: this.sizeOwner === ws,
-    });
   }
 
   private handleRpc(ws: WebSocket, frame: Extract<Frame, { type: 'rpc'; method: string }>): void {
@@ -756,7 +586,7 @@ export class Session {
   private handleExit(event: ExitEvent): void {
     this.exited = true;
     this.exitEvent = event;
-    this.clearSizeClaimants();
+    this.sizeOwnership.clearSizeClaimants();
     this.sizeOwner = undefined;
     const localTerminal = this.localTerminal;
     this.localTerminal = undefined;
@@ -795,7 +625,7 @@ export class Session {
       for (const controller of active.values()) controller.abort();
     }
     this.activeRpcRequests.clear();
-    this.clearSizeClaimants();
+    this.sizeOwnership.clearSizeClaimants();
     this.sizeOwner = undefined;
     try {
       this.backend.dispose();
@@ -818,23 +648,4 @@ export class Session {
       }
     }
   }
-
-  private clearSizeClaimants(): void {
-    for (const claimant of this.sizeClaimants.values()) clearTimeout(claimant.leaseTimer);
-    this.sizeClaimants.clear();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function rawToUtf8(data: RawData): string {
-  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-  return data.toString('utf8');
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
