@@ -11,14 +11,14 @@ A free and open-source mobile remote-control for terminal-based development envi
 - **Background terminal alerts** — an Android foreground service reports session progress (Working / Waiting for input / Finished), the latest terminal line, and prompts that need attention
 - **Native Git controls** — browse changes, stage/unstage, inspect large diffs, switch branches, and commit from Android
 - **Multiple Stations** — retain paired workstations and switch between them without scanning again
-- **Pluggable tunneling** — Dev Tunnels for remote access, plus pinned TLS directly on your LAN
-- **No Mobily-operated cloud** — secure remote access currently uses Microsoft Dev Tunnels and requires operator authentication
+- **Secure tunneling** — Microsoft Dev Tunnels for remote access
+- **No Mobily-operated cloud** — secure remote access uses Microsoft Dev Tunnels and requires operator authentication
 
 ## Quick Start
 
 ```bash
 # Secure remote access (guides first-time install and login)
-npx mobily --tunnel devtunnels
+npx mobily
 ```
 
 After printing tunnel and pairing details, Mobily hands its interactive console
@@ -33,7 +33,7 @@ command for attaching an additional workstation terminal. Use `--session <name>`
 to choose a stable name:
 
 ```bash
-npx mobily --tunnel devtunnels --session project-x
+npx mobily --session project-x
 tmux attach-session -t project-x
 ```
 
@@ -65,9 +65,9 @@ winget install Microsoft.devtunnel
 Force a provider or verbose diagnostics:
 
 ```bash
-npx mobily --tunnel devtunnels --devtunnels-provider github
-npx mobily --tunnel devtunnels --devtunnels-provider microsoft
-npx mobily --tunnel devtunnels --verbose
+npx mobily --devtunnels-provider github
+npx mobily --devtunnels-provider microsoft
+npx mobily --verbose
 ```
 
 If an interrupted run left the account quota full:
@@ -83,17 +83,11 @@ Device Key bindings are persisted on the Station in `~/.mobily/device-bindings.j
 Use `npx mobily --list-bindings` to inspect them and
 `npx mobily --revoke-binding <binding-id>` to revoke one.
 
-For account-free use on the same Wi-Fi network, run `npx mobily --tunnel local`.
-Mobily creates a long-lived self-signed Station certificate, stores it with
-restrictive permissions in `~/.mobily/local-tls.json`, and puts its SHA-256 pin
-in the QR. Android verifies that pin for both pairing HTTPS and terminal WSS.
-Plaintext remains available only for browser protocol development with
-`--tunnel local --allow-insecure-local`; the Android production flow refuses it.
-
 ## Local development (CLI + Android)
 
 Day-to-day validation: run the Station CLI and the Expo Android app on a device
-or emulator. Requires Node ≥ 20 and pnpm.
+or emulator. Requires Node ≥ 20 and pnpm. The Station uses Dev Tunnels
+the same way as production.
 
 On Windows, run these commands **inside WSL** (`wsl`, then `cd ~/code-wsl/mobily`).
 Do not use PowerShell against `\\wsl.localhost\…` — Windows Node cannot resolve
@@ -122,7 +116,7 @@ gate.
 **Terminal A — Station**
 
 ```bash
-pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local
+pnpm build && pnpm --filter mobily exec node dist/index.js
 ```
 
 **Terminal B — Android app**
@@ -131,9 +125,10 @@ pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local
 pnpm --filter mobily-android android
 ```
 
-Scan the CLI QR from the app pair screen. For protocol-only browser smoke (no
-Android UI), run the Station with `--allow-insecure-local` and open the Smoke
-test URL the CLI prints (`cli/dev/smoke.html?…`).
+Scan the CLI QR from the app pair screen.
+
+Browser protocol harness (no Expo UI): open the Smoke test URL the CLI prints
+(`cli/dev/smoke.html?…`).
 
 ## Architecture
 

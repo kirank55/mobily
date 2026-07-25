@@ -717,13 +717,6 @@ export function MarketingPage() {
                   <small>Signed beta builds are published through GitHub Releases.</small>
                 </div>
               </div>
-              <div className="local-callout">
-                <span className="status-dot status-dot--success" />
-                <p>
-                  <strong>SAME WI-FI?</strong> Run <code>{site.localCommand}</code> for account-free
-                  pinned TLS.
-                </p>
-              </div>
             </div>
           </div>
         </section>

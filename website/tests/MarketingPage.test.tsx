@@ -114,7 +114,6 @@ describe('MarketingPage', () => {
   it('renders command controls with live feedback and exact CLI commands', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
     expect(markup).toContain(site.command);
-    expect(markup).toContain(site.localCommand);
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('COPY');
   });
@@ -137,7 +136,7 @@ describe('MarketingPage', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
     expect(markup).toContain('bare PTY survives phone disconnects only while the CLI stays alive');
     expect(markup).toContain('GitHub or Microsoft');
-    expect(markup).toContain('account-free pinned TLS');
+    expect(markup).toContain('The phone never needs a Microsoft account.');
   });
 });
 
