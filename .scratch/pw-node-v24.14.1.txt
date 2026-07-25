@@ -1,9 +1,0 @@
-2026-07-20T16:30:02.145Z pw:test:task "apply rebaselines" started
-2026-07-20T16:30:02.146Z pw:test:task "apply rebaselines" finished
-2026-07-20T16:30:02.146Z pw:test:task "clear output" started
-2026-07-20T16:30:02.149Z pw:test:task "clear output" finished
-2026-07-20T16:30:02.149Z pw:test:task "plugin setup" started
-2026-07-20T16:30:02.149Z pw:test:task "plugin setup" finished
-2026-07-20T16:30:02.149Z pw:test:task "load tests" started
-HUNG
-EXIT=124

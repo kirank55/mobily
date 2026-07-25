@@ -151,7 +151,7 @@ docs/adr/  — Architectural decision records
 
 - [Domain Glossary](CONTEXT.md) — canonical terminology
 - [ADRs](docs/adr/) — architectural decision records
-- [Terminal testing via Dev Tunnels](docs/tunnel-terminal-testing.md) — manual validation plan
+- [Terminal testing via Dev Tunnels](.scratch/tunnel-terminal-testing.md) — manual validation plan
 - [Security](SECURITY.md) — dependency audit dispositions
 
 ## License

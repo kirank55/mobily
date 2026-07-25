@@ -58,12 +58,6 @@ Between auth handler registration and `subscribers.add`, the socket is only in `
 
 Message handling (including claims) is registered before `screen.capture`. Production Android does not claim, but any claimant in that window can steal ownership before the first screen is delivered.
 
-## [P3] Dead Android size-claim controller still encodes the old policy
-
-**Where:** `android/src/terminal/sizeOwnership.ts` (~line 61)
-
-`TerminalSizeOwnershipController` still claims when connected+visible+active and is only covered by unit tests. Live `StationConnection` correctly does not wire it; the leftover API makes accidental reintroduction easy.
-
 ## [P3] Playwright can false-green stale shipped helpers
 
 **Where:** `android/package.json` (~line 57)

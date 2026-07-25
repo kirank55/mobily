@@ -2,7 +2,7 @@
 
 Working note for end-to-end terminal testing on a physical Android phone using **Microsoft Dev Tunnels** for the Station. USB debugging is optional (handy for logs/screenshots and as a Metro fallback).
 
-For browser-only day-to-day checks (no phone), see README → **Local development**. For latency targets after you are connected, see `.scratch/latency-baseline.md`.
+For browser-only day-to-day checks (no phone), see README → **Local development**. For latency targets after you are connected, see [latency-baseline.md](latency-baseline.md).
 
 ## Why tunnels
 
@@ -132,9 +132,9 @@ Checklist:
 - [ ] Snapshot paints a shell prompt (tmux session or bare PTY).
 - [ ] Type `echo hello` — output appears.
 - [ ] Special keys: arrows, Tab, Ctrl+C interrupt.
-- [ ] Soft keyboard open/close does not permanently break the view (note any Fit/zoom resets — known issues in `.scratch/known-bugs.md`).
+- [ ] Soft keyboard open/close does not permanently break the view (note any Fit/zoom resets — known issues in [known-bugs.md](known-bugs.md)).
 - [ ] Optional: Home → reopen Mobily — session reconnects without “Connection lost” (see `android/e2e/background-reconnect.yml`).
-- [ ] Latency: ≥20 keystrokes with visible output; read **P50 / P95** from the terminal status bar or `[mobily latency]` Metro logs. Compare to Dev Tunnels targets in `.scratch/latency-baseline.md` (P50 ≤ 80 ms, P95 ≤ 200 ms).
+- [ ] Latency: ≥20 keystrokes with visible output; read **P50 / P95** from the terminal status bar or `[mobily latency]` Metro logs. Compare to Dev Tunnels targets in [latency-baseline.md](latency-baseline.md) (P50 ≤ 80 ms, P95 ≤ 200 ms).
 
 ### 7. Capture evidence (optional)
 
@@ -153,7 +153,7 @@ With USB debugging:
 | CLI asks to install / login `devtunnel` | Helper missing or logged out | Install per README; `devtunnel user login` |
 | Tunnel create fails / quota | Leftover tunnels | `devtunnel delete-all`, retry |
 | Dev client stuck on “Start a local development server” | Metro not reachable | Use `expo start --tunnel`, or USB reverse to `:8081` |
-| Slow or high P95 | Dev Tunnel RTT | Expected vs local; compare `.scratch/latency-baseline.md` |
+| Slow or high P95 | Dev Tunnel RTT | Expected vs local; compare [latency-baseline.md](latency-baseline.md) |
 | `Unmatched Route` for `mobily://pair` | Deep link not routed on native | Use in-app **ADD** + camera QR |
 | `adb shell input tap` → `INJECT_EVENTS` | MIUI blocks injection | Tap manually, or enable **USB debugging (Security settings)** |
 | Pairing works then terminal fails | Stale Metro / wrong JS host | Reload from Expo tunnel URL or re-reverse `:8081` |
@@ -197,6 +197,6 @@ pnpm --filter mobily exec node dist/index.js --tunnel local --session mobily-usb
 ## Related
 
 - README — Quick Start / Dev Tunnels helper / Local development
-- `.scratch/latency-baseline.md` — RTT targets (local vs Dev Tunnels)
-- `.scratch/known-bugs.md` — Fit / snapshot / reconnect defects
+- [latency-baseline.md](latency-baseline.md) — RTT targets (local vs Dev Tunnels)
+- [known-bugs.md](known-bugs.md) — Fit / snapshot / reconnect defects
 - `android/e2e/*.yml` — Maestro flows (scan-connect, background-reconnect)

@@ -2,7 +2,7 @@
 
 Validate the live terminal over Microsoft Dev Tunnels with a real Android device.
 
-Primary source: [README.md](../README.md) (Quick Start / Dev Tunnels helper). Architecture notes: [adr/0003-pluggable-tunnel-backend.md](adr/0003-pluggable-tunnel-backend.md). Latency targets: [.scratch/latency-baseline.md](../.scratch/latency-baseline.md).
+Primary source: [README.md](../README.md) (Quick Start / Dev Tunnels helper). Architecture notes: [adr/0003-pluggable-tunnel-backend.md](../docs/adr/0003-pluggable-tunnel-backend.md). Latency targets: [latency-baseline.md](latency-baseline.md).
 
 ```mermaid
 flowchart LR
@@ -97,7 +97,7 @@ Device Key bindings live in `~/.mobily/device-bindings.json` (`npx mobily --list
 
 ## 5. Optional latency check
 
-Per [.scratch/latency-baseline.md](../.scratch/latency-baseline.md): after pairing, enter ≥20 output-producing keystrokes and read P50/P95 from the status bar or `[mobily latency]` Metro log.
+Per [latency-baseline.md](latency-baseline.md): after pairing, enter ≥20 output-producing keystrokes and read P50/P95 from the status bar or `[mobily latency]` Metro log.
 
 Dev Tunnels targets: P50 ≤ 80 ms, P95 ≤ 200 ms.
 
