@@ -22,7 +22,7 @@ mobily/
 │       ├── gitService.ts / rpcRouter.ts
 │       ├── sessionBackend/  # bare PTY + tmux backends
 │       ├── workstation/     # embedded / tmux attach presence
-│       ├── tunnel/          # local TLS + Dev Tunnels
+│       ├── tunnel/          # TunnelBackend interface; Dev Tunnels shipped
 │       └── alerts/          # session phase / alert heuristics
 ├── android/                 # Expo Android app
 │   └── src/
@@ -46,9 +46,9 @@ Your machine                                      Your phone
 ┌─────────────────────────────────┐               ┌──────────────────────────┐
 │  mobily Station (Node)          │  WSS / tunnel │  Mobily Android          │
 │  PTY / tmux Session             │◄─────────────►│  xterm.js WebView        │
-│  Device Key auth + Git RPC      │   local TLS   │  Device Key (Keystore)   │
-│  Dev Tunnels or LAN             │   or Dev      │  Stations / Git / alerts │
-└─────────────────────────────────┘   Tunnels     └──────────────────────────┘
+│  Device Key auth + Git RPC      │  Dev Tunnels  │  Device Key (Keystore)   │
+│  Microsoft Dev Tunnels          │               │  Stations / Git / alerts │
+└─────────────────────────────────┘               └──────────────────────────┘
 ```
 
 Domain vocabulary lives in [`CONTEXT.md`](../CONTEXT.md). Decisions are recorded

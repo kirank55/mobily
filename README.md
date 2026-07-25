@@ -24,25 +24,17 @@ You kick off a long coding-agent session. You step away. You come back and disco
 
 That human-in-the-loop moment does not need a desk. **Mobily streams your workstation terminal to your phone** so you can read context, type a reply, and keep going.
 
-There is no Mobily-operated terminal relay. Remote access uses Microsoft Dev Tunnels (or local pinned TLS on your LAN). Pairing uses a Device Key in Android Keystore — the Station stores only the public key.
+There is no Mobily-operated terminal relay. Access uses Microsoft Dev Tunnels. Pairing uses a Device Key in Android Keystore — the Station stores only the public key.
 
 ## Getting started
 
 ### 1. Start the Station
 
-**Same Wi‑Fi (no account):**
-
 ```bash
-npx mobily@latest --tunnel local
+npx mobily@latest
 ```
 
-**Remote access (Dev Tunnels):**
-
-```bash
-npx mobily@latest --tunnel devtunnels
-```
-
-Requires [Node.js 20+](https://nodejs.org/). First-time Dev Tunnels setup may ask you to install and sign in with Microsoft’s `devtunnel` helper (GitHub or Microsoft account). The phone never needs that account.
+Requires [Node.js 20+](https://nodejs.org/). First-time setup may ask you to install and sign in with Microsoft’s `devtunnel` helper (GitHub or Microsoft account). The phone never needs that account.
 
 ### 2. Pair your phone
 
@@ -59,9 +51,9 @@ Your machine                                      Your phone
 ┌─────────────────────────────────┐               ┌──────────────────────────┐
 │  mobily Station (Node)          │  WSS / tunnel │  Mobily Android          │
 │  PTY / tmux Session             │◄─────────────►│  xterm.js WebView        │
-│  Device Key auth + Git RPC      │   local TLS   │  Device Key (Keystore)   │
-│  Dev Tunnels or LAN             │   or Dev      │  Stations / Git / alerts │
-└─────────────────────────────────┘   Tunnels     └──────────────────────────┘
+│  Device Key auth + Git RPC      │  Dev Tunnels  │  Device Key (Keystore)   │
+│  Microsoft Dev Tunnels          │               │  Stations / Git / alerts │
+└─────────────────────────────────┘               └──────────────────────────┘
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the package map.
@@ -75,30 +67,25 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the package map.
 - **Background alerts** — Android foreground service reports phase and prompts that need attention
 - **Native Git** — browse changes, stage/unstage, inspect diffs, switch branches, commit
 - **Multiple Stations** — keep paired workstations and switch without scanning again
-- **Pluggable tunneling** — Dev Tunnels for remote access; pinned TLS on LAN
+- **Dev Tunnels transport** — Microsoft Dev Tunnels for phone reachability; the Station keeps a pluggable tunnel interface for future backends
 
 ## Privacy and security
 
-- **No Mobily terminal relay.** Your stream follows the tunnel you configure.
+- **No Mobily terminal relay.** Your stream travels over Microsoft Dev Tunnels; Mobily does not operate a cloud that sees your PTY.
 - **No Mobily accounts.** Dev Tunnels may require a Microsoft/GitHub login for the helper only.
 - **Device Key proof.** The phone signs challenges; the Station never receives the private key.
 - **Revocation.** `npx mobily --list-bindings` / `--revoke-binding <id>` manage bindings under `~/.mobily/`.
 
 Full reporting process: [SECURITY.md](SECURITY.md).
 
-## Connection modes
+## Dev Tunnels options
 
-| Mode | How it works | Command |
-| --- | --- | --- |
-| **Local** | Pinned TLS on your LAN; account-free | `npx mobily --tunnel local` |
-| **Dev Tunnels** | Microsoft Dev Tunnels for remote access | `npx mobily --tunnel devtunnels` |
-
-Force a Dev Tunnels provider or verbose diagnostics:
+Force a login provider or verbose diagnostics:
 
 ```bash
-npx mobily --tunnel devtunnels --devtunnels-provider github
-npx mobily --tunnel devtunnels --devtunnels-provider microsoft
-npx mobily --tunnel devtunnels --verbose
+npx mobily --devtunnels-provider github
+npx mobily --devtunnels-provider microsoft
+npx mobily --verbose
 ```
 
 ## CLI reference
@@ -108,8 +95,6 @@ mobily [OPTIONS] [COMMAND]
 
 Start a Station:
   mobily                             Secure remote access (Dev Tunnels)
-  mobily --tunnel local              Account-free LAN with pinned TLS
-  mobily --tunnel devtunnels         Remote via Microsoft Dev Tunnels
   mobily --session <name> …          Stable tmux session name
   mobily --kill-session <name>       End a persisted tmux session
 
@@ -125,6 +110,7 @@ Device bindings:
 Other:
   mobily -h, --help
   mobily --verbose
+  mobily --devtunnels-provider github|microsoft
 ```
 
 Normal CLI shutdown detaches Mobily; it does not kill a tmux Session. Use `--kill-session` when you intend to remove it.

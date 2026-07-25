@@ -30,8 +30,11 @@ gate.
 ## Terminal A — Station
 
 ```bash
-pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local
+pnpm build && pnpm --filter mobily exec node dist/index.js
 ```
+
+Requires Microsoft’s `devtunnel` helper (install/sign-in on first run). Optional
+flags: `--devtunnels-provider github|microsoft`, `--verbose`, `--session <name>`.
 
 ## Terminal B — Android app
 
@@ -40,8 +43,7 @@ pnpm --filter mobily-android android
 ```
 
 Scan the CLI QR from the app pair screen. For protocol-only browser smoke (no
-Android UI), run the Station with `--allow-insecure-local` and open the Smoke
-test URL the CLI prints (`cli/dev/smoke.html?…`).
+Android UI), open the Smoke test URL the CLI prints (`cli/dev/smoke.html?…`).
 
 ## Publishing the CLI
 

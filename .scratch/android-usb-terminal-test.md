@@ -2,16 +2,11 @@
 
 Working note for end-to-end terminal testing on a physical Android phone using **Microsoft Dev Tunnels** for the Station. USB debugging is optional (handy for logs/screenshots and as a Metro fallback).
 
-For browser-only day-to-day checks (no phone), see README → **Local development**. For latency targets after you are connected, see [latency-baseline.md](latency-baseline.md).
+For browser-only day-to-day checks (no phone), see [docs/development.md](../docs/development.md). For latency targets after you are connected, see [latency-baseline.md](latency-baseline.md).
 
-## Why tunnels
+## Why Dev Tunnels
 
-| Path | Station reachability | When to use |
-| ---- | -------------------- | ----------- |
-| `--tunnel devtunnels` | Public `wss://…` via Microsoft Dev Tunnels | **Default for phone testing** — works across Wi-Fi client isolation, WSL NAT, and cellular |
-| `--tunnel local` | LAN or USB-reverse `wss://…` with cert pin | Same Wi-Fi without isolation, or USB-only setups (see Appendix) |
-
-Dev Tunnels avoid advertising WSL `172.x` addresses and skip `adb reverse` for the Station port.
+`npx mobily` always uses Microsoft Dev Tunnels (public `wss://…`). That works across Wi-Fi client isolation, WSL NAT, and cellular, and avoids advertising WSL `172.x` addresses or `adb reverse` for the Station port. There is no `--tunnel` flag and no local LAN backend.
 
 ## Prerequisites
 
@@ -49,20 +44,20 @@ pnpm install
 pnpm build
 ```
 
-### 2. Start Station with Dev Tunnels (Terminal A)
+### 2. Start Station (Terminal A)
 
 ```bash
 # WSL, repo root
 export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh"
-pnpm --filter mobily exec node dist/index.js --tunnel devtunnels --session mobily-phone-test
+pnpm --filter mobily exec node dist/index.js --session mobily-phone-test
 ```
 
 Useful flags:
 
 ```bash
 # Force login provider / diagnostics
-pnpm --filter mobily exec node dist/index.js --tunnel devtunnels --devtunnels-provider github --verbose
-pnpm --filter mobily exec node dist/index.js --tunnel devtunnels --devtunnels-provider microsoft --verbose
+pnpm --filter mobily exec node dist/index.js --devtunnels-provider github --verbose
+pnpm --filter mobily exec node dist/index.js --devtunnels-provider microsoft --verbose
 ```
 
 Note from the log:
@@ -153,7 +148,7 @@ With USB debugging:
 | CLI asks to install / login `devtunnel` | Helper missing or logged out | Install per README; `devtunnel user login` |
 | Tunnel create fails / quota | Leftover tunnels | `devtunnel delete-all`, retry |
 | Dev client stuck on “Start a local development server” | Metro not reachable | Use `expo start --tunnel`, or USB reverse to `:8081` |
-| Slow or high P95 | Dev Tunnel RTT | Expected vs local; compare [latency-baseline.md](latency-baseline.md) |
+| Slow or high P95 | Dev Tunnel RTT | Compare [latency-baseline.md](latency-baseline.md) |
 | `Unmatched Route` for `mobily://pair` | Deep link not routed on native | Use in-app **ADD** + camera QR |
 | `adb shell input tap` → `INJECT_EVENTS` | MIUI blocks injection | Tap manually, or enable **USB debugging (Security settings)** |
 | Pairing works then terminal fails | Stale Metro / wrong JS host | Reload from Expo tunnel URL or re-reverse `:8081` |
@@ -162,7 +157,7 @@ With USB debugging:
 
 ```bash
 # WSL — Station (Dev Tunnels)
-pnpm --filter mobily exec node dist/index.js --tunnel devtunnels --session mobily-phone-test
+pnpm --filter mobily exec node dist/index.js --session mobily-phone-test
 
 # WSL — Metro (Expo tunnel)
 cd android && pnpm exec expo start --port 8081 --tunnel
@@ -174,29 +169,10 @@ cd android && pnpm exec expo start --port 8081 --tunnel
 & $adb shell am start -a android.intent.action.VIEW -d "exp+mobily://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
 ```
 
-## Appendix: local tunnel (no Dev Tunnels)
-
-Account-free LAN path. Android requires pinned TLS (no `--allow-insecure-local`).
-
-```bash
-pnpm --filter mobily exec node dist/index.js --tunnel local --session mobily-local-test
-```
-
-On WSL + isolated Wi-Fi, advertise localhost and reverse the Station port:
-
-```bash
-export MOBILY_LOCAL_ADVERTISE_HOST=127.0.0.1
-pnpm --filter mobily exec node dist/index.js --tunnel local --session mobily-usb-test
-```
-
-```powershell
-& $adb reverse tcp:<PORT> tcp:<PORT>   # Station port from CLI log
-& $adb reverse tcp:8081 tcp:8081       # Metro if not using Expo tunnel
-```
-
 ## Related
 
-- README — Quick Start / Dev Tunnels helper / Local development
-- [latency-baseline.md](latency-baseline.md) — RTT targets (local vs Dev Tunnels)
+- [README.md](../README.md) — Getting started / Dev Tunnels helper
+- [docs/development.md](../docs/development.md) — monorepo Station + Android run
+- [latency-baseline.md](latency-baseline.md) — RTT targets (Dev Tunnels)
 - [known-bugs.md](known-bugs.md) — Fit / snapshot / reconnect defects
 - `android/e2e/*.yml` — Maestro flows (scan-connect, background-reconnect)

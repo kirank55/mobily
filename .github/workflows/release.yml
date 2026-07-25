@@ -77,7 +77,7 @@ jobs:
           Install:
 
           \`\`\`bash
-          npx mobily@latest --tunnel local
+          npx mobily@latest
           \`\`\`
 
           See [CHANGELOG.md](https://github.com/kirank55/mobily/blob/main/CHANGELOG.md)."

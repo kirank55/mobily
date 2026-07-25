@@ -16,5 +16,10 @@ export function formatCliHelp(version: string): string {
     'Device bindings',
     '  mobily --list-bindings',
     '  mobily --revoke-binding <binding-id>',
+    '',
+    'Other',
+    '  mobily -h, --help',
+    '  mobily --verbose',
+    '  mobily --devtunnels-provider github|microsoft',
   ].join('\n');
 }

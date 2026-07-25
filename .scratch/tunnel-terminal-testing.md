@@ -12,7 +12,7 @@ flowchart LR
   Android -->|"xterm I/O"| Station
 ```
 
-There is no implicit tunnel default — always pass `--tunnel devtunnels`.
+`npx mobily` always uses Dev Tunnels; there is no `--tunnel` flag.
 
 ## 1. Prerequisites
 
@@ -56,18 +56,18 @@ First run will guide login; credentials are cached by the helper.
 ## 3. Start Station over Dev Tunnels
 
 ```bash
-npx mobily --tunnel devtunnels
+npx mobily
 # or from a built workspace:
-# pnpm --filter mobily exec node dist/index.js --tunnel devtunnels
+# pnpm --filter mobily exec node dist/index.js
 ```
 
 Optional flags:
 
 ```bash
-npx mobily --tunnel devtunnels --session project-x
-npx mobily --tunnel devtunnels --devtunnels-provider github
-npx mobily --tunnel devtunnels --devtunnels-provider microsoft
-npx mobily --tunnel devtunnels --verbose
+npx mobily --session project-x
+npx mobily --devtunnels-provider github
+npx mobily --devtunnels-provider microsoft
+npx mobily --verbose
 ```
 
 Note the printed QR / pairing details. After setup, Mobily hands its console to the shared terminal. With tmux available, an additional workstation can attach:
@@ -105,6 +105,6 @@ Dev Tunnels targets: P50 ≤ 80 ms, P95 ≤ 200 ms.
 
 1. Gates (typecheck / lint / unit tests)
 2. Ensure `devtunnel` is installed and authenticated
-3. Start Station with `--tunnel devtunnels`
+3. Start Station (`npx mobily` / workspace `node dist/index.js`)
 4. Pair Android and verify terminal I/O + shared mirror
 5. Latency sample if performance is in scope
