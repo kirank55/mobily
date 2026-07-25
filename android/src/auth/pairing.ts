@@ -56,10 +56,7 @@ const AVAILABILITY_ERRORS: Record<DeviceKeyAvailability['reason'], string> = {
  * @param baseUrl The CLI's base URL (e.g. http://192.168.1.100:51234)
  * @param code The short pairing code scanned from the QR
  */
-export async function pairWithStation(
-  pairing: PairingPayload,
-  options: { allowInsecureTransport?: boolean } = {},
-): Promise<PairResult> {
+export async function pairWithStation(pairing: PairingPayload): Promise<PairResult> {
   console.info('[Mobily][Pairing] Pairing started', {
     protocolVersion: pairing.protocolVersion,
     pinnedTransport: Boolean(pairing.certificatePin),
@@ -71,8 +68,7 @@ export async function pairWithStation(
     });
     return { ok: false, error: 'Please update the app or CLI before pairing.' };
   }
-  const insecureDevelopmentOverride = __DEV__ && options.allowInsecureTransport === true;
-  if (!isSecureWebSocketUrl(pairing.endpoint) && !insecureDevelopmentOverride) {
+  if (!isSecureWebSocketUrl(pairing.endpoint)) {
     console.warn('[Mobily][Pairing] Refused insecure Station transport', {
       endpoint: pairing.endpoint,
     });

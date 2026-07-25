@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Terminal } from '@xterm/headless';
 import { MAX_SESSION_SCROLLBACK_CHARS, type SessionSnapshotFrame } from '@mobily/shared';
@@ -22,7 +20,7 @@ import {
 import { TERMINAL_HELPERS_JS } from '../src/terminal/xtermAssets.generated';
 
 describe('terminal document', () => {
-  it('uses the same generator for production and the browser harness', () => {
+  it('builds the production WebView document', () => {
     const production = buildTerminalDocument({
       xtermCss: 'css-marker',
       xtermJs: 'xterm-marker',
@@ -52,9 +50,6 @@ describe('terminal document', () => {
     expect(production).toContain('proposeOwnerGrid');
     expect(production).toContain("sendRN({type:'resize'");
     expect(production).toContain("msg.type==='fit')fitView()");
-    expect(readFileSync(resolve(__dirname, '../dev/term.html'), 'utf8')).toContain(
-      '[mobily harness] terminal ready',
-    );
   });
 
   it('re-announces readiness when React Native probes after page load', () => {
