@@ -74,8 +74,6 @@ export interface WsClientOptions {
   onError?: (message: string, kind?: ErrorKind) => void;
   /** Max reconnect attempts before failing. */
   maxRetries?: number;
-  /** Permit ws:// only in explicitly configured development builds. */
-  allowInsecureTransport?: boolean;
   /** SHA-256 SPKI pin for a self-signed local Station. */
   certificatePin?: string;
 }
@@ -158,8 +156,7 @@ export class WsClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    const insecureDevelopmentOverride = __DEV__ && this.opts.allowInsecureTransport === true;
-    if (!isSecureWebSocketUrl(this.opts.url) && !insecureDevelopmentOverride) {
+    if (!isSecureWebSocketUrl(this.opts.url)) {
       this.emitError('Refusing insecure Station transport', 'generic');
       this.setState('failed', 'insecure transport');
       return;

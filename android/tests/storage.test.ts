@@ -99,7 +99,7 @@ describe('pairing storage', () => {
     await expect(listPairings()).resolves.toEqual([]);
   });
 
-  it('persists insecure local ws:// tunnel URLs used by Expo web', async () => {
+  it('rejects insecure local ws:// tunnel URLs', async () => {
     const insecure: PairingRecord = {
       stationName: 'local-dev',
       tunnelUrl: 'ws://localhost:51234',
@@ -107,8 +107,7 @@ describe('pairing storage', () => {
       keyAlias: 'mobily.device.binding_BBBBBBBBBBBBBBBBBBBBBB',
       pairedAt: 1_700_000_000_000,
     };
-    await savePairing(insecure);
-    await expect(loadPairing()).resolves.toEqual(insecure);
+    await expect(savePairing(insecure)).rejects.toThrow('Invalid pairing record');
   });
 
   it('removes Stations that have not been opened in more than two days', async () => {

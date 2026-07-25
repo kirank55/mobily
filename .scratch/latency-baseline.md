@@ -16,6 +16,3 @@ On-device Dev Tunnels P50/P95 have not been recorded yet.
 2. Pair with a running CLI (`--tunnel local` or `--tunnel devtunnels`).
 3. Enter at least 20 keystrokes that produce terminal output (100+ preferred).
 4. Read P50/P95 from the terminal status bar or `[mobily latency]` Metro log.
-
-Browser-only batching check: `android/dev/latency.html` (not an end-to-end baseline).
-Throughput harness: `android/dev/term.html` (~800 KB queued output; no dropped frames expected).

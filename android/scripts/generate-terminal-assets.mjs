@@ -1,10 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  buildTerminalDocument,
-  buildTerminalHelpersSource,
-} from '../src/terminal/terminalDocument.js';
+import { buildTerminalHelpersSource } from '../src/terminal/terminalDocument.js';
 
 const androidRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = resolve(androidRoot, '..');
@@ -36,34 +33,5 @@ lines.push(`export const TERMINAL_HELPERS_JS = ${JSON.stringify(terminalHelpersJ
 writeFileSync(
   resolve(androidRoot, 'src/terminal/xtermAssets.generated.ts'),
   `${lines.join('\n')}\n`,
-  'utf8',
-);
-
-const assets = Object.fromEntries(
-  Object.entries(sources).map(([name, sourcePath]) => [name, readFileSync(sourcePath, 'utf8')]),
-);
-const devBridgeJs = `
-window.ReactNativeWebView={postMessage:function(raw){
-  var message;try{message=JSON.parse(raw);}catch(_){return;}
-  if(message.type==='ready')console.info('[mobily harness] terminal ready');
-  if(message.type==='resize')console.info('[mobily harness] resize',message.cols,message.rows);
-  if(message.type==='latency-stats')console.info('[mobily harness] latency',message);
-  if(message.type==='input')setTimeout(function(){
-    window.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
-      type:'write',data:message.data,latencyTags:[message.latencyTag]
-    })}));
-  },20);
-}};`;
-
-if (/<\/script/i.test(devBridgeJs)) throw new Error('dev bridge contains an unsafe closing tag');
-writeFileSync(
-  resolve(androidRoot, 'dev/term.html'),
-  buildTerminalDocument({
-    xtermCss: assets.XTERM_CSS,
-    xtermJs: assets.XTERM_JS,
-    xtermFitJs: assets.XTERM_FIT_JS,
-    devBridgeJs,
-    terminalHelpersJs,
-  }),
   'utf8',
 );

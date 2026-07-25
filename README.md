@@ -90,10 +90,10 @@ in the QR. Android verifies that pin for both pairing HTTPS and terminal WSS.
 Plaintext remains available only for browser protocol development with
 `--tunnel local --allow-insecure-local`; the Android production flow refuses it.
 
-## Local development (CLI + Expo web)
+## Local development (CLI + Android)
 
-Day-to-day validation without Android Studio: run the Station CLI and the Expo
-web app in Chrome. Requires Node ≥ 20 and pnpm.
+Day-to-day validation: run the Station CLI and the Expo Android app on a device
+or emulator. Requires Node ≥ 20 and pnpm.
 
 ```bash
 pnpm install
@@ -118,21 +118,18 @@ gate.
 **Terminal A — Station**
 
 ```bash
-pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local --allow-insecure-local
+pnpm build && pnpm --filter mobily exec node dist/index.js --tunnel local
 ```
 
-**Terminal B — Expo web**
+**Terminal B — Android app**
 
 ```bash
-pnpm --filter mobily-android web
+pnpm --filter mobily-android android
 ```
 
-On the web pair screen, paste the `mobily://pair?…` payload or enter
-`ws://localhost:<port>` plus the pairing code. If the browser is blank, clear
-Metro cache with `pnpm --filter mobily-android exec expo start --web -c`.
-
-Browser protocol harness (no Expo UI): open the Smoke test URL the CLI prints
-(`cli/dev/smoke.html?…`).
+Scan the CLI QR from the app pair screen. For protocol-only browser smoke (no
+Android UI), run the Station with `--allow-insecure-local` and open the Smoke
+test URL the CLI prints (`cli/dev/smoke.html?…`).
 
 ## Architecture
 
