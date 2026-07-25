@@ -15,7 +15,6 @@ import { markConnected } from '@/auth/storage';
 import { WsClient, type ConnectionState, type ErrorKind } from './wsClient';
 import { RpcClient } from './rpcClient';
 import { ForegroundConnectionController } from '@/foreground/controller';
-import { allowInsecureStationTransport } from '@/dev/insecureTransport';
 import { SessionSnapshotChannel } from './sessionSnapshotChannel';
 
 type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
@@ -93,7 +92,6 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         deviceBindingId: nextPairing.deviceBindingId,
         keyAlias: nextPairing.keyAlias,
         certificatePin: nextPairing.certificatePin,
-        allowInsecureTransport: allowInsecureStationTransport(),
         protocolVersion: PROTOCOL_VERSION,
         onStateChange: (nextState, nextDetail) => {
           setState(nextState);
