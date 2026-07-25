@@ -14,7 +14,6 @@ import {
   type DevTunnelsRuntime,
   type PrepareDevTunnelsOptions,
 } from '../src/tunnel/devtunnels.js';
-import { LocalBackend } from '../src/tunnel/local.js';
 import {
   FileTemporaryTunnelOwnershipStore,
   type TemporaryTunnelOwnership,
@@ -433,15 +432,6 @@ describe('Temporary Tunnel startup recovery', () => {
     expect([...runtime.ownershipStore.records.values()]).toMatchObject([
       { tunnelId: 'stale-tunnel', state: 'deleting' },
     ]);
-
-    const local = new LocalBackend({
-      key: 'key',
-      cert: 'cert',
-      certificatePin: 'sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-    });
-    await expect(local.connect(4321)).resolves.toMatchObject({
-      url: expect.stringMatching(/^wss:/),
-    });
   });
 });
 

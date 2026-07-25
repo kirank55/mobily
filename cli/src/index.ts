@@ -9,7 +9,7 @@ import { Session } from './session.js';
 import { startServer, type Server } from './ws.js';
 import { AuthManager } from './auth.js';
 import { renderTerminalQr } from './qr.js';
-import { createTunnelBackend, isTunnelId, type TunnelId } from './tunnel/index.js';
+import { createTunnelBackend } from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
 import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { PAIRING_CODE_TTL_MS } from './auth.js';
@@ -44,8 +44,6 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h', default: false },
-      tunnel: { type: 'string' },
-      'allow-insecure-local': { type: 'boolean', default: false },
       'devtunnels-provider': { type: 'string' },
       verbose: { type: 'boolean', default: false },
       'list-bindings': { type: 'boolean', default: false },
@@ -107,18 +105,6 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
     return;
   }
 
-  const tunnelFlag = values.tunnel;
-  if (!tunnelFlag) {
-    console.error(
-      "Choose a tunnel: '--tunnel devtunnels' (hosted relay) or '--tunnel local' (pinned TLS on your LAN).",
-    );
-    process.exit(1);
-  }
-  if (!isTunnelId(tunnelFlag)) {
-    console.error(`Unknown --tunnel value: '${tunnelFlag}'. Use 'devtunnels' or 'local'.`);
-    process.exit(1);
-  }
-  const tunnelId: TunnelId = tunnelFlag;
   const providerFlag = values['devtunnels-provider'];
   let devtunnelsProvider: DevTunnelsProvider | undefined;
   if (providerFlag !== undefined) {
@@ -127,16 +113,12 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
         `Unknown Dev Tunnels provider: '${providerFlag}'. Use 'github' or 'microsoft'.`,
       );
     }
-    if (tunnelId !== 'devtunnels') {
-      throw new UserFacingError('--devtunnels-provider can only be used with --tunnel devtunnels.');
-    }
     devtunnelsProvider = providerFlag;
   }
   const auth = new AuthManager(os.hostname(), bindingRepository);
-  const tunnel = await createTunnelBackend(tunnelId, {
+  const tunnel = await createTunnelBackend({
     devtunnelsProvider,
     verbose: values.verbose,
-    allowInsecureLocal: values['allow-insecure-local'],
   });
   const cwd = process.cwd();
   const hasInteractiveWorkstation = Boolean(
@@ -170,7 +152,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
   });
   const connection: TunnelConnection = await tunnel.connect(server.port);
   lifecycle.setCleanup({
-    temporaryTunnel: tunnel.id === 'devtunnels',
+    temporaryTunnel: true,
     stopNewWork: () => {
       workstationPresence?.dispose();
       workstationPresence = null;

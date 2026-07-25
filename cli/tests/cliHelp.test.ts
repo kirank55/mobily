@@ -7,7 +7,7 @@ describe('formatCliHelp()', () => {
     expect(help).toContain('mobily v0.0.0');
     expect(help).toContain('mobily exit');
     expect(help).toContain('mobily qr hide');
-    expect(help).toContain('mobily --tunnel devtunnels');
+    expect(help).toContain('mobily                             Secure remote access (Dev Tunnels)');
     expect(help).toContain('mobily --list-bindings');
     expect(help.split('\n').length).toBeGreaterThan(5);
     expect(help.split('\n').length).toBeLessThan(30);

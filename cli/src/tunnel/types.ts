@@ -3,8 +3,7 @@
  *
  * Pluggable tunnel backend interface (ADR 0003). The CLI's WebSocket server
  * listens on a local port; a {@link TunnelBackend} makes that port reachable
- * from elsewhere — over a certificate-pinned LAN (`LocalBackend`)
- * or the public internet (`DevTunnelsBackend`).
+ * from elsewhere. The only shipped backend is {@link DevTunnelsBackend}.
  *
  * The interface is deliberately small. The caller:
  *   1. Binds the WS server to `backend.bindHost`.
@@ -17,10 +16,10 @@
 export interface TunnelConnection {
   /**
    * The URL clients should connect to.
-   * e.g. `ws://192.168.1.5:4321` (local) or `wss://<id>.devtunnels.ms` (remote).
+   * e.g. `wss://<id>.devtunnels.ms`.
    */
   readonly url: string;
-  /** Dynamic SHA-256 SPKI pin for a self-signed local Station certificate. */
+  /** Optional SHA-256 SPKI pin when a backend terminates TLS with a pinned cert. */
   readonly certificatePin?: string;
   /**
    * Tear down the tunnel. Safe to call multiple times. When shutdown is
@@ -32,19 +31,17 @@ export interface TunnelConnection {
 
 /**
  * A strategy for making the CLI's local WebSocket server reachable.
- * Implementations: {@link LocalBackend} (secure LAN),
- * `DevTunnelsBackend` (secure phone transport).
+ * Shipped implementation: `DevTunnelsBackend`.
  */
 export interface TunnelBackend {
-  /** Backend identifier (e.g. `'local'`, `'devtunnels'`). */
+  /** Backend identifier (e.g. `'devtunnels'`). */
   readonly id: string;
   /**
    * The host the local WebSocket server should bind to.
-   * `'0.0.0.0'` for local (reachable on LAN), `'localhost'` for remote
-   * (tunnel forwards to localhost).
+   * Dev Tunnels uses `'localhost'` (the helper forwards to that host).
    */
   readonly bindHost: string;
-  /** TLS identity used directly by a local Station server. */
+  /** Optional TLS identity when a backend terminates TLS on the Station itself. */
   readonly serverTls?: {
     readonly key: string;
     readonly cert: string;

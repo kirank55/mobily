@@ -2,8 +2,7 @@ export const site = {
   name: 'Mobily',
   description:
     'Never waste your time in a coding session. Control the live terminal on your PC from Android—through a secure tunnel, without routing your work through a Mobily-operated cloud.',
-  command: 'npx mobily --tunnel devtunnels',
-  localCommand: 'npx mobily --tunnel local',
+  command: 'npx mobily',
   urls: {
     repository: 'https://github.com/kirank55/mobily',
     releases: 'https://github.com/kirank55/mobily/releases/latest',
@@ -24,7 +23,7 @@ export const proofPoints = [
   { label: 'Live xterm', detail: 'Full key support', mark: '>_' },
   { label: 'Device Key', detail: 'Android Keystore', mark: 'KEY' },
   { label: 'Session', detail: 'tmux when available', mark: '∞' },
-  { label: 'Transport', detail: 'Local or remote', mark: '↗' },
+  { label: 'Transport', detail: 'Dev Tunnels', mark: '↗' },
 ] as const;
 
 export const workflow = [
@@ -113,8 +112,8 @@ export const features = [
   {
     mark: '↗',
     title: 'Transport',
-    description: 'Choose Dev Tunnels away from the desk or pinned TLS on the same Wi-Fi network.',
-    meta: 'LAN / REMOTE',
+    description: 'Reach your PC from anywhere through Microsoft Dev Tunnels.',
+    meta: 'DEV TUNNELS',
   },
 ] as const;
 
@@ -132,7 +131,7 @@ export const securityPoints = [
   {
     title: 'Mobily operates no relay.',
     description:
-      'Remote access currently uses Microsoft Dev Tunnels. Same-network access uses a PC certificate with a pinned SHA-256 identity.',
+      'Remote access uses Microsoft Dev Tunnels. Mobily does not operate a relay of its own.',
   },
 ] as const;
 
@@ -150,7 +149,7 @@ export const faqs = [
   {
     question: 'Does my terminal pass through a Mobily cloud?',
     answer:
-      'No Mobily-operated cloud exists. Remote access currently uses Microsoft Dev Tunnels; local access uses pinned TLS directly between devices on the same network.',
+      'No Mobily-operated cloud exists. Access currently uses Microsoft Dev Tunnels between your PC and phone.',
   },
   {
     question: 'What survives a disconnect?',
@@ -160,7 +159,7 @@ export const faqs = [
   {
     question: 'Do I need an account?',
     answer:
-      'First-time Dev Tunnels setup may ask you to sign in with GitHub or Microsoft. The same-Wi-Fi pinned-TLS mode is account-free.',
+      'First-time Dev Tunnels setup may ask you to sign in with GitHub or Microsoft. The phone never needs a Microsoft account.',
   },
   {
     question: 'How do Android updates work?',
