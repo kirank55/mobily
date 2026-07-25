@@ -70,6 +70,11 @@ export function hardenTerminalTextarea(term: {
   textarea?: { setAttribute(name: string, value: string): void } | null;
   element?: { querySelector(selectors: string): { setAttribute(name: string, value: string): void } | null } | null;
 } | null): void;
+export function focusTerminalInput(term: {
+  focus?(): void;
+  textarea?: { focus(): void } | null;
+  element?: { querySelector(selectors: string): { focus(): void } | null } | null;
+} | null): void;
 export function snapshotToAnsi(snapshot: SessionSnapshotFrame): string | null;
 export function scrollbackAndSnapshotToAnsi(
   scrollback: string,

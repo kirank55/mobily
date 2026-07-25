@@ -24,7 +24,11 @@ export class LocalBackend implements TunnelBackend {
   connect(localPort: number): Promise<TunnelConnection> {
     // Insecure plaintext is browser/smoke-only (Android refuses ws://). Advertise
     // localhost so Expo web and smoke.html on the same machine can connect.
-    const host = this.serverTls ? (primaryLanIp() ?? 'localhost') : 'localhost';
+    // MOBILY_LOCAL_ADVERTISE_HOST helps WSL/USB setups where the WSL eth0 IP is
+    // not reachable from the phone (advertise the Windows LAN IP + portproxy).
+    const host = this.serverTls
+      ? (process.env.MOBILY_LOCAL_ADVERTISE_HOST ?? primaryLanIp() ?? 'localhost')
+      : 'localhost';
     return Promise.resolve({
       url: `${this.serverTls ? 'wss' : 'ws'}://${host}:${localPort}`,
       certificatePin: this.serverTls?.certificatePin,

@@ -1,5 +1,7 @@
-ps aux | grep -E 'playwright|chromium|node' | grep -v grep | head -40
-ls -la /home/kiran/code-wsl/mobily/android/test-results 2>/dev/null | head -20
-ls -la /tmp/playwright* 2>/dev/null | head -10
+#!/usr/bin/env bash
+ps -ef | grep -E 'playwright|run-focus|chromium' | grep -v grep | head -30
+echo ---
+ls /home/kiran/code-wsl/mobily/android/node_modules/.bin/playwright 2>&1 | head
+echo ---
+# See if npx playwright is waiting for something
 pgrep -af playwright | head -20
-pgrep -af 'vitest|chromium|chrome' | head -20
