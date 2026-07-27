@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Session } from './session.js';
 import { startServer, type Server } from './ws.js';
 import { AuthManager, PAIRING_CODE_TTL_MS } from './auth.js';
+import { startLineLoading } from './loading.js';
 import { renderTerminalQr } from './qr.js';
 import { createTunnelBackend } from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
@@ -63,38 +64,53 @@ export async function runStation(
     httpRequestHandler: (req, res) => auth.handleHttpRequest(req, res),
     tls: tunnel.serverTls,
   });
-  const connection: TunnelConnection = await tunnel.connect(server.port);
-  lifecycle.setCleanup({
-    temporaryTunnel: true,
-    stopNewWork: () => {
-      workstationPresence?.dispose();
-      workstationPresence = null;
-      sessionExitSubscription?.dispose();
-      sessionExitSubscription = null;
-      session.dispose();
-      serverClose ??= server.close();
-    },
-    run: async (signal) => {
-      session.dispose();
-      serverClose ??= server.close();
-      await serverClose;
-      await connection.disconnect(signal);
-    },
-  });
-  auth.setTunnelUrl(connection.url, connection.certificatePin);
+  const stopLoading = startLineLoading('Preparing pairing QR…');
+  let connection!: TunnelConnection;
+  let pairingCode!: string;
+  let renderedQr = '';
+  let qrError: unknown;
+  try {
+    connection = await tunnel.connect(server.port);
+    lifecycle.setCleanup({
+      temporaryTunnel: true,
+      stopNewWork: () => {
+        workstationPresence?.dispose();
+        workstationPresence = null;
+        sessionExitSubscription?.dispose();
+        sessionExitSubscription = null;
+        session.dispose();
+        serverClose ??= server.close();
+      },
+      run: async (signal) => {
+        session.dispose();
+        serverClose ??= server.close();
+        await serverClose;
+        await connection.disconnect(signal);
+      },
+    });
+    auth.setTunnelUrl(connection.url, connection.certificatePin);
 
-  const pairingCode = auth.generatePairingCode();
-  const pairingPayload = encodePairingPayload({
-    endpoint: connection.url,
-    code: pairingCode,
-    expiresAt: Date.now() + PAIRING_CODE_TTL_MS,
-    protocolVersion: PROTOCOL_VERSION,
-    certificatePin: connection.certificatePin,
-  });
+    pairingCode = auth.generatePairingCode();
+    const pairingPayload = encodePairingPayload({
+      endpoint: connection.url,
+      code: pairingCode,
+      expiresAt: Date.now() + PAIRING_CODE_TTL_MS,
+      protocolVersion: PROTOCOL_VERSION,
+      certificatePin: connection.certificatePin,
+    });
 
-  sessionExitSubscription = session.onExit(() => {
-    void lifecycle.requestShutdown('Session exited');
-  });
+    sessionExitSubscription = session.onExit(() => {
+      void lifecycle.requestShutdown('Session exited');
+    });
+
+    try {
+      renderedQr = await renderTerminalQr(pairingPayload);
+    } catch (err) {
+      qrError = err;
+    }
+  } finally {
+    stopLoading();
+  }
 
   const presencePlan = planWorkstationPresence(sessionBackend);
   console.log(`mobily v${version}`);
@@ -106,9 +122,7 @@ export async function runStation(
   console.log();
   console.log('  Scan this QR with the Mobily app to pair your device:');
   console.log();
-  let renderedQr = '';
-  try {
-    renderedQr = await renderTerminalQr(pairingPayload);
+  if (renderedQr) {
     const indent = '  ';
     console.log(
       renderedQr
@@ -116,10 +130,10 @@ export async function runStation(
         .map((line) => `${indent}${line}`)
         .join('\n'),
     );
-  } catch (err) {
+  } else {
     console.error(
       `  (QR unavailable — enter the code below) ${
-        err instanceof Error ? err.message : String(err)
+        qrError instanceof Error ? qrError.message : String(qrError)
       }`,
     );
   }
