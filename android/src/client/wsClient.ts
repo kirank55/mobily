@@ -4,7 +4,7 @@
  * WebSocket client with exponential backoff reconnect, Device Key
  * challenge-response auth, and hello/hello-ack version negotiation.
  *
- * Handshake sequence (mirrors cli/dev/smoke.html):
+ * Handshake sequence:
  *   hello → hello-ack → auth-challenge → auth-response → PTY stream
  *
  * Error classification:

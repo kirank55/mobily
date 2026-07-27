@@ -9,14 +9,14 @@ export interface SizeClaimant {
 
 export interface SessionSizeHost {
   readonly ownershipLeaseMs: number;
-  get sizeOwner(): WebSocket | undefined;
-  set sizeOwner(value: WebSocket | undefined);
+  getSizeOwner(): WebSocket | undefined;
+  setSizeOwner(value: WebSocket | undefined): void;
   readonly sizeClaimants: Map<WebSocket, SizeClaimant>;
   nextClaimSequence(): number;
-  get currentCols(): number;
-  get currentRows(): number;
-  get stationCols(): number;
-  get stationRows(): number;
+  getCurrentCols(): number;
+  getCurrentRows(): number;
+  getStationCols(): number;
+  getStationRows(): number;
   sendTo(
     ws: WebSocket,
     frame: {
@@ -45,7 +45,7 @@ export class SessionSizeOwnership {
       sequence: this.host.nextClaimSequence(),
     };
     this.host.sizeClaimants.set(ws, claimant);
-    this.host.sizeOwner = ws;
+    this.host.setSizeOwner(ws);
     this.renewSizeOwnershipLease(ws, claimant);
     this.broadcastSizeOwnershipState();
   }
@@ -62,19 +62,19 @@ export class SessionSizeOwnership {
     if (!claimant) return;
     clearTimeout(claimant.leaseTimer);
     this.host.sizeClaimants.delete(ws);
-    if (this.host.sizeOwner !== ws) return;
+    if (this.host.getSizeOwner() !== ws) return;
 
-    this.host.sizeOwner = this.mostRecentSizeClaimant();
-    if (this.host.sizeOwner) {
+    this.host.setSizeOwner(this.mostRecentSizeClaimant());
+    if (this.host.getSizeOwner()) {
       this.broadcastSizeOwnershipState();
       return;
     }
     try {
       if (
-        this.host.currentCols !== this.host.stationCols ||
-        this.host.currentRows !== this.host.stationRows
+        this.host.getCurrentCols() !== this.host.getStationCols() ||
+        this.host.getCurrentRows() !== this.host.getStationRows()
       ) {
-        this.host.applyResize(this.host.stationCols, this.host.stationRows);
+        this.host.applyResize(this.host.getStationCols(), this.host.getStationRows());
       }
     } catch (error) {
       this.host.broadcast({
@@ -87,10 +87,11 @@ export class SessionSizeOwnership {
   }
 
   sendSizeOwnershipState(ws: WebSocket): void {
+    const sizeOwner = this.host.getSizeOwner();
     this.host.sendTo(ws, {
       type: 'terminal-size-owner',
-      owner: this.host.sizeOwner ? 'android' : 'station',
-      ownedByRequester: this.host.sizeOwner === ws,
+      owner: sizeOwner ? 'android' : 'station',
+      ownedByRequester: sizeOwner === ws,
     });
   }
 

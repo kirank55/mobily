@@ -42,8 +42,7 @@ flags: `--devtunnels-provider github|microsoft`, `--verbose`, `--session <name>`
 pnpm --filter mobily-android android
 ```
 
-Scan the CLI QR from the app pair screen. For protocol-only browser smoke (no
-Android UI), open the Smoke test URL the CLI prints (`cli/dev/smoke.html?…`).
+Scan the CLI QR from the app pair screen.
 
 ## Publishing the CLI
 

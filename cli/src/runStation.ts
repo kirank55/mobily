@@ -1,7 +1,4 @@
 import * as os from 'node:os';
-import * as path from 'node:path';
-import { existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Session } from './session.js';
 import { startServer, type Server } from './ws.js';
@@ -155,20 +152,6 @@ export async function runStation(
     'mobily qr hide   Hide this panel',
     'mobily qr clear  Hide it and clear the whole terminal',
   ].join('\n');
-
-  const smokePath = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '..',
-    'dev',
-    'smoke.html',
-  );
-  if (existsSync(smokePath) && !tunnel.serverTls) {
-    console.log(
-      `Smoke test:   ${pathToFileURL(smokePath).href}?port=${server.port}&endpoint=${encodeURIComponent(connection.url)}`,
-    );
-  } else if (!tunnel.serverTls) {
-    console.log(`Smoke test:   open cli/dev/smoke.html?port=${server.port}`);
-  }
 
   workstationPresence = beginWorkstationPresence({
     session,

@@ -14,7 +14,7 @@
  *   5. CLI verifies the Device Key signature → attaches the client to the PTY
  *      (output streaming + input forwarding) or closes with an error.
  *
- * When no AuthManager is provided (e.g. dev smoke testing), the handshake is
+ * When no AuthManager is provided (e.g. unit tests), the handshake is
  * skipped and the client is attached immediately (Phase 1 behaviour).
  *
  * Terminal process behavior is provided by a SessionBackend. A new WebSocket
@@ -165,48 +165,37 @@ export class Session {
         }),
       onAlert: (message) => this.broadcast({ type: 'alert', message }),
     });
-    const session = this;
     if (auth) {
       this.handshake = new SessionHandshake({
         auth,
         handshakeTimeoutMs: this.handshakeTimeoutMs,
-        sendTo: (ws, frame) => session.sendTo(ws, frame),
-        attachAuthenticated: (ws) => session.attachAuthenticated(ws),
+        sendTo: (ws, frame) => this.sendTo(ws, frame),
+        attachAuthenticated: (ws) => this.attachAuthenticated(ws),
       });
     }
     this.scrollback = new SessionScrollback({
-      sendTo: (ws, frame) => session.sendTo(ws, frame),
-      getPendingScrollback: (ws) => session.pendingScrollback.get(ws),
-      deletePendingScrollback: (ws) => session.pendingScrollback.delete(ws),
-      nextTransferId: () => `history-${++session.scrollbackTransferSequence}`,
+      sendTo: (ws, frame) => this.sendTo(ws, frame),
+      getPendingScrollback: (ws) => this.pendingScrollback.get(ws),
+      deletePendingScrollback: (ws) => this.pendingScrollback.delete(ws),
+      nextTransferId: () => `history-${++this.scrollbackTransferSequence}`,
     });
     this.sizeOwnership = new SessionSizeOwnership({
       ownershipLeaseMs: this.ownershipLeaseMs,
-      get sizeOwner() {
-        return session.sizeOwner;
-      },
-      set sizeOwner(value) {
-        session.sizeOwner = value;
+      getSizeOwner: () => this.sizeOwner,
+      setSizeOwner: (value) => {
+        this.sizeOwner = value;
       },
       sizeClaimants: this.sizeClaimants,
-      nextClaimSequence: () => ++session.sizeClaimSequence,
-      get currentCols() {
-        return session.currentCols;
-      },
-      get currentRows() {
-        return session.currentRows;
-      },
-      get stationCols() {
-        return session.stationCols;
-      },
-      get stationRows() {
-        return session.stationRows;
-      },
-      sendTo: (ws, frame) => session.sendTo(ws, frame),
-      broadcast: (frame) => session.broadcast(frame),
-      applyResize: (cols, rows) => session.applyResize(cols, rows),
+      nextClaimSequence: () => ++this.sizeClaimSequence,
+      getCurrentCols: () => this.currentCols,
+      getCurrentRows: () => this.currentRows,
+      getStationCols: () => this.stationCols,
+      getStationRows: () => this.stationRows,
+      sendTo: (ws, frame) => this.sendTo(ws, frame),
+      broadcast: (frame) => this.broadcast(frame),
+      applyResize: (cols, rows) => this.applyResize(cols, rows),
       forEachViewer: (callback) => {
-        for (const viewer of session.pendingLatencyTags.keys()) callback(viewer);
+        for (const viewer of this.pendingLatencyTags.keys()) callback(viewer);
       },
     });
 
