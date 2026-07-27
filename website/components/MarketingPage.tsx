@@ -287,7 +287,7 @@ export function MarketingPage() {
               target="_blank"
               rel="noreferrer"
             >
-              GET APK ↓
+              VIEW RELEASES ↓
             </a>
           </div>
           <button
@@ -332,7 +332,7 @@ export function MarketingPage() {
               rel="noreferrer"
               onClick={() => closeMenu()}
             >
-              GET ANDROID APK ↓
+              VIEW RELEASES ↓
             </a>
           </nav>
         </div>
@@ -359,11 +359,11 @@ export function MarketingPage() {
                 <CommandBlock command={site.command} compact />
                 <a
                   className="button button--inverse"
-                  href={site.urls.releases}
+                  href={site.urls.readme}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  DOWNLOAD ANDROID APK &darr;
+                  BUILD ANDROID ↗
                 </a>
               </div>
             </div>
@@ -688,7 +688,7 @@ export function MarketingPage() {
                   <span className="section-title-line">One scan.</span>
                 </>
               }
-              body="Start the CLI on your PC, then install the signed Android beta. The first Dev Tunnels run guides authentication and setup."
+              body="Start the CLI on your PC, then build the Expo Android app from this repository. The first Dev Tunnels run guides authentication and setup."
             />
             <div className="setup-console">
               <div className="setup-console-title">
@@ -708,13 +708,16 @@ export function MarketingPage() {
                   <strong>INSTALL ON ANDROID</strong>
                   <a
                     className="button button--paper"
-                    href={site.urls.releases}
+                    href={site.urls.readme}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    DOWNLOAD LATEST APK ↓
+                    BUILD FROM SOURCE ↗
                   </a>
-                  <small>Signed beta builds are published through GitHub Releases.</small>
+                  <small>
+                    Run <code>pnpm --filter mobily-android android</code>. Releases publish the CLI
+                    to npm only for now.
+                  </small>
                 </div>
               </div>
             </div>

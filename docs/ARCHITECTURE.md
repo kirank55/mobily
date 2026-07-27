@@ -25,14 +25,14 @@ mobily/
 │       ├── tunnel/          # TunnelBackend interface; Dev Tunnels shipped
 │       └── alerts/          # session phase / alert heuristics
 ├── android/                 # Expo Android app
-│   └── src/
-│       ├── app/             # Expo Router thin routes
-│       ├── stations/        # paired Stations list
-│       ├── scanner/         # QR pairing
-│       ├── terminal/        # xterm.js Session UI
-│       ├── git/             # native Git screens
-│       ├── auth/ / client/ / foreground/ / ui/
-│       └── modules/         # Expo native modules (Kotlin)
+│   ├── src/
+│   │   ├── app/             # Expo Router thin routes
+│   │   ├── stations/        # paired Stations list
+│   │   ├── scanner/         # QR pairing
+│   │   ├── terminal/        # xterm.js Session UI
+│   │   ├── git/             # native Git screens
+│   │   └── auth/ / client/ / foreground/ / ui/
+│   └── modules/             # Expo native modules (Kotlin)
 ├── shared/                  # @mobily/shared protocol types (bundled into CLI)
 ├── website/                 # Marketing site
 ├── docs/adr/                # Architectural decision records

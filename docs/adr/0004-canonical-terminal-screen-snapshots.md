@@ -30,8 +30,9 @@ The snapshot contains the exact visible rows and cells, Unicode cell widths,
 foreground and background colors, text attributes, active normal/alternate
 screen, cursor position, cursor visibility and cursor style. Snapshot frames
 are bounded and validated by the shared protocol. This contract advances the
-wire protocol to version 6; older peers fail version negotiation rather than
-silently reverting to transcript replay.
+wire protocol to version 6 at the time of this decision (current
+`PROTOCOL_VERSION` is 7 in `shared/src/protocol.ts`); older peers fail version
+negotiation rather than silently reverting to transcript replay.
 
 Snapshot capture and terminal parsing use one ordered queue. Output received
 before the capture is represented by the snapshot. Output received after the

@@ -41,5 +41,5 @@ A Tunnel created and recorded by Mobily for the lifetime of a CLI run. Mobily re
 _Avoid_: Dev Tunnel, orphaned tunnel
 
 **Pairing Code**:
-A short alphanumeric code (6-8 chars) displayed as a terminal QR code during first-time setup. The phone scans the QR, sends the code to the CLI's HTTPS pairing endpoint, and receives the full connection payload (tunnel URL, key exchange) in response. The code is single-use.
+An 8-character alphanumeric code displayed as a terminal QR code during first-time setup. The phone scans the QR, sends the code to the CLI's HTTPS pairing endpoint, and receives the full connection payload (tunnel URL, key exchange) in response. The code is single-use.
 _Avoid_: Pairing token (the token is exchanged over HTTPS, not in the QR)

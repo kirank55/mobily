@@ -14,6 +14,10 @@ pnpm build
 
 ## Supported gate before manual testing
 
+CI (`.github/workflows/ci.yml`) runs `pnpm typecheck`, `pnpm lint`, `pnpm build`,
+and `pnpm test` (after Playwright Chromium install for Android). Prefer that full
+gate when you can. For a faster local preflight before manual device testing:
+
 ```bash
 pnpm typecheck
 pnpm --filter mobily-android lint
@@ -23,9 +27,7 @@ pnpm --filter mobily test
 pnpm --filter mobily-android exec vitest run
 ```
 
-Full `pnpm lint` may fail on unrelated CLI fixtures; full `pnpm test` also runs
-Playwright under android and can hang — use `vitest run` for the android unit
-gate.
+Use `vitest run` for the Android unit gate when you want to skip Playwright.
 
 ## Terminal A — Station
 
@@ -47,8 +49,8 @@ Scan the CLI QR from the app pair screen.
 ## Publishing the CLI
 
 Tagged releases (`v*`) run [`.github/workflows/release.yml`](../.github/workflows/release.yml),
-which builds the CLI, publishes `mobily` to npm, and creates a GitHub Release.
-Requires the `NPM_TOKEN` repository secret.
+which builds the CLI, publishes `mobily` to npm, and creates a notes-only GitHub
+Release (no Android APK upload). Requires the `NPM_TOKEN` repository secret.
 
 Local dry-run (or `scripts/verify-cli-publish.sh`):
 

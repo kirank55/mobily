@@ -164,6 +164,6 @@ export const faqs = [
   {
     question: 'How do Android updates work?',
     answer:
-      'Signed beta APKs are published through GitHub Releases. Install the latest build over the existing app when an update is available.',
+      'Build the Expo app from this repository (`pnpm --filter mobily-android android` or EAS). Tagged releases publish the CLI to npm only; no signed APK artifact is published yet.',
   },
 ] as const;

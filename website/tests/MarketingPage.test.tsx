@@ -66,7 +66,7 @@ describe('MarketingPage', () => {
     expect(markup).toContain('Full Control.');
     expect(markup).toContain('Control the live terminal on your PC from Android securely.');
     expect(markup).not.toContain('START A SESSION');
-    expect(markup).toContain('DOWNLOAD ANDROID APK');
+    expect(markup).toContain('BUILD ANDROID');
     expect(markup).toContain('hero-data-path');
     expect(markup).toContain('hero-data-track--reverse');
     expect(markup).toContain('DEVICE LINK ACTIVE');
@@ -90,6 +90,9 @@ describe('MarketingPage', () => {
     expect(markup).toContain(`href="${site.urls.releases}"`);
     expect(markup).toContain(`href="${site.urls.security}"`);
     expect(markup).toContain(`href="${site.urls.readme}"`);
+    expect(markup).toContain('BUILD FROM SOURCE');
+    expect(markup).not.toContain('DOWNLOAD ANDROID APK');
+    expect(markup).not.toContain('Signed beta builds are published through GitHub Releases.');
   });
 
   it('ships an accessible initial mobile-menu state', () => {

@@ -16,35 +16,56 @@ Pair once with a Device Key, answer prompts from the couch, and keep Git close w
 
 | Pairing | Live terminal | Stations | Git |
 | --- | --- | --- | --- |
-| ![Pairing](docs/screenshots/pairing.webp) | ![Terminal](docs/screenshots/terminal.webp) | ![Stations](docs/screenshots/stations.webp) | ![Git](docs/screenshots/git.webp) |
+| ![Pairing](website/public/product/pairing.webp) | ![Terminal](website/public/product/terminal.webp) | ![Stations](website/public/product/stations.webp) | ![Git](website/public/product/git.webp) |
 
 ## Why Mobily exists
 
-You kick off a long coding-agent session. You step away. You come back and discover it has been blocked on a tool approval or a prompt since minute two.
+You start a long coding-agent session. You step away. You come back and find it has been blocked on a tool approval since minute two.
 
-That human-in-the-loop moment does not need a desk. **Mobily streams your workstation terminal to your phone** so you can read context, type a reply, and keep going.
+That moment does not need a desk. **Mobily puts the same live workstation terminal on your phone** — read the context, type the reply, keep going.
 
-There is no Mobily-operated terminal relay. Access uses Microsoft Dev Tunnels. Pairing uses a Device Key in Android Keystore — the Station stores only the public key.
+No Mobily-operated relay sits in the middle. Reachability is Microsoft Dev Tunnels. Trust is a Device Key in Android Keystore — the Station keeps only the public key.
 
-## Getting started
+## The process
 
-### 1. Start the Station
+Three moves. One Session.
+
+### 1. Wake the Station
+
+On the machine where your code and terminal live:
 
 ```bash
 npx mobily@latest
 ```
 
-Requires [Node.js 20+](https://nodejs.org/). First-time setup may ask you to install and sign in with Microsoft’s `devtunnel` helper (GitHub or Microsoft account). The phone never needs that account.
+Needs [Node.js 20+](https://nodejs.org/). First run may install and sign you into Microsoft’s `devtunnel` helper (GitHub or Microsoft). The phone never needs that account.
 
-### 2. Pair your phone
+The CLI opens a Temporary Tunnel, prints a QR, and holds a Pairing Code. Your desk terminal stays the Station — the phone will join the same Session, not a copy.
 
-Open the Mobily Android app, scan the QR the CLI prints (or enter the pairing code). Mobily creates a Device Key in Android Keystore and binds the public key on the Station.
+### 2. Bind the phone once
 
-### 3. Use the session
+Build and run the Expo Android app from this repo:
 
-Your phone shows the live terminal. When tmux is available, the Session persists across reconnects; otherwise a bare PTY mirrors Android while the CLI stays alive. Use native Git screens for diffs, staging, branches, and commits. Background alerts keep Working / Waiting / Finished status visible.
+```bash
+pnpm --filter mobily-android android
+```
 
-## How it works
+Details: [docs/development.md](docs/development.md).
+
+Scan the QR (or type the 8-character code). Mobily mints a Device Key in Android Keystore and sends **only the public key** to the Station. After that, reconnects are signed challenges — no re-scan every time you leave the couch.
+
+### 3. Stay in the loop
+
+Your phone paints the live xterm.js grid: same Session Snapshot, same input path, Ctrl / Alt / Esc / arrows when you need them.
+
+- **Waiting on a prompt?** Answer it from Android.
+- **Need Git for a small moment?** Diff, stage, branch, commit on phone-sized screens.
+- **Step away again?** Foreground alerts surface Working / Waiting / Finished so you know when to look back.
+- **Several machines?** Keep them as Stations and switch without pairing again.
+
+With `tmux`, the Session survives reconnects and CLI restarts. Without it, a bare PTY stays alive while the CLI process does.
+
+## How the path works
 
 ```
 Your machine                                      Your phone
@@ -56,7 +77,12 @@ Your machine                                      Your phone
 └─────────────────────────────────┘               └──────────────────────────┘
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the package map.
+1. **Station** runs the PTY (tmux when available) and serves the wire protocol.
+2. **Dev Tunnels** makes that WebSocket reachable; Mobily does not host a terminal cloud.
+3. **Device Key** proves the phone on every reconnect before any bytes or input flow.
+4. **Session Snapshot** lands first so Android shows the real screen, then live output follows.
+
+Package map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Core features
 
@@ -129,7 +155,7 @@ Normal CLI shutdown detaches Mobily; it does not kill a tmux Session. Use `--kil
 
 | Platform | Status |
 | --- | --- |
-| **Android** | Expo app in this repo — build with EAS / local Expo; beta APKs via [GitHub Releases](https://github.com/kirank55/mobily/releases) when published |
+| **Android** | Expo app in this repo — build and run locally with Expo / EAS (`pnpm --filter mobily-android android`; see [docs/development.md](docs/development.md)). Tagged releases publish the CLI to npm only; no APK artifact yet. |
 | **iOS** | Not available yet |
 
 ## Documentation

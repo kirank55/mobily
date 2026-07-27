@@ -10,7 +10,7 @@ const structuredData = {
   description: site.description,
   codeRepository: site.urls.repository,
   license: site.urls.license,
-  downloadUrl: site.urls.releases,
+  downloadUrl: "https://www.npmjs.com/package/mobily",
   isAccessibleForFree: true,
 };
 
