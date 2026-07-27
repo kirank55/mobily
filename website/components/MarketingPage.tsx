@@ -469,7 +469,7 @@ export function MarketingPage() {
           </div>
         </section>
 
-        <section className="proof-strip" aria-label="Mobily at a glance">
+        {/* <section className="proof-strip" aria-label="Mobily at a glance">
           <div className="container proof-grid">
             {proofPoints.map((point, index) => (
               <div className="proof-point" key={point.label}>
@@ -482,25 +482,10 @@ export function MarketingPage() {
               </div>
             ))}
           </div>
-        </section>
+        </section> */}
 
         <section className="workflow-section" id="how-it-works">
           <div className="container">
-            <SectionHeading
-              className="section-heading--workflow"
-              index="01"
-              label="WORKFLOW"
-              title={
-                <>
-                  <span className="section-title-line section-title-line--ink">From PC to</span>
-                  <span className="section-title-line section-title-line--ink">pocket.</span>
-                  <span className="section-title-line">Same Session.</span>
-                  <span className="section-title-line">Same Terminal.</span>
-                  <span className="section-title-line">Full Control.</span>
-                </>
-              }
-              body="Pair once, keep the terminal visible, move between PCs, and close the small loops that would otherwise send you back to the desk."
-            />
             <div className="workflow-layout">
               <div className="workflow-stage" aria-live="polite">
                 <div className="workflow-stage-meta">
@@ -561,35 +546,51 @@ export function MarketingPage() {
           </div>
         </section>
 
-        <section className="features-section" id="features">
-          <div className="container">
+
+        <section className="setup-section" id="get-started">
+          <div className="container setup-grid">
             <SectionHeading
-              index="02"
-              label="CONTROL SURFACES"
+              index="04"
+              label="START"
+              inverse
               title={
                 <>
-                  <span className="section-title-line section-title-line--ink">
-                    Built for the moments
-                  </span>
-                  <span className="section-title-line">that unblock work.</span>
+                  <span className="section-title-line section-title-line--ink">One command.</span>
+                  <span className="section-title-line">One scan.</span>
                 </>
               }
-              body="Mobily does not shrink a desktop dashboard into a phone. It gives consequential terminal and Git actions a direct mobile surface."
+              body="Start the CLI on your PC, then build the Expo Android app from this repository. The first Dev Tunnels run guides authentication and setup."
             />
-            <div className="feature-grid">
-              {features.map((feature, index) => (
-                <article className="feature-card" key={feature.title} data-reveal>
-                  <div className="feature-meta">
-                    <span>0{index + 1}</span>
-                    <span>{feature.meta}</span>
-                  </div>
-                  <span className="feature-mark" aria-hidden="true">
-                    {feature.mark}
-                  </span>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.description}</p>
-                </article>
-              ))}
+            <div className="setup-console">
+              <div className="setup-console-title">
+                <span>QUICK START</span>
+                <span>NODE.JS 20+</span>
+              </div>
+              <div className="setup-step">
+                <span>01</span>
+                <div>
+                  <strong>RUN ON YOUR PC</strong>
+                  <CommandBlock command={site.command} />
+                </div>
+              </div>
+              <div className="setup-step">
+                <span>02</span>
+                <div>
+                  <strong>INSTALL ON ANDROID</strong>
+                  <a
+                    className="button button--paper"
+                    href={site.urls.readme}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    BUILD FROM SOURCE ↗
+                  </a>
+                  <small>
+                    Run <code>pnpm --filter mobily-android android</code>. Releases publish the CLI
+                    to npm only for now.
+                  </small>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -661,68 +662,21 @@ export function MarketingPage() {
                   <span>FRESH CHALLENGE / EVERY RECONNECT</span>
                 </div>
               </div>
-              <div className="security-proofs">
-                {securityPoints.map((point, index) => (
-                  <article key={point.title}>
-                    <span>0{index + 1}</span>
-                    <div>
-                      <h3>{point.title}</h3>
-                      <p>{point.description}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
+            </div>
+            <div className="security-proofs" data-reveal>
+              {securityPoints.map((point, index) => (
+                <article key={point.title}>
+                  <span>0{index + 1}</span>
+                  <div>
+                    <h3>{point.title}</h3>
+                    <p>{point.description}</p>
+                  </div>
+                </article>
+              ))}
             </div>
           </div>
         </section>
 
-        <section className="setup-section" id="get-started">
-          <div className="container setup-grid">
-            <SectionHeading
-              index="04"
-              label="START"
-              inverse
-              title={
-                <>
-                  <span className="section-title-line section-title-line--ink">One command.</span>
-                  <span className="section-title-line">One scan.</span>
-                </>
-              }
-              body="Start the CLI on your PC, then build the Expo Android app from this repository. The first Dev Tunnels run guides authentication and setup."
-            />
-            <div className="setup-console">
-              <div className="setup-console-title">
-                <span>QUICK START</span>
-                <span>NODE.JS 20+</span>
-              </div>
-              <div className="setup-step">
-                <span>01</span>
-                <div>
-                  <strong>RUN ON YOUR PC</strong>
-                  <CommandBlock command={site.command} />
-                </div>
-              </div>
-              <div className="setup-step">
-                <span>02</span>
-                <div>
-                  <strong>INSTALL ON ANDROID</strong>
-                  <a
-                    className="button button--paper"
-                    href={site.urls.readme}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    BUILD FROM SOURCE ↗
-                  </a>
-                  <small>
-                    Run <code>pnpm --filter mobily-android android</code>. Releases publish the CLI
-                    to npm only for now.
-                  </small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
         <section className="faq-section" id="faq">
           <div className="container faq-grid">

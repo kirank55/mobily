@@ -1,3 +1,5 @@
+<div align="center">
+
 # Mobily
 
 ### Your desktop terminal, in your pocket.
@@ -13,6 +15,8 @@ Pair once with a Device Key, answer prompts from the couch, and keep Git close w
 [![npm](https://img.shields.io/npm/v/mobily.svg)](https://www.npmjs.com/package/mobily)
 
 [Releases](https://github.com/kirank55/mobily/releases/latest) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+</div>
 
 | Pairing | Live terminal | Stations | Git |
 | --- | --- | --- | --- |

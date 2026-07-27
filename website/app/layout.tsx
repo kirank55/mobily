@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { Geist } from 'next/font/google';
+// @ts-expect-error - no built-in TS declarations for this package
 import '@fontsource-variable/jetbrains-mono';
 import './globals.css';
 import { site } from '@/content';
@@ -39,8 +40,8 @@ export async function generateMetadata(): Promise<Metadata> {
       'Git Android',
       'open source terminal',
     ],
-    authors: [{ name: 'Mobily contributors', url: site.urls.repository }],
-    creator: 'Mobily contributors',
+    authors: [{ name: 'Mobily', url: site.urls.repository }],
+    creator: 'Mobily',
     icons: {
       icon: '/favicon.png',
       shortcut: '/favicon.png',
