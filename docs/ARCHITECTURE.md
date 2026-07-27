@@ -42,13 +42,17 @@ mobily/
 ## Runtime shape
 
 ```
-Your machine                                      Your phone
-┌─────────────────────────────────┐               ┌──────────────────────────┐
-│  mobily Station (Node)          │  WSS / tunnel │  Mobily Android          │
-│  PTY / tmux Session             │◄─────────────►│  xterm.js WebView        │
-│  Device Key auth + Git RPC      │  Dev Tunnels  │  Device Key (Keystore)   │
-│  Microsoft Dev Tunnels          │               │  Stations / Git / alerts │
-└─────────────────────────────────┘               └──────────────────────────┘
+  Your machine               Reachability              Your phone
+┌──────────────────────┐   ┌────────────────┐   ┌──────────────────────┐
+│ Station (Node CLI)   │   │                │   │ Mobily Android       │
+│                      │WSS│   Microsoft    │WSS│                      │
+│ · PTY / tmux Session │◄─►│  Dev Tunnels   │◄─►│ · xterm.js WebView   │
+│ · Device Key auth    │   │                │   │ · Device Key         │
+│ · Git RPC            │   │                │   │ · Stations / Git     │
+└──────────┬───────────┘   └────────────────┘   └──────────┬───────────┘
+           │                                                │
+           └───── same Session · snapshot, then live ───────┘
+                 Device Key proves the phone on reconnect
 ```
 
 Domain vocabulary lives in [`CONTEXT.md`](../CONTEXT.md). Decisions are recorded
