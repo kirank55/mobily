@@ -1,9 +1,17 @@
 ﻿import { spawn as defaultSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { MOBILY_CLI_PID_ENV, type SessionBackend } from '../sessionBackend/types.js';
 import { defaultSessionRuntime, type SessionRuntime } from '../sessionBackend/runtime.js';
-import { clearShellPane, printShellPaneLines, resizePairingPanelLines } from '../sessionBackend/tmux.js';
+import {
+  clearShellPane,
+  printShellPaneLines,
+  resizePairingPanelLines,
+} from '../sessionBackend/tmux.js';
 import type { IDisposable } from '../pty.js';
 import type { WorkstationInput, WorkstationOutput } from './embedded.js';
+import {
+  CONNECTED_WORKSTATION_LINES,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+} from './connectedBanner.js';
 
 export type SpawnFn = (
   file: string,
@@ -11,19 +19,14 @@ export type SpawnFn = (
   options: SpawnOptions,
 ) => ChildProcess;
 
-/** Printed into the shell after phone auth; dismissed by a normal shell `clear`. */
-export const CONNECTED_SUCCESS_LINE = 'Connected Successfully';
-
-/** Help/exit hint shown with the success line. */
-export const CONNECTED_HELP_LINE = ["'mobily -h' for help ·", "'mobily exit' to exit"].join(' ');
-
-/** Success lines rendered as a dismissible shell banner after phone auth. */
-export const CONNECTED_WORKSTATION_LINES = [CONNECTED_SUCCESS_LINE, CONNECTED_HELP_LINE] as const;
-
-/** Joined form of {@link CONNECTED_WORKSTATION_LINES} (e.g. mux panel height fixtures). */
-export const CONNECTED_WORKSTATION_PANEL = CONNECTED_WORKSTATION_LINES.join('\n');
-
-export const CONNECTED_WORKSTATION_PANEL_HEIGHT = CONNECTED_WORKSTATION_LINES.length;
+/** Post-auth Connected banner lives with the cross-platform clear in connectedBanner.ts. */
+export {
+  CONNECTED_HELP_LINE,
+  CONNECTED_SUCCESS_LINE,
+  CONNECTED_WORKSTATION_LINES,
+  CONNECTED_WORKSTATION_PANEL,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+} from './connectedBanner.js';
 
 export interface AttachTmuxWorkstationOptions {
   sessionName: string;

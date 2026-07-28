@@ -14,6 +14,7 @@
 
 import * as os from 'node:os';
 import { existsSync } from 'node:fs';
+import * as path from 'node:path';
 import * as nodePty from 'node-pty';
 
 // ---------------------------------------------------------------------------
@@ -78,15 +79,28 @@ export interface PtyProcess {
 // ---------------------------------------------------------------------------
 
 /** Returns the default shell for the current platform. */
-export function defaultShell(): string {
-  if (os.platform() === 'win32') {
-    // Prefer PowerShell when available; fall back to cmd.exe.
-    return process.env['COMSPEC'] ?? 'cmd.exe';
+export function defaultShell(
+  platform: NodeJS.Platform = os.platform(),
+  env: NodeJS.ProcessEnv = process.env,
+  fileExists: (candidate: string) => boolean = existsSync,
+): string {
+  if (platform === 'win32') {
+    // Prefer PowerShell (7+ as pwsh, then Windows PowerShell); fall back to
+    // cmd.exe. COMSPEC always points at cmd.exe, so it is only a last resort.
+    const pathApi = path.win32;
+    const directories = (env['PATH'] ?? '').split(pathApi.delimiter).filter(Boolean);
+    for (const executable of ['pwsh.exe', 'powershell.exe']) {
+      for (const directory of directories) {
+        const candidate = pathApi.join(directory, executable);
+        if (fileExists(candidate)) return candidate;
+      }
+    }
+    return env['COMSPEC'] ?? 'cmd.exe';
   }
   // POSIX: honour $SHELL if set and the binary actually exists on disk;
   // fall back to /bin/sh which is guaranteed to be present.
-  const envShell = process.env['SHELL'];
-  if (envShell && existsSync(envShell)) return envShell;
+  const envShell = env['SHELL'];
+  if (envShell && fileExists(envShell)) return envShell;
   return '/bin/sh';
 }
 
@@ -138,14 +152,10 @@ export function spawn(opts: SpawnOptions = {}): PtyProcess {
 
     resize(newCols: number, newRows: number): void {
       if (!Number.isInteger(newCols) || newCols < 1) {
-        throw new RangeError(
-          `pty.resize: cols must be a positive integer, got ${newCols}`,
-        );
+        throw new RangeError(`pty.resize: cols must be a positive integer, got ${newCols}`);
       }
       if (!Number.isInteger(newRows) || newRows < 1) {
-        throw new RangeError(
-          `pty.resize: rows must be a positive integer, got ${newRows}`,
-        );
+        throw new RangeError(`pty.resize: rows must be a positive integer, got ${newRows}`);
       }
       raw.resize(newCols, newRows);
     },

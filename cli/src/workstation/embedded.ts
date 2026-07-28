@@ -1,6 +1,7 @@
 ﻿import type { Session } from '../session.js';
 import type { SessionBackend } from '../sessionBackend/types.js';
 import type { IDisposable } from '../pty.js';
+import { CONNECTED_WORKSTATION_INTRO } from './connectedBanner.js';
 
 const CTRL_X = '\u0018';
 const DEFAULT_COLS = 80;
@@ -87,6 +88,10 @@ export function attachWorkstationTerminal(
     options.onShutdown(reason);
   };
 
+  // Replace the pairing screen with the Connected banner before the Session
+  // mirror starts, matching the tmux attach path on every OS (the pairing
+  // text otherwise lingers above the shell on Windows consoles).
+  safely(() => output.write(CONNECTED_WORKSTATION_INTRO));
   const outputFilter = new MouseOutputFilter();
   const inputFilter = new MouseInputFilter();
   safely(() => output.write(DISABLE_MOUSE));
