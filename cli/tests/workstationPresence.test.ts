@@ -4,21 +4,22 @@ import { WebSocket } from 'ws';
 
 const attachTmuxWorkstation = vi.hoisted(() => vi.fn(() => ({ dispose() {} })));
 
-vi.mock('../src/tmuxWorkstationAttach.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/tmuxWorkstationAttach.js')>();
+vi.mock('../src/workstation/tmuxAttach.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/workstation/tmuxAttach.js')>();
   return {
     ...actual,
     attachTmuxWorkstation,
   };
 });
 
+import type { WorkstationInput, WorkstationOutput } from '../src/workstation/embedded.js';
 import {
   beginWorkstationPresence,
   planWorkstationPresence,
-} from '../src/workstationPresence.js';
+} from '../src/workstation/presence.js';
 import { Session } from '../src/session.js';
-import type { SessionBackend } from '../src/mux/types.js';
-import type { ExitEvent, IDisposable } from '../src/pty/node-pty.js';
+import type { SessionBackend } from '../src/sessionBackend/types.js';
+import type { ExitEvent, IDisposable } from '../src/pty.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind: 'bare' | 'tmux';
@@ -187,8 +188,8 @@ describe('beginWorkstationPresence', () => {
       cwd: '/tmp',
       onEmbeddedShutdown: () => undefined,
       onTmuxDetach: () => undefined,
-      input: { isTTY: true },
-      output: { isTTY: true },
+      input: { isTTY: true } as WorkstationInput,
+      output: { isTTY: true } as WorkstationOutput,
     });
 
     expect(presence.mode).toBe('tmux-attach');

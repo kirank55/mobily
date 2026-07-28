@@ -31,6 +31,12 @@ Thumbs.db
 .agents
 skills-lock.json
 
+# Local working notes / tool caches
+.scratch/
+.commandcode/
+.cursor/
+website/.vinext/
+
 # Local dev artifacts
 .mobily/
 .expo/

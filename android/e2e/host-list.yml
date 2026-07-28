@@ -4,7 +4,7 @@
 # Station fixtures named "Station One" and "Station Two", and seeds their
 # matching Device Keys in Android Keystore.
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 ---
 - launchApp:
     clearState: false

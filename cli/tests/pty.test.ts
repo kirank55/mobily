@@ -9,11 +9,7 @@
 
 import * as os from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  defaultShell,
-  spawn,
-  type PtyProcess,
-} from '../src/pty/node-pty.js';
+import { defaultShell, spawn, type PtyProcess } from '../src/pty.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,11 +25,7 @@ function collectUntil(
     let buf = '';
     const timer = setTimeout(() => {
       d.dispose();
-      reject(
-        new Error(
-          `Timed out after ${timeoutMs}ms. Buffer so far: ${JSON.stringify(buf)}`,
-        ),
-      );
+      reject(new Error(`Timed out after ${timeoutMs}ms. Buffer so far: ${JSON.stringify(buf)}`));
     }, timeoutMs);
 
     const d = pty.onData((chunk) => {
@@ -66,6 +58,37 @@ describe('defaultShell()', () => {
   it('returns an absolute path on POSIX', () => {
     if (os.platform() === 'win32') return;
     expect(defaultShell().startsWith('/')).toBe(true);
+  });
+
+  const winEnv = {
+    PATH: 'C:\\Program Files\\PowerShell\\7;C:\\Windows\\System32;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+    COMSPEC: 'C:\\Windows\\System32\\cmd.exe',
+  };
+
+  it('prefers PowerShell 7 (pwsh) when it is on PATH', () => {
+    const shell = defaultShell('win32', winEnv, (candidate) =>
+      candidate.toLowerCase().endsWith('pwsh.exe'),
+    );
+    expect(shell).toBe('C:\\Program Files\\PowerShell\\7\\pwsh.exe');
+  });
+
+  it('falls back to Windows PowerShell when pwsh is absent', () => {
+    const shell = defaultShell(
+      'win32',
+      winEnv,
+      (candidate) => candidate === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    );
+    expect(shell).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  });
+
+  it('falls back to COMSPEC when no PowerShell is on PATH', () => {
+    expect(defaultShell('win32', winEnv, () => false)).toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(defaultShell('win32', { PATH: '' }, () => false)).toBe('cmd.exe');
+  });
+
+  it('honours $SHELL on POSIX only when it exists', () => {
+    expect(defaultShell('linux', { SHELL: '/bin/zsh' }, () => true)).toBe('/bin/zsh');
+    expect(defaultShell('linux', { SHELL: '/missing/zsh' }, () => false)).toBe('/bin/sh');
   });
 });
 
@@ -104,9 +127,7 @@ describe('spawn()', () => {
     const cmd = os.platform() === 'win32' ? 'echo MOBILY_TEST\r\n' : 'echo MOBILY_TEST\r';
     pty.write(cmd);
 
-    const output = await collectUntil(pty, (buf) =>
-      buf.includes('MOBILY_TEST'),
-    );
+    const output = await collectUntil(pty, (buf) => buf.includes('MOBILY_TEST'));
     expect(output).toContain('MOBILY_TEST');
   });
 
@@ -124,16 +145,17 @@ describe('spawn()', () => {
     const pty = spawn({ cols: 80, rows: 24, cwd });
     spawned.push(pty);
 
-    // Ask the shell for its working directory.
+    // Ask the shell for its working directory. `pwd` works in PowerShell and
+    // POSIX shells; cmd.exe needs `echo %CD%`.
     const cmd =
-      os.platform() === 'win32' ? 'echo %CD%\r\n' : 'pwd\r';
+      os.platform() === 'win32' && defaultShell().toLowerCase().endsWith('cmd.exe')
+        ? 'echo %CD%\r\n'
+        : 'pwd\r';
     pty.write(cmd);
 
     // tmpdir paths can contain symlinks; only check for a fragment.
     const tmpFragment =
-      os.platform() === 'win32'
-        ? os.tmpdir().split('\\').pop()!
-        : os.tmpdir().split('/').pop()!;
+      os.platform() === 'win32' ? os.tmpdir().split('\\').pop()! : os.tmpdir().split('/').pop()!;
 
     const output = await collectUntil(
       pty,
@@ -149,7 +171,11 @@ describe('PtyProcess.onData()', () => {
 
   afterEach(() => {
     for (const p of spawned) {
-      try { p.kill(); } catch { /* ignore */ }
+      try {
+        p.kill();
+      } catch {
+        /* ignore */
+      }
     }
     spawned.length = 0;
   });
@@ -191,7 +217,11 @@ describe('PtyProcess.resize()', () => {
 
   afterEach(() => {
     for (const p of spawned) {
-      try { p.kill(); } catch { /* ignore */ }
+      try {
+        p.kill();
+      } catch {
+        /* ignore */
+      }
     }
     spawned.length = 0;
   });
@@ -233,11 +263,9 @@ describe('PtyProcess.onExit()', () => {
   it('fires when the shell exits cleanly', async () => {
     const pty = spawn({ cols: 80, rows: 24 });
 
-    const exitPromise = new Promise<{ exitCode: number; signal?: number }>(
-      (resolve) => {
-        pty.onExit(resolve);
-      },
-    );
+    const exitPromise = new Promise<{ exitCode: number; signal?: number }>((resolve) => {
+      pty.onExit(resolve);
+    });
 
     // Send the exit command for the platform default shell.
     pty.write(os.platform() === 'win32' ? 'exit\r\n' : 'exit\r');
@@ -249,11 +277,9 @@ describe('PtyProcess.onExit()', () => {
   it('fires after kill()', async () => {
     const pty = spawn({ cols: 80, rows: 24 });
 
-    const exitPromise = new Promise<{ exitCode: number; signal?: number }>(
-      (resolve) => {
-        pty.onExit(resolve);
-      },
-    );
+    const exitPromise = new Promise<{ exitCode: number; signal?: number }>((resolve) => {
+      pty.onExit(resolve);
+    });
 
     pty.kill();
     const event = await exitPromise;

@@ -2,9 +2,9 @@
 #
 # Maestro flow: QR scan → pairing → connection state transitions.
 #
-# Prerequisite: A CLI must be running locally (npx mobily --tunnel local)
-# and the device must be on the same LAN. The QR code is pre-seeded in the
-# test environment via an env variable or the CLI auto-starts.
+# Prerequisite: A CLI must be running (npx mobily / workspace
+# `pnpm --filter mobily exec node dist/index.js`). The QR code is pre-seeded
+# in the test environment via an env variable or the CLI auto-starts.
 #
 # Run with:
 #   maestro test android/e2e/scan-connect.yml
@@ -14,7 +14,7 @@
 #   - Terminal WebView renders after connection
 #   - Status bar shows green indicator
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 ---
 # ── Launch the app ────────────────────────────────────────────────────────────
 - launchApp:

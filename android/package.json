@@ -1,7 +1,7 @@
 {
   "name": "mobily-android",
   "main": "expo-router/entry",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "dependencies": {
     "@expo-google-fonts/geist": "0.4.2",
@@ -24,7 +24,7 @@
     "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.1",
-    "react": "19.2.3",
+    "react": "19.2.6",
     "react-native": "0.86.0",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.0",
@@ -55,6 +55,7 @@
     "test": "vitest run && playwright test",
     "prebuild": "expo prebuild --platform android",
     "build:android": "expo run:android",
-    "eas-dev": "pnpm install --frozen-lockfile && pnpm exec expo prebuild --platform android --clean && pnpm exec eas build:dev --profile development --platform android"
+    "eas-dev": "pnpm install --frozen-lockfile && pnpm exec expo prebuild --platform android --clean && pnpm exec eas build:dev --profile development --platform android",
+    "eas-prod": "pnpm exec eas build --profile preview --platform android"
   }
 }

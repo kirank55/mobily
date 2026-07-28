@@ -14,7 +14,7 @@ import { createPairingProofPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
-import { defaultSessionRuntime } from '../src/mux/runtime.js';
+import { defaultSessionRuntime } from '../src/sessionBackend/runtime.js';
 
 // ---------------------------------------------------------------------------
 // Test runtime: uses an explicit shell path so tests are not sensitive to
@@ -307,14 +307,19 @@ describe('pairing flow end-to-end', () => {
       expect(await androidOwnedOutput).toContain('ANDROID_SIZE=21 72');
       await vi.waitFor(() => expect(workstationOutput).toContain('ANDROID_SIZE=21 72'));
 
+      // The join-time resize frame already carries the Station dims (132x43), so
+      // only frames that arrive after the release prove the restore was applied.
+      const framesBeforeRelease = frames.length;
       sendFrame(ws, { type: 'terminal-size-release' });
       await vi.waitFor(
         () =>
           expect(
-            frames.some(
-              (frame) =>
-                frame['type'] === 'resize' && frame['cols'] === 132 && frame['rows'] === 43,
-            ),
+            frames
+              .slice(framesBeforeRelease)
+              .some(
+                (frame) =>
+                  frame['type'] === 'resize' && frame['cols'] === 132 && frame['rows'] === 43,
+              ),
           ).toBe(true),
         { timeout: 5000 },
       );

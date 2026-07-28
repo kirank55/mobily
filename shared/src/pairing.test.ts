@@ -45,6 +45,19 @@ describe('pairing QR payload', () => {
       'certificate pin',
     );
   });
+
+  it('round-trips a station fingerprint and rejects malformed fingerprints', () => {
+    const identified = { ...payload, stationFingerprint: 'SHA256:1A2B-3C4D-5E6F-7A8B' };
+
+    expect(decodePairingPayload(encodePairingPayload(identified), 0)).toEqual(identified);
+    expect(() => encodePairingPayload({ ...payload, stationFingerprint: 'SHA256:nope' })).toThrow(
+      'station fingerprint',
+    );
+
+    const malformed =
+      'mobily://pair?v=2&endpoint=wss%3A%2F%2Fstation.example.test%2Fterminal&code=ABCD2345&expires=1900000000000&protocol=1&fid=SHA256%3Anope';
+    expect(() => decodePairingPayload(malformed, 0)).toThrow('station fingerprint');
+  });
 });
 
 describe('pairing proof payload', () => {

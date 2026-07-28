@@ -66,6 +66,7 @@ describe('MarketingPage', () => {
     expect(markup).toContain('Full Control.');
     expect(markup).toContain('Control the live terminal on your PC from Android securely.');
     expect(markup).not.toContain('START A SESSION');
+    expect(markup).not.toContain('BUILD ANDROID');
     expect(markup).toContain('DOWNLOAD ANDROID APK');
     expect(markup).toContain('hero-data-path');
     expect(markup).toContain('hero-data-track--reverse');
@@ -82,7 +83,7 @@ describe('MarketingPage', () => {
     expect(markup).not.toContain('hero-product-meta');
     expect(markup).not.toContain('hero-status');
     expect(markup).not.toContain('hero-index');
-    expect(markup).toContain('id="features"');
+    expect(markup).not.toContain('id="features"');
     expect(markup).toContain('id="how-it-works"');
     expect(markup).toContain('id="security"');
     expect(markup).toContain('id="get-started"');
@@ -90,6 +91,10 @@ describe('MarketingPage', () => {
     expect(markup).toContain(`href="${site.urls.releases}"`);
     expect(markup).toContain(`href="${site.urls.security}"`);
     expect(markup).toContain(`href="${site.urls.readme}"`);
+    expect(markup).not.toContain('BUILD FROM SOURCE');
+    expect(markup).not.toContain('Releases publish the CLI');
+    expect(markup).toContain('Pre-release APK builds are published through GitHub Releases.');
+    expect(markup).toContain('Install the pre-release APK from GitHub Releases');
   });
 
   it('ships an accessible initial mobile-menu state', () => {
@@ -134,7 +139,9 @@ describe('MarketingPage', () => {
 
   it('states the tmux and Dev Tunnels limitations accurately', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
-    expect(markup).toContain('bare PTY survives phone disconnects only while the CLI stays alive');
+    expect(markup).toContain(
+      'The bare PTY fallback survives phone disconnects only while the CLI process remains alive.',
+    );
     expect(markup).toContain('GitHub or Microsoft');
     expect(markup).toContain('The phone never needs a Microsoft account.');
   });

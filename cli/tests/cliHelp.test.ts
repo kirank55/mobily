@@ -9,7 +9,10 @@ describe('formatCliHelp()', () => {
     expect(help).toContain('mobily qr hide');
     expect(help).toContain('mobily                             Secure remote access (Dev Tunnels)');
     expect(help).toContain('mobily --list-bindings');
+    expect(help).toContain('mobily --version');
+    expect(help).toContain('mobily --verbose');
+    expect(help).toContain('mobily --devtunnels-provider github|microsoft');
     expect(help.split('\n').length).toBeGreaterThan(5);
-    expect(help.split('\n').length).toBeLessThan(30);
+    expect(help.split('\n').length).toBeLessThan(35);
   });
 });

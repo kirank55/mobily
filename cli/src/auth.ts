@@ -268,7 +268,7 @@ export class AuthManager {
   }
 
   /**
-   * CORS for Expo web / browser smoke against plaintext local Stations only.
+   * CORS for Expo web against plaintext local Stations only.
    * Pinned TLS Stations do not need browser clients.
    */
   private browserDevCorsHeaders(): Record<string, string> {

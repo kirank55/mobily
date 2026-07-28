@@ -11,7 +11,7 @@ export default function HomeScreen() {
     (async () => {
       const records = await listPairings();
       if (records.length > 0) {
-        router.replace('/hosts' as never);
+        router.replace('/stations' as never);
       } else {
         router.replace('/scanner');
       }

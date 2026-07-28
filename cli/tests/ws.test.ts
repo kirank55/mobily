@@ -19,8 +19,9 @@ import { createPairingProofPayload, PROTOCOL_VERSION, WS_CLOSE_CODES } from '@mo
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 import { AuthManager } from '../src/auth.js';
-import type { SessionBackend } from '../src/mux/types.js';
-import type { IDisposable } from '../src/pty/node-pty.js';
+import { MemoryBindingRepository } from '../src/bindings.js';
+import type { SessionBackend } from '../src/sessionBackend/types.js';
+import type { IDisposable } from '../src/pty.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;
@@ -1056,6 +1057,51 @@ describe('handshake: version negotiation + auth', () => {
 
     expect(await waitForCloseCode(ws)).toBe(WS_CLOSE_CODES.HANDSHAKE_TIMEOUT);
   }, 5000);
+
+  it('disconnects an authenticated device when its binding is revoked', async () => {
+    const bindings = new MemoryBindingRepository();
+    const auth = new AuthManager('test-station', bindings);
+    auth.setTunnelUrl('ws://test:9999');
+    const code = auth.generatePairingCode();
+    const { publicKeyPem, privateKeyPem } = generateKeyPair();
+    pairDevice(auth, code, 'device-1', publicKeyPem, privateKeyPem);
+
+    const session = new Session({ cols: 80, rows: 24, auth, revocationCheckIntervalMs: 50 });
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+    const fb = frameBuffer(ws);
+
+    sendFrame(ws, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    const challenge = await fb.waitFor('auth-challenge');
+    sendFrame(ws, {
+      type: 'auth-response',
+      deviceId: 'device-1',
+      signature: signNonce(privateKeyPem, challenge['nonce'] as string),
+    });
+    await fb.waitFor('session-snapshot');
+
+    expect(bindings.revoke('device-1')).toBe(true);
+    expect(await waitForCloseCode(ws)).toBe(WS_CLOSE_CODES.AUTH_REJECTED);
+
+    // A fresh handshake from the revoked device is rejected as well.
+    const reconnect = new WebSocket(server.url);
+    await waitForOpen(reconnect);
+    conns.push(reconnect);
+    const reconnectFrames = frameBuffer(reconnect);
+    sendFrame(reconnect, { type: 'hello', protocolVersion: PROTOCOL_VERSION });
+    const reconnectChallenge = await reconnectFrames.waitFor('auth-challenge');
+    sendFrame(reconnect, {
+      type: 'auth-response',
+      deviceId: 'device-1',
+      signature: signNonce(privateKeyPem, reconnectChallenge['nonce'] as string),
+    });
+    expect(await waitForCloseCode(reconnect)).toBe(WS_CLOSE_CODES.AUTH_REJECTED);
+  }, 15000);
 });
 
 describe('anonymous connection limits', () => {

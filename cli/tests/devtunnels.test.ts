@@ -134,12 +134,12 @@ describe('prepareDevTunnelsBackend()', () => {
       new UserFacingError(
         'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
           '  curl -sL https://aka.ms/DevTunnelCliInstall | bash\n' +
-          'Then reopen this terminal and run Mobily again.',
+          'Then reopen your terminal so the devtunnel command is available, and run Mobily again.',
       ),
     );
   });
 
-  it('does not prompt to retry after install because PATH needs a new shell', async () => {
+  it('never retries in-process: installing the helper requires a reopened terminal', async () => {
     const runtime = new FakeRuntime();
     runtime.interactive = true;
     runtime.executable = undefined;
@@ -148,7 +148,7 @@ describe('prepareDevTunnelsBackend()', () => {
       new UserFacingError(
         'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
           '  curl -sL https://aka.ms/DevTunnelCliInstall | bash\n' +
-          'Then reopen this terminal and run Mobily again.',
+          'Then reopen your terminal so the devtunnel command is available, and run Mobily again.',
       ),
     );
     expect(runtime.prompts).toEqual([]);

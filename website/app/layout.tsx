@@ -39,8 +39,8 @@ export async function generateMetadata(): Promise<Metadata> {
       'Git Android',
       'open source terminal',
     ],
-    authors: [{ name: 'Mobily contributors', url: site.urls.repository }],
-    creator: 'Mobily contributors',
+    authors: [{ name: 'Mobily', url: site.urls.repository }],
+    creator: 'Mobily',
     icons: {
       icon: '/favicon.png',
       shortcut: '/favicon.png',

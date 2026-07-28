@@ -111,6 +111,11 @@ describe('pairWithStation()', () => {
       record: { stationName: 'test-station', deviceBindingId: bindingId },
     });
     expect(storage.savePairing).toHaveBeenCalledOnce();
+    expect(deviceKey.signNonce).toHaveBeenCalledWith(
+      expect.any(String),
+      'Pair with station.example.devtunnels.ms',
+      'mobily.device.test',
+    );
   });
 
   it('rejects endpoint substitution in a successful HTTP response', async () => {
@@ -162,7 +167,7 @@ describe('pairWithStation()', () => {
     );
     expect(deviceKey.signNonce).toHaveBeenCalledWith(
       expect.stringContaining(localPairing.certificatePin),
-      'Confirm pairing with this Station',
+      'Pair with 192.168.1.2:4567',
       'mobily.device.test',
     );
   });

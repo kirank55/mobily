@@ -1,0 +1,194 @@
+﻿import { spawn as defaultSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { MOBILY_CLI_PID_ENV, type SessionBackend } from '../sessionBackend/types.js';
+import { defaultSessionRuntime, type SessionRuntime } from '../sessionBackend/runtime.js';
+import {
+  clearShellPane,
+  printShellPaneLines,
+  resizePairingPanelLines,
+} from '../sessionBackend/tmux.js';
+import type { IDisposable } from '../pty.js';
+import type { WorkstationInput, WorkstationOutput } from './embedded.js';
+import {
+  CLEAR_WORKSTATION_SCREEN,
+  CONNECTED_WORKSTATION_LINES,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+} from './connectedBanner.js';
+
+export type SpawnFn = (
+  file: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => ChildProcess;
+
+/** Post-auth Connected banner lives with the cross-platform clear in connectedBanner.ts. */
+export {
+  CONNECTED_HELP_LINE,
+  CONNECTED_SUCCESS_LINE,
+  CONNECTED_WORKSTATION_LINES,
+  CONNECTED_WORKSTATION_PANEL,
+  CONNECTED_WORKSTATION_PANEL_HEIGHT,
+} from './connectedBanner.js';
+
+export interface AttachTmuxWorkstationOptions {
+  sessionName: string;
+  attachCommand: string;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  onDetach?: (message: string) => void;
+  spawn?: SpawnFn;
+  runtime?: SessionRuntime;
+  /** Host TTY to clear before attach (pairing QR). Defaults to process.stdout. */
+  hostOutput?: { write(data: string): unknown };
+}
+
+/** True when this TTY can auto-attach into a tmux-backed Session after phone auth. */
+export function shouldAttachTmuxWorkstation(
+  backend: Pick<SessionBackend, 'kind' | 'sessionName'>,
+  input: Pick<WorkstationInput, 'isTTY'> = process.stdin,
+  output: Pick<WorkstationOutput, 'isTTY'> = process.stdout,
+): boolean {
+  return Boolean(backend.kind === 'tmux' && backend.sessionName && input.isTTY && output.isTTY);
+}
+
+/**
+ * Bring the Station TTY into the Mobily tmux Session after a phone authenticates.
+ *
+ * Outside an outer tmux client: spawn `tmux attach` with inherited stdio.
+ * Inside outer tmux: split the current window 50/50 and attach in the bottom
+ * pane with `TMUX` cleared to avoid nesting the outer client.
+ *
+ * Clears the Station host TTY (pairing QR / status), clears the shell pane,
+ * renders the Connected Successfully banner directly on its TTY (so a later
+ * `clear` dismisses it), then attaches. Ctrl+C remains available to interrupt
+ * the shared Session. `mobily exit` signals the owning CLI so both direct and
+ * outer-tmux attachments exit cleanly.
+ */
+export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): IDisposable {
+  const env = options.env ?? process.env;
+  const spawn = options.spawn ?? defaultSpawn;
+  const runtime = options.runtime ?? defaultSessionRuntime;
+  const exitMessage = 'Exiting Mobily';
+  let registeredOwner = false;
+  try {
+    runtime.execFile('tmux', [
+      'set-environment',
+      '-t',
+      options.sessionName,
+      MOBILY_CLI_PID_ENV,
+      String(process.pid),
+    ]);
+    registeredOwner = true;
+  } catch {
+    // `mobily exit` registration is best-effort; attach still proceeds.
+  }
+  try {
+    // No-op when the QR/status pane was already hidden on auth.
+    resizePairingPanelLines(options.sessionName, CONNECTED_WORKSTATION_PANEL_HEIGHT, runtime);
+  } catch {
+    // Status-pane clamp is best-effort; attach still proceeds.
+  }
+  try {
+    clearShellPane(options.sessionName, runtime);
+  } catch {
+    // Shell clear is best-effort; attach still proceeds.
+  }
+  try {
+    printShellPaneLines(options.sessionName, CONNECTED_WORKSTATION_LINES, runtime);
+  } catch {
+    // Success banner is best-effort; attach still proceeds.
+  }
+
+  // Clear this Station TTY (pairing QR / status) before tmux takes over stdio.
+  // ANSI clear works on Windows Terminal / PowerShell as well as macOS and Linux.
+  try {
+    (options.hostOutput ?? process.stdout).write(CLEAR_WORKSTATION_SCREEN);
+  } catch {
+    // Host clear is best-effort; attach still proceeds.
+  }
+
+  const attachment =
+    env.TMUX != null && env.TMUX !== ''
+      ? attachViaOuterSplit(options, runtime)
+      : attachViaStdioInherit(options, spawn, env, exitMessage);
+
+  return {
+    dispose(): void {
+      attachment.dispose();
+      if (registeredOwner) {
+        try {
+          runtime.execFile('tmux', [
+            'set-environment',
+            '-u',
+            '-t',
+            options.sessionName,
+            MOBILY_CLI_PID_ENV,
+          ]);
+        } catch {
+          // The Session may already have ended.
+        }
+      }
+    },
+  };
+}
+
+function attachViaStdioInherit(
+  options: AttachTmuxWorkstationOptions,
+  spawn: SpawnFn,
+  env: NodeJS.ProcessEnv,
+  exitMessage: string,
+): IDisposable {
+  let disposed = false;
+  const child = spawn('tmux', ['-T', 'RGB', 'attach-session', '-t', options.sessionName], {
+    stdio: 'inherit',
+    cwd: options.cwd,
+    env,
+  });
+
+  const onExit = (): void => {
+    if (disposed) return;
+    options.onDetach?.(exitMessage);
+  };
+  child.once('exit', onExit);
+  child.once('error', onExit);
+
+  return {
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      child.removeListener('exit', onExit);
+      child.removeListener('error', onExit);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+      }
+    },
+  };
+}
+
+function attachViaOuterSplit(
+  options: AttachTmuxWorkstationOptions,
+  runtime: SessionRuntime,
+): IDisposable {
+  let disposed = false;
+  const shellCommand = `TMUX= exec tmux -T RGB attach-session -t ${shellSingleQuote(options.sessionName)}`;
+  const args = ['split-window', '-v', '-p', '50', '-P', '-F', '#{pane_id}'];
+  if (options.cwd) args.push('-c', options.cwd);
+  args.push(shellCommand);
+  const pane = runtime.execFile('tmux', args).trim();
+
+  return {
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      if (!pane) return;
+      try {
+        runtime.execFile('tmux', ['kill-pane', '-t', pane]);
+      } catch {
+        // Pane may already be gone after the user closed it.
+      }
+    },
+  };
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}

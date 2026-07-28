@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDeviceBindingId } from '@mobily/shared';
-import { probeStation } from '@/hosts/probe';
+import { probeStation } from '@/stations/probe';
 import type { PairingRecord } from '@/auth/storage';
 
 const pairing: PairingRecord = {

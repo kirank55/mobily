@@ -17,4 +17,4 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 - The tmux window uses the `largest` sizing policy for native tmux clients. Mobily's shared Session grid follows Terminal Size Ownership with the Station as the default (and currently sole Android-used) owner; Android scales that grid visually rather than claiming resize authority.
 - Mobily's tmux attachment advertises RGB support and disables the session-local tmux status row so colors and full-screen grid dimensions match the bare-PTY contract.
 - Embedded workstation rendering suppresses terminal mouse tracking so the containing terminal emulator retains normal text selection semantics.
-- CI tests both paths: tmux on Linux/macOS runners, bare on Windows runner.
+- Unit and integration tests cover both adapters; real tmux coverage runs when `tmux` is available (typically Linux CI). The separate CI `pty-native` matrix only validates `node-pty` spawn on Linux, macOS, and Windows.

@@ -1,20 +1,33 @@
-# Security
+# Security Policy
 
-## Dependency audit dispositions
+## Reporting a vulnerability
 
-### `uuid` / Expo xcode tooling — upstream exception
+Please **do not** open a public GitHub issue for security reports.
 
-Checked 2026-07-14. `pnpm audit` reports CVE-2026-41907 for `uuid@7.0.3` on this
-development-only path:
+Email with:
 
-`expo@57.0.4 → @expo/config-plugins@57.0.3 → xcode@3.0.1 → uuid@7.0.3`
+- A description of the issue and its impact
+- Steps to reproduce or a proof of concept when possible
+- Affected versions / commit hashes if known
 
-These are the latest compatible Expo, config-plugin, and xcode releases in the
-npm registry on the check date. `xcode@3.0.1` declares `uuid ^7.0.3`; there is
-no compatible upstream upgrade to `uuid >=11.1.1`. Mobily does not call the
-affected UUID v3/v5/v6 external-buffer APIs, and this dependency is used by
-Expo's Apple project-generation tooling rather than the CLI or Android runtime.
+Use the email address kirankumargs04@gmail.com for private contact, or open a private [GitHub Security Advisory](https://github.com/kirank55/mobily/security/advisories/new) if you have access.
 
-Do not add a package-manager override across the unsupported UUID major. Recheck
-this exception whenever Expo or `xcode` changes, and remove it as soon as an
-upstream compatible release becomes available.
+We aim to acknowledge reports within a few days and will coordinate a fix and disclosure timeline with you.
+
+## Threat model (summary)
+
+Mobily streams a live workstation terminal to a paired Android device.
+
+- **Device Key pairing.** The phone holds a non-exportable private key in Android Keystore. The Station stores the public key and verifies challenge-response signatures before streaming terminal data or accepting input. Every reconnect requires a biometric prompt to authorize signing — this is not the Station identity fingerprint below.
+- **Station fingerprint.** Shown once during pairing on both the CLI and the phone. Confirm they match before approving a pair — a mismatched or missing fingerprint means the QR did not come from your Station. Reconnects do not re-ask for this check.
+- **No Mobily-operated terminal relay.** Terminal bytes travel over Microsoft Dev Tunnels. Mobily does not operate a cloud that sees your PTY stream.
+- **Dev Tunnels.** The Station uses Microsoft’s `devtunnel` helper and that provider’s authentication. Treat that path as part of your trust boundary. The phone never needs a Microsoft account; Device Key challenge-response gates the connection.
+- **Session capabilities.** A paired phone can drive the shared terminal and Git RPC against the Station’s working directory. Revoke Device Key bindings with `mobily --revoke-binding <id>` if a device is lost — a running Station picks up revocations within a few seconds and disconnects the revoked device.
+
+## Supported versions
+
+Security fixes target the latest published `mobily` CLI release on npm and the corresponding Android build from this repository. Older pre-1.0 versions may not receive backports.
+
+## Related notes
+
+Maintainer dependency-audit exceptions live in [docs/dependency-audits.md](docs/dependency-audits.md).

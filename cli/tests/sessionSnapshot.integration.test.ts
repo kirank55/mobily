@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket, type RawData } from 'ws';
 import type { SessionScrollbackFrame, SessionSnapshotFrame } from '@mobily/shared';
-import { BareBackend } from '../src/mux/bare.js';
-import { TmuxBackend } from '../src/mux/tmux.js';
-import { defaultSessionRuntime } from '../src/mux/runtime.js';
-import type { SessionBackend } from '../src/mux/types.js';
-import { spawn } from '../src/pty/node-pty.js';
+import { BareBackend } from '../src/sessionBackend/bare.js';
+import { TmuxBackend } from '../src/sessionBackend/tmux.js';
+import { defaultSessionRuntime } from '../src/sessionBackend/runtime.js';
+import type { SessionBackend } from '../src/sessionBackend/types.js';
+import { spawn } from '../src/pty.js';
 import { Session } from '../src/session.js';
 import { startServer, type Server } from '../src/ws.js';
 

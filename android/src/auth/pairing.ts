@@ -31,6 +31,11 @@ export interface PairResult {
   error?: string;
 }
 
+/** Host (with port) of a validated Station endpoint, for identity display. */
+export function stationHostName(endpoint: string): string {
+  return new URL(endpoint).host;
+}
+
 const AVAILABILITY_ERRORS: Record<DeviceKeyAvailability['reason'], string> = {
   available: '',
   'secure-lock-screen-not-configured':
@@ -74,6 +79,7 @@ export async function pairWithStation(pairing: PairingPayload): Promise<PairResu
     });
     return { ok: false, error: 'Refusing insecure Station transport.' };
   }
+  const stationHost = stationHostName(pairing.endpoint);
 
   console.info('[Mobily][Pairing] Checking secure lock screen and strong biometrics');
   let availability: DeviceKeyAvailability;
@@ -151,7 +157,7 @@ export async function pairWithStation(pairing: PairingPayload): Promise<PairResu
   let proof: string | null;
   console.info('[Mobily][Pairing] Requesting biometric confirmation');
   try {
-    proof = await signNonce(proofPayload, 'Confirm pairing with this Station', keyAlias);
+    proof = await signNonce(proofPayload, `Pair with ${stationHost}`, keyAlias);
   } catch (error) {
     console.error('[Mobily][Pairing] Device Key proof failed', error);
     return await fail('Failed to prove Device Key ownership.');

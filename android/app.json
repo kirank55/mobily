@@ -2,14 +2,14 @@
   "expo": {
     "name": "mobily",
     "slug": "mobily",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobily",
     "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.anonymous.mobily",
+      "bundleIdentifier": "io.github.kirank55.mobily",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -23,7 +23,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "package": "com.anonymous.mobily",
+      "package": "io.github.kirank55.mobily",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.USE_BIOMETRIC",

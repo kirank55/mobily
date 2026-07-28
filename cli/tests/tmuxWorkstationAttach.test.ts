@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
-import type { SessionRuntime } from '../src/mux/runtime.js';
+import type { SessionRuntime } from '../src/sessionBackend/runtime.js';
 import {
   attachTmuxWorkstation,
   CONNECTED_HELP_LINE,
@@ -10,7 +10,7 @@ import {
   CONNECTED_WORKSTATION_PANEL,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
   shouldAttachTmuxWorkstation,
-} from '../src/tmuxWorkstationAttach.js';
+} from '../src/workstation/tmuxAttach.js';
 
 class FakeChild extends EventEmitter {
   exitCode: number | null = null;

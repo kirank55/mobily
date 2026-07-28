@@ -33,7 +33,7 @@ An atomic representation of a Session's visible terminal cells, styling, cursor 
 _Avoid_: Replay, scrollback
 
 **Tunnel**:
-The secure relay that makes the CLI's WebSocket server reachable from the public internet. Pluggable — default is Dev Tunnels (anonymous), but users can swap to Bore, Cloudflare, SSH, or local network via a `TunnelBackend` interface.
+The secure relay that makes the CLI's WebSocket server reachable from the public internet. The shipped backend is Microsoft Dev Tunnels (`npx mobily` always uses it). Hosting requires operator auth with the `devtunnel` helper; the phone connects anonymously and is gated by Device Key auth. A `TunnelBackend` interface remains so alternate backends (Bore, Cloudflare, SSH, and similar) can be added later.
 _Avoid_: Proxy, relay (too generic)
 
 **Temporary Tunnel**:
@@ -41,5 +41,5 @@ A Tunnel created and recorded by Mobily for the lifetime of a CLI run. Mobily re
 _Avoid_: Dev Tunnel, orphaned tunnel
 
 **Pairing Code**:
-A short alphanumeric code (6-8 chars) displayed as a terminal QR code during first-time setup. The phone scans the QR, sends the code to the CLI's HTTPS pairing endpoint, and receives the full connection payload (tunnel URL, key exchange) in response. The code is single-use.
+An 8-character alphanumeric code displayed as a terminal QR code during first-time setup. The phone scans the QR, sends the code to the CLI's HTTPS pairing endpoint, and receives the full connection payload (tunnel URL, key exchange) in response. The code is single-use.
 _Avoid_: Pairing token (the token is exchanged over HTTPS, not in the QR)
