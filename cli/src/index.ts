@@ -33,6 +33,7 @@ import {
 } from './mux/factory.js';
 import { CliLifecycle, createNodeCliLifecycleRuntime } from './cliLifecycle.js';
 import { formatCliHelp } from './cliHelp.js';
+import { clearHostTerminal } from './terminal/hostClear.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json') as { version: string };
@@ -71,7 +72,7 @@ export async function main(lifecycle: CliLifecycle = cliLifecycle): Promise<void
       throw new UserFacingError("Use 'mobily qr hide' or 'mobily qr clear'.");
     }
     if (!hideCurrentQrPanel()) throw new UserFacingError('No Mobily QR panel is visible.');
-    if (action === 'clear') process.stdout.write('\u001b[2J\u001b[3J\u001b[H');
+    if (action === 'clear') clearHostTerminal();
     return;
   }
 

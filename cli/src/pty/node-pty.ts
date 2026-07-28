@@ -85,6 +85,19 @@ export interface PtyProcess {
 export function defaultShell(): string {
   if (os.platform() === 'win32') {
     // Prefer PowerShell when available; fall back to cmd.exe.
+    const envShell = process.env['SHELL'];
+    if (envShell && existsSync(envShell)) return envShell;
+
+    const systemRoot = process.env['SystemRoot'] ?? process.env['SYSTEMROOT'] ?? 'C:\\Windows';
+    const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
+    const candidates = [
+      `${programFiles}\\PowerShell\\7\\pwsh.exe`,
+      `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
+      process.env['COMSPEC'] ?? `${systemRoot}\\System32\\cmd.exe`,
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
     return process.env['COMSPEC'] ?? 'cmd.exe';
   }
   // POSIX: honour $SHELL if set and the binary actually exists on disk;

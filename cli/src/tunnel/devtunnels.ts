@@ -71,15 +71,10 @@ export async function prepareDevTunnelsBackend(
   options: PrepareDevTunnelsOptions = {},
 ): Promise<DevTunnelsBackend> {
   const runtime = options.runtime ?? createNodeRuntime();
-  let executable = runtime.findExecutable();
-
-  if (!executable && runtime.interactive) {
-    runtime.write(`${installMessage(runtime.platform)}\n\n`);
-    await promptUser(runtime, 'Install it in another terminal, then press Enter to retry: ');
-    executable = runtime.findExecutable();
-  }
+  const executable = runtime.findExecutable();
 
   if (!executable) {
+    // Install updates PATH only for new shells — do not prompt to retry in-process.
     throw new UserFacingError(installMessage(runtime.platform));
   }
 
@@ -494,7 +489,7 @@ function installMessage(platform: NodeJS.Platform): string {
   return (
     'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
     `  ${command}\n` +
-    'Then run Mobily again.'
+    'Then reopen this terminal and run Mobily again.'
   );
 }
 

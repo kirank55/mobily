@@ -1,6 +1,7 @@
 import type { Session } from './session.js';
 import type { SessionBackend } from './mux/types.js';
 import type { IDisposable } from './pty/node-pty.js';
+import { clearHostTerminal } from './terminal/hostClear.js';
 
 const CTRL_X = '\u0018';
 const DEFAULT_COLS = 80;
@@ -87,6 +88,8 @@ export function attachWorkstationTerminal(
     options.onShutdown(reason);
   };
 
+  // Drop pairing / status text printed to this TTY before mirroring the Session.
+  safely(() => clearHostTerminal(output));
   const outputFilter = new MouseOutputFilter();
   const inputFilter = new MouseInputFilter();
   safely(() => output.write(DISABLE_MOUSE));

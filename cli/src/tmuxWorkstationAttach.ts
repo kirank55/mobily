@@ -3,6 +3,7 @@ import { MOBILY_CLI_PID_ENV, type SessionBackend } from './mux/types.js';
 import { defaultSessionRuntime, type SessionRuntime } from './mux/runtime.js';
 import { clearShellPane, printShellPaneLines, resizePairingPanelLines } from './mux/tmux.js';
 import type { IDisposable } from './pty/node-pty.js';
+import { clearHostTerminal } from './terminal/hostClear.js';
 import type { WorkstationInput, WorkstationOutput } from './workstationTerminal.js';
 
 export type SpawnFn = (
@@ -33,6 +34,8 @@ export interface AttachTmuxWorkstationOptions {
   onDetach?: (message: string) => void;
   spawn?: SpawnFn;
   runtime?: SessionRuntime;
+  /** Host TTY to clear before attach (pairing QR). Defaults to process.stdout. */
+  hostOutput?: { write(data: string): unknown };
 }
 
 /** True when this TTY can auto-attach into a tmux-backed Session after phone auth. */
@@ -89,6 +92,14 @@ export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): ID
     printShellPaneLines(options.sessionName, CONNECTED_WORKSTATION_LINES, runtime);
   } catch {
     // Success banner is best-effort; attach still proceeds.
+  }
+
+  // Clear this Station TTY (pairing QR / status) before tmux takes over stdio.
+  // ANSI clear works on Windows Terminal / PowerShell as well as macOS and Linux.
+  try {
+    clearHostTerminal(options.hostOutput ?? process.stdout);
+  } catch {
+    // Host clear is best-effort; attach still proceeds.
   }
 
   const attachment =

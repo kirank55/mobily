@@ -8,6 +8,7 @@ import {
   attachWorkstationTerminal,
   shouldEmbedWorkstationTerminal,
 } from '../src/workstationTerminal.js';
+import { HOST_TERMINAL_CLEAR } from '../src/terminal/hostClear.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;
@@ -120,6 +121,7 @@ describe('attachWorkstationTerminal()', () => {
     expect(input.rawModeChanges).toEqual([true]);
     expect(input.encoding).toBe('utf8');
     expect(input.resumed).toBe(true);
+    expect(output.chunks[0]).toBe(HOST_TERMINAL_CLEAR);
     expect(output.chunks.at(-1)).toBe('\u001b[32mready\u001b[0m\r\n');
     expect(backend.resizes).toEqual([[120, 40]]);
 

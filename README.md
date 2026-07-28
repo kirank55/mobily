@@ -16,8 +16,13 @@ A free and open-source mobile remote-control for terminal-based development envi
 
 ## Quick Start
 
+### Requirements
+
+- **Node.js** 20 or newer (`node -v`)
+- **Microsoft Dev Tunnels** helper (`devtunnel`) — install commands below
+
 ```bash
-# Secure remote access (guides first-time install and login)
+# Secure remote access (guides first-time login)
 npx mobily
 ```
 
@@ -49,7 +54,9 @@ Mobily uses Microsoft's official `devtunnel` helper (GitHub, Microsoft personal,
 or Entra ID). Credentials are cached by the helper. No Mobily OAuth client ID or
 `MOBILY_DEVTUNNELS_*` environment variable is required.
 
-If the helper is missing, Mobily prints the install command. Typical installs:
+If the helper is missing, Mobily prints the install command. After installing,
+reopen your terminal so `devtunnel` is on `PATH`, then run Mobily again. Typical
+installs:
 
 ```bash
 # Linux / WSL
