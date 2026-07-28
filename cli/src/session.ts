@@ -52,6 +52,7 @@ import { errorText, rawToUtf8 } from './sessionUtils.js';
 const READY_STATE_OPEN = 1;
 const MAX_BUFFERED_OUTPUT_BYTES = 1024 * 1024;
 const DEFAULT_MAX_ACTIVE_RPC_REQUESTS = 4;
+const DEFAULT_REVOCATION_CHECK_INTERVAL_MS = 5_000;
 
 /** Extended spawn options — includes optional auth for the handshake. */
 export interface SessionOptions extends SpawnOptions {
@@ -67,6 +68,12 @@ export interface SessionOptions extends SpawnOptions {
   maxActiveRpcRequests?: number;
   /** Terminal Size Ownership lease duration. @default 15000 */
   ownershipLeaseMs?: number;
+  /**
+   * How often authenticated connections are re-checked against the binding
+   * repository so `--revoke-binding` disconnects a revoked device.
+   * @default 5000
+   */
+  revocationCheckIntervalMs?: number;
   /**
    * Override the session runtime used to spawn the PTY process.
    * Intended for testing: inject a fake runtime to control which shell is
@@ -106,6 +113,7 @@ export class Session {
   private readonly maxActiveRpcRequests: number;
   private readonly subscribers = new Set<WebSocket>();
   private readonly pendingLatencyTags = new Map<WebSocket, string[]>();
+  private readonly authenticatedDevices = new Map<WebSocket, string>();
   private readonly activeRpcRequests = new Map<WebSocket, Map<string, AbortController>>();
   private readonly pendingScrollback = new Map<WebSocket, string>();
   private readonly exitListeners = new Set<(event: ExitEvent) => void>();
@@ -128,6 +136,7 @@ export class Session {
   private readonly handshake?: SessionHandshake;
   private readonly scrollback: SessionScrollback;
   private readonly sizeOwnership: SessionSizeOwnership;
+  private readonly revocationSweep?: ReturnType<typeof setInterval>;
 
   constructor(opts: SessionOptions = {}) {
     const {
@@ -138,6 +147,7 @@ export class Session {
       handshakeTimeoutMs = 10_000,
       maxActiveRpcRequests = DEFAULT_MAX_ACTIVE_RPC_REQUESTS,
       ownershipLeaseMs = 15_000,
+      revocationCheckIntervalMs = DEFAULT_REVOCATION_CHECK_INTERVAL_MS,
       cols = 120,
       rows = 40,
       ...spawnOpts
@@ -150,6 +160,9 @@ export class Session {
       throw new RangeError('ownershipLeaseMs must be a positive integer');
     }
     this.ownershipLeaseMs = ownershipLeaseMs;
+    if (!Number.isInteger(revocationCheckIntervalMs) || revocationCheckIntervalMs < 1) {
+      throw new RangeError('revocationCheckIntervalMs must be a positive integer');
+    }
     this.currentCols = cols;
     this.currentRows = rows;
     this.stationCols = cols;
@@ -170,8 +183,13 @@ export class Session {
         auth,
         handshakeTimeoutMs: this.handshakeTimeoutMs,
         sendTo: (ws, frame) => this.sendTo(ws, frame),
-        attachAuthenticated: (ws) => this.attachAuthenticated(ws),
+        attachAuthenticated: (ws, deviceBindingId) => this.attachAuthenticated(ws, deviceBindingId),
       });
+      this.revocationSweep = setInterval(
+        () => this.enforceBindingRevocation(),
+        revocationCheckIntervalMs,
+      );
+      this.revocationSweep.unref();
     }
     this.scrollback = new SessionScrollback({
       sendTo: (ws, frame) => this.sendTo(ws, frame),
@@ -314,9 +332,10 @@ export class Session {
   // snapshot → subscribe → live I/O → scrollback after ack
   // -------------------------------------------------------------------------
 
-  private attachAuthenticated(ws: WebSocket): void {
+  private attachAuthenticated(ws: WebSocket, deviceBindingId?: string): void {
     this.pendingLatencyTags.set(ws, []);
     this.activeRpcRequests.set(ws, new Map());
+    if (deviceBindingId !== undefined) this.authenticatedDevices.set(ws, deviceBindingId);
     let detached = false;
     let attachReady = false;
     const inboundQueue: RawData[] = [];
@@ -334,6 +353,7 @@ export class Session {
       this.sizeOwnership.releaseSizeClaim(ws);
       this.subscribers.delete(ws);
       this.pendingLatencyTags.delete(ws);
+      this.authenticatedDevices.delete(ws);
       this.pendingScrollback.delete(ws);
       for (const controller of this.activeRpcRequests.get(ws)?.values() ?? []) controller.abort();
       this.activeRpcRequests.delete(ws);
@@ -469,6 +489,30 @@ export class Session {
     }
   }
 
+  /**
+   * Disconnect devices whose binding was revoked (e.g. by `mobily
+   * --revoke-binding` in another process, picked up by the repository's
+   * refresh). Unknown binding state skips the sweep rather than disconnecting.
+   */
+  private enforceBindingRevocation(): void {
+    if (!this.auth || this.authenticatedDevices.size === 0) return;
+    for (const [ws, deviceBindingId] of [...this.authenticatedDevices]) {
+      let bound: boolean;
+      try {
+        bound = this.auth.isDeviceBound(deviceBindingId);
+      } catch {
+        continue;
+      }
+      if (bound) continue;
+      this.authenticatedDevices.delete(ws);
+      try {
+        ws.close(WS_CLOSE_CODES.AUTH_REJECTED, 'device binding revoked');
+      } catch {
+        // Already closed — ignore.
+      }
+    }
+  }
+
   private handleRpc(ws: WebSocket, frame: Extract<Frame, { type: 'rpc'; method: string }>): void {
     if (!this.rpc) {
       this.sendTo(ws, {
@@ -508,9 +552,7 @@ export class Session {
   // Outbound: PTY → clients
   // -------------------------------------------------------------------------
 
-  private broadcast(
-    frame: OutputFrame | AlertFrame | SessionStatusFrame | ResizeFrame,
-  ): void {
+  private broadcast(frame: OutputFrame | AlertFrame | SessionStatusFrame | ResizeFrame): void {
     for (const ws of [...this.subscribers]) {
       if (frame.type === 'output') {
         const latencyTags = this.pendingLatencyTags.get(ws)?.splice(0);
@@ -601,6 +643,7 @@ export class Session {
   /** Tear down: stop listening, close clients, and dispose the backend. */
   dispose(): void {
     this.exited = true;
+    if (this.revocationSweep) clearInterval(this.revocationSweep);
     this.onDataDisposable.dispose();
     this.onExitDisposable.dispose();
     this.alertDetector.dispose();
@@ -628,6 +671,7 @@ export class Session {
     const viewers = new Set([...this.subscribers, ...this.pendingLatencyTags.keys()]);
     this.subscribers.clear();
     this.pendingLatencyTags.clear();
+    this.authenticatedDevices.clear();
     this.pendingScrollback.clear();
     for (const ws of viewers) {
       try {

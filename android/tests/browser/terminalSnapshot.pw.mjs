@@ -157,7 +157,7 @@ test('focuses the keyboard from blank space without turning the tap into a TUI c
     };
 
     window.__mobilyMessages = [];
-    // Android IME needs focus during touchstart for blank-space taps, and the
+    // The keyboard opens only once the tap resolves on touchend, and the
     // gesture must stay uncancelled so the soft keyboard can open.
     const startPrevented = dispatchTouch(viewport, 'touchstart', [blankTouch]);
     const focusedOnStart =
@@ -174,7 +174,7 @@ test('focuses the keyboard from blank space without turning the tap into a TUI c
   });
 
   expect(result).toEqual({
-    focusedOnStart: true,
+    focusedOnStart: false,
     focused: true,
     startPrevented: false,
     endPrevented: false,
@@ -241,6 +241,104 @@ test('scrolls terminal history with a vertical swipe while mouse reporting is ac
 
   expect(result.after).toBeLessThan(result.before);
   expect(result.inputCount).toBe(0);
+});
+
+test('opens the keyboard on tap resolution and keeps it closed for swipes and pans', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    const dispatchTouch = (type, touches, changedTouches = touches) => {
+      const viewport = document.getElementById('viewport');
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      viewport.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const keyboardFocused = () =>
+      document.activeElement?.classList.contains('xterm-helper-textarea') === true;
+    const nextFrame = () =>
+      new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    dispatchMessage({
+      type: 'write',
+      data: Array.from({ length: 120 }, (_, index) => `history ${index}\r\n`).join(''),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    window.__mobilyTerminal.scrollToBottom();
+
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const tapPoint = { clientX: screenRect.left + 20, clientY: screenRect.top + 20 };
+
+    // 1. Plain tap: the keyboard opens when the tap resolves, not on touchdown.
+    const tapStartPrevented = dispatchTouch('touchstart', [tapPoint]);
+    const focusedOnTapStart = keyboardFocused();
+    dispatchTouch('touchend', [], [tapPoint]);
+    const focusedAfterTap = keyboardFocused();
+
+    // 2. History swipe: the keyboard stays closed through the whole gesture.
+    dispatchMessage({ type: 'keyboard', visible: false });
+    const swipeStart = { clientX: screenRect.left + 20, clientY: screenRect.top + 100 };
+    const swipeEnd = { clientX: swipeStart.clientX, clientY: swipeStart.clientY + 180 };
+    const viewportBefore = window.__mobilyTerminal.buffer.active.viewportY;
+    dispatchTouch('touchstart', [swipeStart]);
+    const focusedOnSwipeStart = keyboardFocused();
+    dispatchTouch('touchmove', [swipeEnd]);
+    dispatchTouch('touchend', [], [swipeEnd]);
+    const focusedAfterSwipe = keyboardFocused();
+    const swipedThroughHistory =
+      window.__mobilyTerminal.buffer.active.viewportY < viewportBefore;
+
+    // 3. Zoomed-in still tap: touchdown stays uncancelled and the keyboard
+    // opens on release.
+    dispatchMessage({ type: 'zoom', delta: 2 });
+    await nextFrame();
+    const zoomTapStartPrevented = dispatchTouch('touchstart', [tapPoint]);
+    dispatchTouch('touchend', [], [tapPoint]);
+    const focusedAfterZoomTap = keyboardFocused();
+
+    // 4. Zoomed-in pan: the keyboard stays closed.
+    dispatchMessage({ type: 'keyboard', visible: false });
+    const panStart = { clientX: 300, clientY: 250 };
+    const panEnd = { clientX: 80, clientY: 80 };
+    dispatchTouch('touchstart', [panStart]);
+    dispatchTouch('touchmove', [panEnd]);
+    dispatchTouch('touchend', [], [panEnd]);
+    const focusedAfterPan = keyboardFocused();
+
+    return {
+      tapStartPrevented,
+      focusedOnTapStart,
+      focusedAfterTap,
+      focusedOnSwipeStart,
+      focusedAfterSwipe,
+      swipedThroughHistory,
+      zoomTapStartPrevented,
+      focusedAfterZoomTap,
+      focusedAfterPan,
+    };
+  });
+
+  expect(result).toEqual({
+    tapStartPrevented: false,
+    focusedOnTapStart: false,
+    focusedAfterTap: true,
+    focusedOnSwipeStart: false,
+    focusedAfterSwipe: false,
+    swipedThroughHistory: true,
+    zoomTapStartPrevented: false,
+    focusedAfterZoomTap: true,
+    focusedAfterPan: false,
+  });
 });
 
 test('returns taps to keyboard focus after a mouse-enabled TUI exits', async ({ page }) => {

@@ -170,9 +170,11 @@ export function hardenTerminalTextarea(term) {
 
 /**
  * Focus xterm's helper textarea so the soft keyboard can open.
- * Must run synchronously inside a user gesture on Android WebView; calling
- * focus only after touchstart preventDefault often sets activeElement without
- * showing the IME.
+ * Call only when a tap resolves (touchend of an uncancelled gesture). Focusing
+ * at touchstart opens the IME for gestures that turn out to be swipes or pans,
+ * and a focus request whose IME Android suppresses leaves the textarea as
+ * activeElement without the keyboard — after which focus() is a no-op and the
+ * keyboard stays unreachable until something else blurs the element.
  */
 export function focusTerminalInput(term) {
   if (!term) return;
@@ -792,20 +794,17 @@ ${VIEWPORT_HELPERS}
     else if(e.touches.length===2){touchGesture=null;pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinchScale=scale;}
     else if(!selectionMode&&e.touches.length===1){
       var touch=e.touches[0],viewport=document.getElementById('viewport');
-      var insideScreen=isTouchInsideTerminalScreen(touch);
-      var mouse=insideScreen&&isTerminalMouseReportingActive(mouseModeState);
-      var mayPan=viewport.scrollWidth>viewport.clientWidth+1||viewport.scrollHeight>viewport.clientHeight+1;
-      // Open the IME inside the user gesture before any preventDefault. Android
-      // WebView often focuses the textarea without showing the keyboard when
-      // focus only happens on touchend after a cancelled touchstart.
-      if(term)focusTerminalInput(term);
+      var mouse=isTouchInsideTerminalScreen(touch)&&isTerminalMouseReportingActive(mouseModeState);
       touchGesture={
         kind:'pending',startX:touch.clientX,startY:touch.clientY,lastX:touch.clientX,lastY:touch.clientY,
         left:viewport.scrollLeft,top:viewport.scrollTop,historyPixels:0,
-        mouse:mouse,claimed:!!(mouse||mayPan)
+        mouse:mouse,claimed:mouse
       };
-      // Own the gesture only when we may send a mouse click or pan; leave
-      // plain shell taps uncancelled so the soft keyboard can appear.
+      // Only a TUI mouse click owns the gesture from touchdown (cancelling
+      // touchstart suppresses the synthetic click xterm would also report).
+      // Pans and history swipes claim on the first move instead, and the
+      // keyboard focus waits for the tap to resolve on touchend — every other
+      // touch pattern must leave the gesture uncancelled and the IME closed.
       if(touchGesture.claimed){e.preventDefault();e.stopPropagation();}
     }
   },{passive:false,capture:true});
@@ -846,6 +845,9 @@ ${VIEWPORT_HELPERS}
     if(touchGesture&&touchGesture.kind==='pending'&&!e.touches.length&&!selectionMode&&term){
       var touch=e.changedTouches[0];
       if(touch&&Math.hypot(touch.clientX-touchGesture.startX,touch.clientY-touchGesture.startY)<=12){
+        // The keyboard opens only here: a tap that never became a swipe, pan,
+        // or pinch. Swipes and pans never touch the textarea, so the IME stays
+        // closed for them.
         focusTerminalInput(term);
         if(touchGesture.mouse&&isTouchInsideTerminalScreen(touch)){
           var cell=terminalScreenCell(touch);

@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseDeviceBindingId, type DeviceBindingId } from '@mobily/shared';
@@ -39,22 +47,26 @@ export class MemoryBindingRepository implements BindingRepository {
 
 export class FileBindingRepository implements BindingRepository {
   private readonly bindings = new Map<string, StoredDeviceBinding>();
+  private lastLoadedMtimeMs: number | null = null;
 
   constructor(private readonly filePath: string) {
     this.load();
   }
 
   get(deviceBindingId: string): StoredDeviceBinding | undefined {
+    this.refreshIfChanged();
     return this.bindings.get(deviceBindingId);
   }
 
   list(): StoredDeviceBinding[] {
+    this.refreshIfChanged();
     return [...this.bindings.values()].sort(
       (left, right) => left.pairedAt.getTime() - right.pairedAt.getTime(),
     );
   }
 
   save(binding: StoredDeviceBinding): void {
+    this.refreshIfChanged();
     const previous = this.bindings.get(binding.deviceBindingId);
     this.bindings.set(binding.deviceBindingId, binding);
     try {
@@ -67,6 +79,7 @@ export class FileBindingRepository implements BindingRepository {
   }
 
   revoke(deviceBindingId: string): boolean {
+    this.refreshIfChanged();
     const previous = this.bindings.get(deviceBindingId);
     const deleted = this.bindings.delete(deviceBindingId);
     if (deleted) {
@@ -80,17 +93,46 @@ export class FileBindingRepository implements BindingRepository {
     return deleted;
   }
 
+  /**
+   * Pick up pairings and revocations made by other `mobily` processes (a
+   * running Station must honor `--revoke-binding` without a restart). A
+   * malformed replacement keeps the last-known-good state — the constructor
+   * is the only fail-closed load.
+   */
+  private refreshIfChanged(): void {
+    let signature: number | null;
+    try {
+      signature = existsSync(this.filePath) ? statSync(this.filePath).mtimeMs : null;
+    } catch {
+      return;
+    }
+    if (signature === this.lastLoadedMtimeMs) return;
+    try {
+      this.load();
+    } catch {
+      // Keep last-known-good in-memory state; the next read retries.
+    }
+  }
+
   private load(): void {
-    if (!existsSync(this.filePath)) return;
+    if (!existsSync(this.filePath)) {
+      this.bindings.clear();
+      this.lastLoadedMtimeMs = null;
+      return;
+    }
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as unknown;
       if (!Array.isArray(parsed)) throw new TypeError('expected an array');
+      const next = new Map<string, StoredDeviceBinding>();
       for (const value of parsed) {
         const binding = parseStoredBinding(value);
         if (!binding) throw new TypeError('invalid binding');
-        this.bindings.set(binding.deviceBindingId, binding);
+        next.set(binding.deviceBindingId, binding);
       }
       chmodSync(this.filePath, 0o600);
+      this.bindings.clear();
+      for (const [deviceBindingId, binding] of next) this.bindings.set(deviceBindingId, binding);
+      this.lastLoadedMtimeMs = statSync(this.filePath).mtimeMs;
     } catch (error) {
       throw new Error(
         `Cannot read Device Key bindings from ${this.filePath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -114,6 +156,7 @@ export class FileBindingRepository implements BindingRepository {
     chmodSync(temporaryPath, 0o600);
     renameSync(temporaryPath, this.filePath);
     chmodSync(this.filePath, 0o600);
+    this.lastLoadedMtimeMs = statSync(this.filePath).mtimeMs;
   }
 }
 

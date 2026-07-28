@@ -3,20 +3,22 @@
  * application chrome follows the Soft Console design system.
  */
 
+import type { PairingPayload } from '@mobily/shared';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { pairWithStation } from '@/auth/pairing';
+import { pairWithStation, stationHostName } from '@/auth/pairing';
 import { Button, Screen, StatePanel } from '@/ui/components';
 import { colors, fonts, spacing, type } from '@/ui/theme';
 import { parseQrPayload } from './parseQrPayload';
 
 export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
-  const [status, setStatus] = useState<'scanning' | 'pairing' | 'error'>('scanning');
+  const [status, setStatus] = useState<'scanning' | 'confirm' | 'pairing' | 'error'>('scanning');
+  const [pendingPayload, setPendingPayload] = useState<PairingPayload | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const scannedRef = useRef(false);
   const invalidQrLoggedRef = useRef(false);
@@ -29,11 +31,12 @@ export default function ScannerScreen() {
   function retryScanning() {
     scannedRef.current = false;
     invalidQrLoggedRef.current = false;
+    setPendingPayload(null);
     setErrorMsg('');
     setStatus('scanning');
   }
 
-  async function handleBarcodeScanned(data: string) {
+  function handleBarcodeScanned(data: string) {
     if (scannedRef.current) return;
     const parsed = parseQrPayload(data);
     if (!parsed) {
@@ -45,9 +48,17 @@ export default function ScannerScreen() {
     }
 
     scannedRef.current = true;
-    console.info('[Mobily][Scanner] Valid Mobily QR detected; starting pairing');
-    setStatus('pairing');
+    console.info('[Mobily][Scanner] Valid Mobily QR detected; awaiting identity confirmation');
+    setPendingPayload(parsed);
     setErrorMsg('');
+    setStatus('confirm');
+  }
+
+  async function confirmPairing() {
+    const parsed = pendingPayload;
+    if (!parsed) return;
+    console.info('[Mobily][Scanner] Station identity confirmed; starting pairing');
+    setStatus('pairing');
 
     let result;
     try {
@@ -85,6 +96,42 @@ export default function ScannerScreen() {
           detail="Mobily uses the camera only to scan the one-time pairing QR code shown by your Station."
           action={<Button label="Grant permission" variant="primary" onPress={requestPermission} />}
         />
+      </Screen>
+    );
+  }
+
+  if (status === 'confirm' && pendingPayload) {
+    return (
+      <Screen>
+        <View style={styles.confirmPanel}>
+          <Text style={styles.confirmKicker}>02 / PAIR STATION</Text>
+          <Text style={styles.confirmTitle}>Pair with this Station?</Text>
+          <View style={styles.confirmRows}>
+            <View style={styles.confirmRow}>
+              <Text style={styles.confirmLabel}>Station</Text>
+              <Text style={styles.confirmValue}>{stationHostName(pendingPayload.endpoint)}</Text>
+            </View>
+            <View style={styles.confirmRow}>
+              <Text style={styles.confirmLabel}>Code</Text>
+              <Text style={styles.confirmValue}>{pendingPayload.code}</Text>
+            </View>
+            {pendingPayload.stationFingerprint ? (
+              <View style={styles.confirmRow}>
+                <Text style={styles.confirmLabel}>Fingerprint</Text>
+                <Text style={styles.confirmValue}>{pendingPayload.stationFingerprint}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.confirmHint}>
+            {pendingPayload.stationFingerprint
+              ? 'Confirm this fingerprint matches the one shown next to the QR on your workstation. You will not be asked again on reconnect.'
+              : 'This QR code does not include a station fingerprint. Only pair if you scanned it from your own terminal.'}
+          </Text>
+          <View style={styles.confirmActions}>
+            <Button label="Pair Station" variant="primary" onPress={confirmPairing} />
+            <Button label="Cancel" onPress={retryScanning} />
+          </View>
+        </View>
       </Screen>
     );
   }
@@ -187,4 +234,24 @@ const styles = StyleSheet.create({
   },
   scanDetail: { ...type.body, color: colors.border, marginTop: spacing.x1, textAlign: 'center' },
   errorActions: { gap: spacing.x2, width: '100%', maxWidth: 320 },
+  confirmPanel: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: spacing.x4,
+    padding: spacing.x8,
+    backgroundColor: colors.canvas,
+  },
+  confirmKicker: {
+    color: colors.muted,
+    fontFamily: fonts.monoSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.7,
+  },
+  confirmTitle: { ...type.title },
+  confirmRows: { gap: spacing.x2 },
+  confirmRow: { gap: spacing.x1 },
+  confirmLabel: { ...type.label, color: colors.muted },
+  confirmValue: { ...type.body, fontFamily: fonts.mono },
+  confirmHint: { ...type.body, color: colors.muted, maxWidth: 440 },
+  confirmActions: { gap: spacing.x2, width: '100%', maxWidth: 320 },
 });

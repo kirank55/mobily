@@ -4,6 +4,7 @@ const PAIRING_PAYLOAD_VERSION = 2;
 const PAIRING_CODE_PATTERN = /^[A-HJ-KM-NP-Z2-9]{8}$/;
 const DEVICE_BINDING_ID_PATTERN = /^binding_[A-Za-z0-9_-]{22,64}$/;
 const CERTIFICATE_PIN_PATTERN = /^sha256\/[A-Za-z0-9+/]{43}=$/;
+const STATION_FINGERPRINT_PATTERN = /^SHA256:[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/;
 
 declare const deviceBindingIdBrand: unique symbol;
 export type DeviceBindingId = string & { readonly [deviceBindingIdBrand]: true };
@@ -21,6 +22,11 @@ export interface PairingPayload {
   readonly protocolVersion: number;
   /** Dynamic SPKI pin used only for the self-signed local Station endpoint. */
   readonly certificatePin?: string;
+  /**
+   * Human-comparable fingerprint of the persistent Station identity, shown by
+   * both the CLI and the app so the user can detect a substituted pairing QR.
+   */
+  readonly stationFingerprint?: string;
 }
 
 /** Successful response from the Station pairing endpoint. */
@@ -46,6 +52,10 @@ export function encodePairingPayload(payload: PairingPayload): string {
     validateCertificatePin(payload.certificatePin);
     url.searchParams.set('pin', payload.certificatePin);
   }
+  if (payload.stationFingerprint !== undefined) {
+    validateStationFingerprint(payload.stationFingerprint);
+    url.searchParams.set('fid', payload.stationFingerprint);
+  }
   return url.toString();
 }
 
@@ -69,19 +79,26 @@ export function decodePairingPayload(raw: string, now = Date.now()): PairingPayl
   const expiresAt = Number(url.searchParams.get('expires'));
   const protocolVersion = Number(url.searchParams.get('protocol'));
   const certificatePin = url.searchParams.get('pin') ?? undefined;
+  const stationFingerprint = url.searchParams.get('fid') ?? undefined;
 
   validateEndpoint(endpoint);
   validateCode(code);
   validatePositiveInteger(expiresAt, 'expiresAt');
   validatePositiveInteger(protocolVersion, 'protocolVersion');
   if (certificatePin !== undefined) validateCertificatePin(certificatePin);
+  if (stationFingerprint !== undefined) validateStationFingerprint(stationFingerprint);
   if (expiresAt <= now) {
     throw new TypeError('mobily/pairing: pairing QR expired');
   }
 
-  return certificatePin === undefined
-    ? { endpoint, code, expiresAt, protocolVersion }
-    : { endpoint, code, expiresAt, protocolVersion, certificatePin };
+  return {
+    endpoint,
+    code,
+    expiresAt,
+    protocolVersion,
+    ...(certificatePin === undefined ? {} : { certificatePin }),
+    ...(stationFingerprint === undefined ? {} : { stationFingerprint }),
+  };
 }
 
 export function createPairingProofPayload(
@@ -150,5 +167,11 @@ function validatePositiveInteger(value: number, name: string): void {
 function validateCertificatePin(value: string): void {
   if (!CERTIFICATE_PIN_PATTERN.test(value)) {
     throw new TypeError('mobily/pairing: invalid certificate pin');
+  }
+}
+
+function validateStationFingerprint(value: string): void {
+  if (!STATION_FINGERPRINT_PATTERN.test(value)) {
+    throw new TypeError('mobily/pairing: invalid station fingerprint');
   }
 }

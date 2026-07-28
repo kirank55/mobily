@@ -7,7 +7,7 @@ export interface SessionHandshakeHost {
   readonly auth: AuthManager;
   readonly handshakeTimeoutMs: number;
   sendTo(ws: WebSocket, frame: Frame): void;
-  attachAuthenticated(ws: WebSocket): void;
+  attachAuthenticated(ws: WebSocket, deviceBindingId: string): void;
 }
 
 export class SessionHandshake {
@@ -114,7 +114,7 @@ export class SessionHandshake {
 
       clearHandshakeTimeout();
       this.host.sendTo(ws, { type: 'auth-ok' });
-      this.host.attachAuthenticated(ws);
+      this.host.attachAuthenticated(ws, frame.deviceId);
     };
 
     ws.on('message', onMessage);

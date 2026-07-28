@@ -102,7 +102,14 @@ export default function TerminalScreen() {
 
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      // The system can hide the IME (back button/gesture) without blurring the
+      // WebView textarea. Blur it so the next terminal tap is a real focus
+      // transition that re-opens the keyboard — focus() on an already-focused
+      // textarea is a no-op and leaves the keyboard unreachable.
+      termRef.current?.hideKeyboard();
+    });
     return () => {
       shown.remove();
       hidden.remove();

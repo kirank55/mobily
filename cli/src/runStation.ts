@@ -9,6 +9,7 @@ import { createTunnelBackend } from './tunnel/index.js';
 import type { TunnelConnection } from './tunnel/types.js';
 import { encodePairingPayload, PROTOCOL_VERSION } from '@mobily/shared';
 import { defaultBindingFile, FileBindingRepository } from './bindings.js';
+import { loadOrCreateStationIdentity, stationFingerprint } from './stationIdentity.js';
 import { GitService } from './gitService.js';
 import { RpcRouter } from './rpcRouter.js';
 import { workstationTerminalSize, type WorkstationShutdownCause } from './workstation/embedded.js';
@@ -64,6 +65,7 @@ export async function runStation(
   const stopLoading = startLineLoading('Preparing pairing QR…');
   let connection!: TunnelConnection;
   let pairingCode!: string;
+  let fingerprint: string | undefined;
   let renderedQr = '';
   let qrError: unknown;
   try {
@@ -87,6 +89,14 @@ export async function runStation(
     });
     auth.setTunnelUrl(connection.url, connection.certificatePin);
 
+    try {
+      fingerprint = stationFingerprint(loadOrCreateStationIdentity());
+    } catch (error) {
+      console.error(
+        `Station fingerprint unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     pairingCode = auth.generatePairingCode();
     const pairingPayload = encodePairingPayload({
       endpoint: connection.url,
@@ -94,6 +104,7 @@ export async function runStation(
       expiresAt: Date.now() + PAIRING_CODE_TTL_MS,
       protocolVersion: PROTOCOL_VERSION,
       certificatePin: connection.certificatePin,
+      stationFingerprint: fingerprint,
     });
 
     sessionExitSubscription = session.onExit(() => {
@@ -136,8 +147,14 @@ export async function runStation(
   }
   console.log();
   console.log(`  Pairing code: ${pairingCode}`);
+  if (fingerprint) {
+    console.log(`  Station fingerprint: ${fingerprint}`);
+  }
   console.log();
   console.log('  Or enter this code in the Mobily app to pair your device.');
+  if (fingerprint) {
+    console.log('  The app will show this fingerprint before pairing — make sure it matches.');
+  }
   console.log();
 
   const pairingPanel = [
@@ -148,6 +165,7 @@ export async function runStation(
     'Scan this QR with the Mobily app:',
     renderedQr || '(QR unavailable; use the pairing code below)',
     `Pairing code: ${pairingCode}`,
+    ...(fingerprint ? [`Fingerprint:  ${fingerprint}`, 'The app shows it before pairing.'] : []),
     '',
     'mobily qr hide   Hide this panel',
     'mobily qr clear  Hide it and clear the whole terminal',

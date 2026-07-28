@@ -4,7 +4,7 @@
 
 Please **do not** open a public GitHub issue for security reports.
 
-Email with: 
+Email with:
 
 - A description of the issue and its impact
 - Steps to reproduce or a proof of concept when possible
@@ -18,10 +18,11 @@ We aim to acknowledge reports within a few days and will coordinate a fix and di
 
 Mobily streams a live workstation terminal to a paired Android device.
 
-- **Device Key pairing.** The phone holds a non-exportable private key in Android Keystore. The Station stores the public key and verifies challenge-response signatures before streaming terminal data or accepting input.
+- **Device Key pairing.** The phone holds a non-exportable private key in Android Keystore. The Station stores the public key and verifies challenge-response signatures before streaming terminal data or accepting input. Every reconnect requires a biometric prompt to authorize signing — this is not the Station identity fingerprint below.
+- **Station fingerprint.** Shown once during pairing on both the CLI and the phone. Confirm they match before approving a pair — a mismatched or missing fingerprint means the QR did not come from your Station. Reconnects do not re-ask for this check.
 - **No Mobily-operated terminal relay.** Terminal bytes travel over Microsoft Dev Tunnels. Mobily does not operate a cloud that sees your PTY stream.
 - **Dev Tunnels.** The Station uses Microsoft’s `devtunnel` helper and that provider’s authentication. Treat that path as part of your trust boundary. The phone never needs a Microsoft account; Device Key challenge-response gates the connection.
-- **Session capabilities.** A paired phone can drive the shared terminal and Git RPC against the Station’s working directory. Revoke Device Key bindings with `mobily --revoke-binding <id>` if a device is lost.
+- **Session capabilities.** A paired phone can drive the shared terminal and Git RPC against the Station’s working directory. Revoke Device Key bindings with `mobily --revoke-binding <id>` if a device is lost — a running Station picks up revocations within a few seconds and disconnects the revoked device.
 
 ## Supported versions
 
