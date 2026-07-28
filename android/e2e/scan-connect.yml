@@ -14,7 +14,7 @@
 #   - Terminal WebView renders after connection
 #   - Status bar shows green indicator
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 ---
 # ── Launch the app ────────────────────────────────────────────────────────────
 - launchApp:

@@ -307,14 +307,19 @@ describe('pairing flow end-to-end', () => {
       expect(await androidOwnedOutput).toContain('ANDROID_SIZE=21 72');
       await vi.waitFor(() => expect(workstationOutput).toContain('ANDROID_SIZE=21 72'));
 
+      // The join-time resize frame already carries the Station dims (132x43), so
+      // only frames that arrive after the release prove the restore was applied.
+      const framesBeforeRelease = frames.length;
       sendFrame(ws, { type: 'terminal-size-release' });
       await vi.waitFor(
         () =>
           expect(
-            frames.some(
-              (frame) =>
-                frame['type'] === 'resize' && frame['cols'] === 132 && frame['rows'] === 43,
-            ),
+            frames
+              .slice(framesBeforeRelease)
+              .some(
+                (frame) =>
+                  frame['type'] === 'resize' && frame['cols'] === 132 && frame['rows'] === 43,
+              ),
           ).toBe(true),
         { timeout: 5000 },
       );

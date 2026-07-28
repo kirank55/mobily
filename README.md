@@ -48,7 +48,7 @@ The CLI opens a Temporary Tunnel, prints a QR, and holds a Pairing Code. Your de
 
 ### 2. Bind the phone once
 
-Build and run the Expo Android app from this repo:
+Install the pre-release APK from [GitHub Releases](https://github.com/kirank55/mobily/releases), or build and run the Expo Android app from this repo:
 
 ```bash
 pnpm --filter mobily-android android
@@ -64,7 +64,7 @@ Your phone paints the live xterm.js grid: same Session Snapshot, same input path
 
 - **Waiting on a prompt?** Answer it from Android.
 - **Need Git for a small moment?** Diff, stage, branch, commit on phone-sized screens.
-- **Step away again?** Foreground alerts surface Working / Waiting / Finished so you know when to look back.
+- **Step away again?** An ongoing foreground notification keeps the Session connected while the app sits in the background.
 - **Several machines?** Keep them as Stations and switch without pairing again.
 
 With `tmux`, the Session survives reconnects and CLI restarts. Without it, a bare PTY stays alive while the CLI process does.
@@ -98,7 +98,7 @@ Package map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Secure pairing** — QR pairing with hardware-backed Device Keys
 - **Shared persistent session** — tmux when available; bare PTY fallback with bounded replay
 - **Workstation mirror** — the launching CLI can embed or attach so the same Session is visible on the desk and the phone
-- **Background alerts** — Android foreground service reports phase and prompts that need attention
+- **Background presence** — Android foreground service keeps the Session connected in the background and shows connection state
 - **Native Git** — browse changes, stage/unstage, inspect diffs, switch branches, commit
 - **Multiple Stations** — keep paired workstations and switch without scanning again
 - **Dev Tunnels transport** — Microsoft Dev Tunnels for phone reachability; the Station keeps a pluggable tunnel interface for future backends
@@ -143,6 +143,7 @@ Device bindings:
 
 Other:
   mobily -h, --help
+  mobily --version
   mobily --verbose
   mobily --devtunnels-provider github|microsoft
 ```
@@ -163,7 +164,7 @@ Normal CLI shutdown detaches Mobily; it does not kill a tmux Session. Use `--kil
 
 | Platform | Status |
 | --- | --- |
-| **Android** | Expo app in this repo — build and run locally with Expo / EAS (`pnpm --filter mobily-android android`; see [docs/development.md](docs/development.md)). Tagged releases publish the CLI to npm only; no APK artifact yet. |
+| **Android** | Pre-release APK on [GitHub Releases](https://github.com/kirank55/mobily/releases), or build the Expo app locally with Expo / EAS (`pnpm --filter mobily-android android`; see [docs/development.md](docs/development.md)). Tagged `v*` releases publish the CLI to npm. |
 | **iOS** | Not available yet |
 
 ## Documentation

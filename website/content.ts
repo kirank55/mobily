@@ -92,7 +92,7 @@ export const features = [
     mark: '!',
     title: 'Alerts',
     description:
-      'Keep session progress, recent output, and prompts visible through an Android foreground notification.',
+      'An Android foreground-service notification keeps the Session alive in the background and shows whether the terminal is connected.',
     meta: 'BACKGROUND',
   },
   {
@@ -164,6 +164,6 @@ export const faqs = [
   {
     question: 'How do Android updates work?',
     answer:
-      'Build the Expo app from this repository (`pnpm --filter mobily-android android` or EAS). Tagged releases publish the CLI to npm only; no signed APK artifact is published yet.',
+      'Install the pre-release APK from GitHub Releases, or build the Expo app from this repository (`pnpm --filter mobily-android android` or EAS). New APK builds are attached to GitHub Releases as they ship; tagged `v*` releases publish the `mobily` CLI to npm.',
   },
 ] as const;

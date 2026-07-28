@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { Geist } from 'next/font/google';
-// @ts-expect-error - no built-in TS declarations for this package
 import '@fontsource-variable/jetbrains-mono';
 import './globals.css';
 import { site } from '@/content';

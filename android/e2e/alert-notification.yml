@@ -7,7 +7,7 @@
 #   - after the app is backgrounded, make the Station print ALERT_TEXT as an
 #     input/approval prompt (the controlled fixture should do this on cue)
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 env:
   STATION_NAME: Test Station
   ALERT_TEXT: Approve the deployment?

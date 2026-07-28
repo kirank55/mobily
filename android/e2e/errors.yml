@@ -16,7 +16,7 @@
 #   - Connection state machine: reconnecting overlay
 #   - Retry and Re-scan buttons visible in failed state
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 ---
 # ── Test 1: Station offline error ─────────────────────────────────────────────
 # Launch with a pre-seeded pairing record pointing to an unreachable URL.

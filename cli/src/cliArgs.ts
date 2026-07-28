@@ -28,6 +28,7 @@ export function parseCliArgs(
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h', default: false },
+      version: { type: 'boolean', default: false },
       'devtunnels-provider': { type: 'string' },
       verbose: { type: 'boolean', default: false },
       'list-bindings': { type: 'boolean', default: false },
@@ -39,6 +40,11 @@ export function parseCliArgs(
 
   if (values.help) {
     console.log(formatCliHelp(version));
+    return { kind: 'done' };
+  }
+
+  if (values.version) {
+    console.log(`mobily v${version}`);
     return { kind: 'done' };
   }
 

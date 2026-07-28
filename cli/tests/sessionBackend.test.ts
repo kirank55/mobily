@@ -551,7 +551,11 @@ describe.skipIf(!tmuxAvailable)('real tmux integration', () => {
 
     execFileSync('tmux', ['send-keys', '-t', name, '-l', 'clear']);
     execFileSync('tmux', ['send-keys', '-t', name, 'Enter']);
-    await vi.waitFor(() => expect(capture()).not.toContain('Connected Successfully'));
+    // Dismissing the banner needs a full shell round trip (send-keys → readline →
+    // clear → tmux redraw); allow more than the 1s waitFor default under load.
+    await vi.waitFor(() => expect(capture()).not.toContain('Connected Successfully'), {
+      timeout: 5000,
+    });
 
     backend.dispose();
   });

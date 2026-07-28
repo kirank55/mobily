@@ -359,11 +359,11 @@ export function MarketingPage() {
                 <CommandBlock command={site.command} compact />
                 <a
                   className="button button--inverse"
-                  href={site.urls.readme}
+                  href={site.urls.releases}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  BUILD ANDROID ↗
+                  DOWNLOAD ANDROID APK ↓
                 </a>
               </div>
             </div>
@@ -547,50 +547,33 @@ export function MarketingPage() {
         </section>
 
 
-        <section className="setup-section" id="get-started">
-          <div className="container setup-grid">
+        <section className="features-section" id="features">
+          <div className="container">
             <SectionHeading
-              index="04"
-              label="START"
-              inverse
+              index="02"
+              label="FEATURES"
               title={
                 <>
-                  <span className="section-title-line section-title-line--ink">One command.</span>
-                  <span className="section-title-line">One scan.</span>
+                  <span className="section-title-line section-title-line--ink">The whole desk,</span>
+                  <span className="section-title-line">in your pocket.</span>
                 </>
               }
-              body="Start the CLI on your PC, then build the Expo Android app from this repository. The first Dev Tunnels run guides authentication and setup."
+              body="Live terminal, a durable Session, background presence, native Git, and every paired PC — over a tunnel you control."
             />
-            <div className="setup-console">
-              <div className="setup-console-title">
-                <span>QUICK START</span>
-                <span>NODE.JS 20+</span>
-              </div>
-              <div className="setup-step">
-                <span>01</span>
-                <div>
-                  <strong>RUN ON YOUR PC</strong>
-                  <CommandBlock command={site.command} />
-                </div>
-              </div>
-              <div className="setup-step">
-                <span>02</span>
-                <div>
-                  <strong>INSTALL ON ANDROID</strong>
-                  <a
-                    className="button button--paper"
-                    href={site.urls.readme}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    BUILD FROM SOURCE ↗
-                  </a>
-                  <small>
-                    Run <code>pnpm --filter mobily-android android</code>. Releases publish the CLI
-                    to npm only for now.
-                  </small>
-                </div>
-              </div>
+            <div className="feature-grid" data-reveal>
+              {features.map((feature, index) => (
+                <article className="feature-card" key={feature.title}>
+                  <div className="feature-meta">
+                    <span>0{index + 1}</span>
+                    <span>{feature.meta}</span>
+                  </div>
+                  <span className="feature-mark" aria-hidden="true">
+                    {feature.mark}
+                  </span>
+                  <h3>{feature.title}</h3>
+                  <p>{feature.description}</p>
+                </article>
+              ))}
             </div>
           </div>
         </section>
@@ -677,6 +660,53 @@ export function MarketingPage() {
           </div>
         </section>
 
+        <section className="setup-section" id="get-started">
+          <div className="container setup-grid">
+            <SectionHeading
+              index="04"
+              label="START"
+              inverse
+              title={
+                <>
+                  <span className="section-title-line section-title-line--ink">One command.</span>
+                  <span className="section-title-line">One scan.</span>
+                </>
+              }
+              body="Start the CLI on your PC, then install the Android app from GitHub Releases or build it from source. The first Dev Tunnels run guides authentication and setup."
+            />
+            <div className="setup-console">
+              <div className="setup-console-title">
+                <span>QUICK START</span>
+                <span>NODE.JS 20+</span>
+              </div>
+              <div className="setup-step">
+                <span>01</span>
+                <div>
+                  <strong>RUN ON YOUR PC</strong>
+                  <CommandBlock command={site.command} />
+                </div>
+              </div>
+              <div className="setup-step">
+                <span>02</span>
+                <div>
+                  <strong>INSTALL ON ANDROID</strong>
+                  <a
+                    className="button button--paper"
+                    href={site.urls.releases}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    DOWNLOAD ANDROID APK ↓
+                  </a>
+                  <small>
+                    Pre-release APK builds are published through GitHub Releases. Prefer source?
+                    Run <code>pnpm --filter mobily-android android</code>.
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <section className="faq-section" id="faq">
           <div className="container faq-grid">

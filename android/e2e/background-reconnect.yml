@@ -7,7 +7,7 @@
 #   - a pre-paired Station named by STATION_NAME (default: Test Station)
 #   - the Station CLI remains reachable throughout the flow
 
-appId: com.anonymous.mobily
+appId: io.github.kirank55.mobily
 env:
   STATION_NAME: Test Station
 ---

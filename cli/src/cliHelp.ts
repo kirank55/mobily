@@ -19,6 +19,7 @@ export function formatCliHelp(version: string): string {
     '',
     'Other',
     '  mobily -h, --help',
+    '  mobily --version',
     '  mobily --verbose',
     '  mobily --devtunnels-provider github|microsoft',
   ].join('\n');

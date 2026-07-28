@@ -80,6 +80,8 @@ jobs:
           npx mobily@latest
           \`\`\`
 
+          Android APK (pre-release): https://github.com/kirank55/mobily/releases
+
           See [CHANGELOG.md](https://github.com/kirank55/mobily/blob/main/CHANGELOG.md)."
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists"

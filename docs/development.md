@@ -62,3 +62,25 @@ cd cli && npm pack --dry-run
 
 `@mobily/shared` is bundled into the CLI via tsup (`noExternal`) and must not
 appear in published runtime `dependencies`.
+
+## Publishing the Android APK
+
+The Android app ships as a pre-release APK attached to a GitHub Release (for
+example tag `0.0.1`). There is no Play Store listing, and the release workflow
+does not build the APK — attach it manually:
+
+1. Confirm `android/app.json`: `version` and `android.package` define the APK
+   identity (`io.github.kirank55.mobily`).
+2. Build the APK with the EAS `preview` profile (internal distribution):
+
+   ```bash
+   pnpm --filter mobily-android eas-prod
+   ```
+
+3. Download the finished artifact from the EAS build page and create a
+   pre-release with it:
+
+   ```bash
+   gh release create <tag> --prerelease --title <tag> \
+     --notes "Pre-release APK for testing." app.apk
+   ```

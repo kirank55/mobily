@@ -404,7 +404,6 @@ export default function TerminalScreen() {
           onFontSize={handleFontSize}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
-            console.log(`[mobily latency] n=${n} P50=${p50}ms P95=${p95}ms`);
             setLatencyStats({ n, p50, p95 });
           }}
         />
