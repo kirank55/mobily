@@ -83,7 +83,7 @@ describe('MarketingPage', () => {
     expect(markup).not.toContain('hero-product-meta');
     expect(markup).not.toContain('hero-status');
     expect(markup).not.toContain('hero-index');
-    expect(markup).toContain('id="features"');
+    expect(markup).not.toContain('id="features"');
     expect(markup).toContain('id="how-it-works"');
     expect(markup).toContain('id="security"');
     expect(markup).toContain('id="get-started"');
@@ -139,7 +139,9 @@ describe('MarketingPage', () => {
 
   it('states the tmux and Dev Tunnels limitations accurately', () => {
     const markup = renderToStaticMarkup(<MarketingPage />);
-    expect(markup).toContain('bare PTY survives phone disconnects only while the CLI stays alive');
+    expect(markup).toContain(
+      'The bare PTY fallback survives phone disconnects only while the CLI process remains alive.',
+    );
     expect(markup).toContain('GitHub or Microsoft');
     expect(markup).toContain('The phone never needs a Microsoft account.');
   });
