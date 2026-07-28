@@ -100,6 +100,7 @@ describe('attachTmuxWorkstation()', () => {
     const spawn = vi.fn(() => child as unknown as ChildProcess);
     const runtime = fakeRuntime();
     const onDetach = vi.fn();
+    const hostChunks: string[] = [];
 
     const attachment = attachTmuxWorkstation({
       sessionName: 'mobily-demo',
@@ -108,8 +109,10 @@ describe('attachTmuxWorkstation()', () => {
       spawn,
       runtime: runtime.value,
       onDetach,
+      hostOutput: { write: (data) => hostChunks.push(data) },
     });
 
+    expect(hostChunks).toEqual(['\u001b[2J\u001b[3J\u001b[H']);
     expect(runtime.commands.some(({ args }) => args[0] === 'bind-key')).toBe(false);
     expect(runtime.commands).toEqual(
       expect.arrayContaining([
@@ -181,6 +184,7 @@ describe('attachTmuxWorkstation()', () => {
       spawn,
       runtime: runtime.value,
       onDetach,
+      hostOutput: { write: () => undefined },
     });
 
     attachment.dispose();
@@ -199,6 +203,7 @@ describe('attachTmuxWorkstation()', () => {
       env: { TMUX: '/tmp/tmux-1000/default,123,0' },
       spawn,
       runtime: runtime.value,
+      hostOutput: { write: () => undefined },
     });
 
     expect(spawn).not.toHaveBeenCalled();

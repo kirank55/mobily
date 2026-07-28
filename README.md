@@ -42,7 +42,7 @@ On the machine where your code and terminal live:
 npx mobily@latest
 ```
 
-Needs [Node.js 20+](https://nodejs.org/). First run may install and sign you into Microsoft’s `devtunnel` helper (GitHub or Microsoft). The phone never needs that account.
+Needs [Node.js 20+](https://nodejs.org/). First run may install and sign you into Microsoft’s `devtunnel` helper (GitHub or Microsoft). After installing the helper, reopen your terminal so `devtunnel` is on `PATH`, then run Mobily again. The phone never needs that account.
 
 The CLI opens a Temporary Tunnel, prints a QR, and holds a Pairing Code. Your desk terminal stays the Station — the phone will join the same Session, not a copy.
 

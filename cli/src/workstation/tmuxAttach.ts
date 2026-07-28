@@ -9,6 +9,7 @@ import {
 import type { IDisposable } from '../pty.js';
 import type { WorkstationInput, WorkstationOutput } from './embedded.js';
 import {
+  CLEAR_WORKSTATION_SCREEN,
   CONNECTED_WORKSTATION_LINES,
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
 } from './connectedBanner.js';
@@ -36,6 +37,8 @@ export interface AttachTmuxWorkstationOptions {
   onDetach?: (message: string) => void;
   spawn?: SpawnFn;
   runtime?: SessionRuntime;
+  /** Host TTY to clear before attach (pairing QR). Defaults to process.stdout. */
+  hostOutput?: { write(data: string): unknown };
 }
 
 /** True when this TTY can auto-attach into a tmux-backed Session after phone auth. */
@@ -54,10 +57,11 @@ export function shouldAttachTmuxWorkstation(
  * Inside outer tmux: split the current window 50/50 and attach in the bottom
  * pane with `TMUX` cleared to avoid nesting the outer client.
  *
- * Clears the shell, renders the Connected Successfully banner directly on its
- * TTY (so a later `clear` dismisses it), then attaches. Ctrl+C remains
- * available to interrupt the shared Session. `mobily exit` signals the owning
- * CLI so both direct and outer-tmux attachments exit cleanly.
+ * Clears the Station host TTY (pairing QR / status), clears the shell pane,
+ * renders the Connected Successfully banner directly on its TTY (so a later
+ * `clear` dismisses it), then attaches. Ctrl+C remains available to interrupt
+ * the shared Session. `mobily exit` signals the owning CLI so both direct and
+ * outer-tmux attachments exit cleanly.
  */
 export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): IDisposable {
   const env = options.env ?? process.env;
@@ -92,6 +96,14 @@ export function attachTmuxWorkstation(options: AttachTmuxWorkstationOptions): ID
     printShellPaneLines(options.sessionName, CONNECTED_WORKSTATION_LINES, runtime);
   } catch {
     // Success banner is best-effort; attach still proceeds.
+  }
+
+  // Clear this Station TTY (pairing QR / status) before tmux takes over stdio.
+  // ANSI clear works on Windows Terminal / PowerShell as well as macOS and Linux.
+  try {
+    (options.hostOutput ?? process.stdout).write(CLEAR_WORKSTATION_SCREEN);
+  } catch {
+    // Host clear is best-effort; attach still proceeds.
   }
 
   const attachment =
