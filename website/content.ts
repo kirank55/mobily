@@ -14,7 +14,6 @@ export const site = {
 
 export const navigation = [
   { label: 'Workflow', href: '#how-it-works' },
-  { label: 'Features', href: '#features' },
   { label: 'Security', href: '#security' },
   { label: 'FAQ', href: '#faq' },
 ] as const;

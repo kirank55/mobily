@@ -546,38 +546,6 @@ export function MarketingPage() {
           </div>
         </section>
 
-
-        <section className="features-section" id="features">
-          <div className="container">
-            <SectionHeading
-              index="02"
-              label="FEATURES"
-              title={
-                <>
-                  <span className="section-title-line section-title-line--ink">The whole desk,</span>
-                  <span className="section-title-line">in your pocket.</span>
-                </>
-              }
-              body="Live terminal, a durable Session, background presence, native Git, and every paired PC — over a tunnel you control."
-            />
-            <div className="feature-grid" data-reveal>
-              {features.map((feature, index) => (
-                <article className="feature-card" key={feature.title}>
-                  <div className="feature-meta">
-                    <span>0{index + 1}</span>
-                    <span>{feature.meta}</span>
-                  </div>
-                  <span className="feature-mark" aria-hidden="true">
-                    {feature.mark}
-                  </span>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.description}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <section className="security-section" id="security">
           <div className="container security-grid">
             <div className="security-copy" data-reveal>
