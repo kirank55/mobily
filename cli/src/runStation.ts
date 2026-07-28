@@ -21,12 +21,19 @@ import {
 import { createSessionBackend } from './sessionBackend/factory.js';
 import type { CliLifecycle } from './cliLifecycle.js';
 import type { RunStationOptions } from './cliArgs.js';
+import { assertStationRequirements } from './requirements.js';
 
 export async function runStation(
   options: RunStationOptions,
   lifecycle: CliLifecycle,
   version: string,
 ): Promise<void> {
+  assertStationRequirements({
+    platform: process.platform,
+    nodeVersion: process.versions.node,
+    homeDir: os.homedir(),
+    env: process.env,
+  });
   const auth = new AuthManager(os.hostname(), new FileBindingRepository(defaultBindingFile()));
   const tunnel = await createTunnelBackend({
     devtunnelsProvider: options.devtunnelsProvider,

@@ -10,6 +10,7 @@ import {
   validateSessionName,
 } from './sessionBackend/factory.js';
 import { formatCliHelp } from './cliHelp.js';
+import { CLEAR_WORKSTATION_SCREEN } from './workstation/connectedBanner.js';
 
 export interface RunStationOptions {
   devtunnelsProvider?: DevTunnelsProvider;
@@ -19,10 +20,7 @@ export interface RunStationOptions {
 
 export type CliParseResult = { kind: 'done' } | { kind: 'run'; options: RunStationOptions };
 
-export function parseCliArgs(
-  argv: readonly string[],
-  version: string,
-): CliParseResult {
+export function parseCliArgs(argv: readonly string[], version: string): CliParseResult {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -61,7 +59,7 @@ export function parseCliArgs(
       throw new UserFacingError("Use 'mobily qr hide' or 'mobily qr clear'.");
     }
     if (!hideCurrentQrPanel()) throw new UserFacingError('No Mobily QR panel is visible.');
-    if (action === 'clear') process.stdout.write('\u001b[2J\u001b[3J\u001b[H');
+    if (action === 'clear') process.stdout.write(CLEAR_WORKSTATION_SCREEN);
     return { kind: 'done' };
   }
 

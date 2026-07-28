@@ -71,16 +71,10 @@ export async function prepareDevTunnelsBackend(
   options: PrepareDevTunnelsOptions = {},
 ): Promise<DevTunnelsBackend> {
   const runtime = options.runtime ?? createNodeRuntime();
-  let executable = runtime.findExecutable();
-
-  if (!executable && runtime.interactive) {
-    runtime.write(`${installMessage(runtime.platform)}\n\n`);
-    await promptUser(runtime, 'Install it in another terminal, then press Enter to retry: ');
-    executable = runtime.findExecutable();
-  }
+  const executable = runtime.findExecutable();
 
   if (!executable) {
-    throw new UserFacingError(installMessage(runtime.platform));
+    throw new UserFacingError(devTunnelInstallMessage(runtime.platform));
   }
 
   const ownershipStore = options.ownershipStore ?? new FileTemporaryTunnelOwnershipStore();
@@ -484,7 +478,12 @@ async function stopHost(child: DevTunnelHostProcess): Promise<void> {
   if (!exited && child.exitCode === null) child.kill('SIGKILL');
 }
 
-function installMessage(platform: NodeJS.Platform): string {
+/**
+ * First-run guidance when the helper is missing. Installing puts `devtunnel`
+ * on PATH for new shells only, so the current terminal must be reopened —
+ * there is no in-process retry.
+ */
+export function devTunnelInstallMessage(platform: NodeJS.Platform): string {
   const command =
     platform === 'win32'
       ? 'winget install Microsoft.devtunnel'
@@ -494,7 +493,7 @@ function installMessage(platform: NodeJS.Platform): string {
   return (
     'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
     `  ${command}\n` +
-    'Then run Mobily again.'
+    'Then reopen your terminal so the devtunnel command is available, and run Mobily again.'
   );
 }
 

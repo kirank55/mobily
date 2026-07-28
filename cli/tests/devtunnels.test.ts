@@ -134,28 +134,25 @@ describe('prepareDevTunnelsBackend()', () => {
       new UserFacingError(
         'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
           '  curl -sL https://aka.ms/DevTunnelCliInstall | bash\n' +
-          'Then run Mobily again.',
+          'Then reopen your terminal so the devtunnel command is available, and run Mobily again.',
       ),
     );
   });
 
-  it('retries helper discovery after guided interactive installation', async () => {
+  it('never retries in-process: installing the helper requires a reopened terminal', async () => {
     const runtime = new FakeRuntime();
     runtime.interactive = true;
     runtime.executable = undefined;
-    runtime.promptAnswers.push('');
-    const originalFind = runtime.findExecutable.bind(runtime);
-    runtime.findExecutable = () => {
-      const value = originalFind();
-      if (runtime.findCount === 1) runtime.executable = '/home/tester/bin/devtunnel';
-      return value;
-    };
 
-    const backend = await prepareDevTunnelsBackend({ runtime });
-
-    expect(backend.id).toBe('devtunnels');
-    expect(runtime.findCount).toBe(2);
-    expect(runtime.output.join('')).toContain('DevTunnelCliInstall');
+    await expect(prepareDevTunnelsBackend({ runtime })).rejects.toEqual(
+      new UserFacingError(
+        'Microsoft Dev Tunnels needs the devtunnel helper. Install it with:\n' +
+          '  curl -sL https://aka.ms/DevTunnelCliInstall | bash\n' +
+          'Then reopen your terminal so the devtunnel command is available, and run Mobily again.',
+      ),
+    );
+    expect(runtime.prompts).toEqual([]);
+    expect(runtime.findCount).toBe(1);
   });
 
   it('uses cached credentials without prompting for login', async () => {

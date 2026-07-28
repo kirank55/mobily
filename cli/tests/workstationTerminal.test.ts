@@ -8,6 +8,10 @@ import {
   attachWorkstationTerminal,
   shouldEmbedWorkstationTerminal,
 } from '../src/workstation/embedded.js';
+import {
+  CLEAR_WORKSTATION_SCREEN,
+  CONNECTED_WORKSTATION_INTRO,
+} from '../src/workstation/connectedBanner.js';
 
 class RecordingBackend implements SessionBackend {
   readonly kind = 'bare' as const;
@@ -154,6 +158,23 @@ describe('attachWorkstationTerminal()', () => {
     expect(input.paused).toBe(true);
     expect(output.chunks.at(-1)).toContain('\u001b[0m\u001b[?25h\r\n');
 
+    session.dispose();
+  });
+
+  it('clears the host screen and prints the Connected banner before mirroring output', () => {
+    const backend = new RecordingBackend('ready\r\n');
+    const session = new Session({ backend });
+    const input = new FakeInput();
+    const output = new FakeOutput();
+
+    const terminal = attachWorkstationTerminal(session, { input, output, onShutdown: vi.fn() });
+
+    expect(output.chunks[0]).toBe(CONNECTED_WORKSTATION_INTRO);
+    expect(output.chunks[0]).toContain(CLEAR_WORKSTATION_SCREEN);
+    expect(output.chunks[0]).toContain('Connected Successfully');
+    expect(output.chunks.at(-1)).toBe('ready\r\n');
+
+    terminal?.dispose();
     session.dispose();
   });
 
