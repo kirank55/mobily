@@ -5,7 +5,7 @@
 ### Your desktop terminal, in your pocket.
 
 Stream a live workstation terminal to Android over a tunnel you control.
-Pair once with a Device Key, answer prompts from the couch, and keep Git close without typing on glass.
+Pair once with a Device Key, answer prompts from the couch.
 
 [![CI](https://github.com/kirank55/mobily/actions/workflows/ci.yml/badge.svg)](https://github.com/kirank55/mobily/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
