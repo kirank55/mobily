@@ -34,7 +34,7 @@ No Mobily-operated relay sits in the middle. Reachability is Microsoft Dev Tunne
 
 Three moves. One Session.
 
-### 1. Wake the Station
+### 1. Install and Wake the Station with One Command.
 
 On the machine where your code and terminal live:
 
@@ -46,7 +46,7 @@ Needs [Node.js 20+](https://nodejs.org/). First run may install and sign you int
 
 The CLI opens a Temporary Tunnel, prints a QR, and holds a Pairing Code. Your desk terminal stays the Station — the phone will join the same Session, not a copy.
 
-### 2. Bind the phone once
+### 2. Install the APK and scan the QR code to bind the phone.
 
 Install the pre-release APK from [GitHub Releases](https://github.com/kirank55/mobily/releases), or build and run the Expo Android app from this repo:
 
@@ -58,7 +58,7 @@ Details: [docs/development.md](docs/development.md).
 
 Scan the QR (or type the 8-character code). Mobily mints a Device Key in Android Keystore and sends **only the public key** to the Station. After that, reconnects are signed challenges — no re-scan every time you leave the couch.
 
-### 3. Stay in the loop
+### 3. That's it. Stay in the loop.
 
 Your phone paints the live xterm.js grid: same Session Snapshot, same input path, Ctrl / Alt / Esc / arrows when you need them.
 
