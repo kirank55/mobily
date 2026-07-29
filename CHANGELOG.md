@@ -7,16 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-29
+
 ### Added
 
-- Pre-release Android APK published on [GitHub Releases](https://github.com/kirank55/mobily/releases) (tag `0.0.1`), built with EAS from this repository.
+- Pre-release Android APK on [GitHub Releases](https://github.com/kirank55/mobily/releases) (built with EAS; attached to `v0.1.2`), with app version `0.0.1` and application ID `io.github.kirank55.mobily`.
 - `mobily --version` prints the CLI version and exits.
+- Station startup requirements check (supported platform, Node.js, and resolvable `devtunnel` helper) before hosting begins.
+- Connected banner on the workstation terminal when a phone session is active.
+- Host terminal clear when a phone attaches, so the remote session starts from a clean screen.
+- Stronger Device Key / pairing flow on Android (scanner UX) and matching station identity / binding hardening on the CLI, with updated security documentation.
 
 ### Changed
 
-- Android app version is `0.0.1` with application ID `io.github.kirank55.mobily`, replacing the Expo placeholder `com.anonymous.mobily`. Reinstall rather than upgrade over the `0.0.1` testing APK.
-- README, homepage, and release notes now point Android users at the GitHub Releases APK and describe the foreground notification as it ships (connection state; Session phases are not exposed in the notification).
+- README, homepage, and release notes point Android users at the GitHub Releases APK and describe the foreground notification as it ships (connection state; Session phases are not exposed in the notification).
 - Station CLI platform support is Linux (including Ubuntu and WSL) and macOS; native Windows / PowerShell is deferred. `npx mobily` on Windows prints a coming-soon message directing users to WSL. CI `pty-native` no longer runs on `windows-latest`.
+- Android terminal status / UI polish for clearer connection feedback.
 
 ### Fixed
 
@@ -35,4 +41,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Android Expo client for pairing, live xterm.js terminal, Stations list, foreground session alerts, and native Git controls.
 - Tagged `v*` workflow publishes the CLI to npm and creates a notes-only GitHub Release (no Android APK artifact).
 
+[0.1.2]: https://github.com/kirank55/mobily/releases/tag/v0.1.2
 [0.1.0]: https://github.com/kirank55/mobily/releases/tag/v0.1.0

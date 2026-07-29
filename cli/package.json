@@ -1,6 +1,6 @@
 {
   "name": "mobily",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Mobile remote-control for terminal-based development environments.",
   "type": "module",
   "license": "MIT",
