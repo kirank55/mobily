@@ -17,12 +17,13 @@ export function Status({ label, tone = 'neutral' }: { label: string; tone?: Stat
 const styles = StyleSheet.create({
   status: {
     minHeight: 28,
+    alignSelf: 'flex-start',
+    maxWidth: 150,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: spacing.x2,
     paddingHorizontal: spacing.x2,
-    borderWidth: 1,
     flexShrink: 1,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },

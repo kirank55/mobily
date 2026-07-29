@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   },
   statusInfo: { flex: 1, gap: 2 },
   latencyText: { ...type.meta, fontSize: 9 },
-  navButton: { minHeight: minTouchTarget, justifyContent: 'center', paddingHorizontal: spacing.x2 },
+  navButton: { minHeight: minTouchTarget, justifyContent: 'center', paddingHorizontal: spacing.x2, borderWidth: 1, borderColor: colors.terminalSurface },
   navLink: {
     color: colors.ink,
     fontFamily: fonts.monoSemiBold,
