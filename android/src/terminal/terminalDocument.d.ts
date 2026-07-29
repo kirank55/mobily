@@ -65,7 +65,9 @@ export function applyTerminalMouseControls(state: TerminalMouseModeState, data: 
 export function isTerminalMouseReportingActive(
   state: TerminalMouseModeState | null | undefined,
 ): boolean;
+export function restoreTerminalMouseControls(data: string): string;
 export function sgrMouseClickSequence(col: number, row: number): string;
+export function sgrMouseWheelSequence(direction: 'up' | 'down', col: number, row: number): string;
 export function hardenTerminalTextarea(term: {
   textarea?: { setAttribute(name: string, value: string): void } | null;
   element?: { querySelector(selectors: string): { setAttribute(name: string, value: string): void } | null } | null;

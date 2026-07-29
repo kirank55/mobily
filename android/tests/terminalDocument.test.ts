@@ -11,7 +11,9 @@ import {
   focusTerminalInput,
   isTerminalMouseReportingActive,
   pinchTerminalScale,
+  restoreTerminalMouseControls,
   sgrMouseClickSequence,
+  sgrMouseWheelSequence,
   stripTerminalMouseControls,
   snapshotToAnsi,
   scrollbackAndSnapshotToAnsi,
@@ -42,6 +44,8 @@ describe('terminal document', () => {
     expect(production).toContain('data-seq="CTRL_C">Ctrl+C</button>');
     expect(production).not.toContain('data-seq="HOME"');
     expect(production).toContain('sgrMouseClickSequence');
+    expect(production).toContain('sgrMouseWheelSequence');
+    expect(production).toContain('restoreTerminalMouseControls');
     expect(production).toContain("msg.type==='keyboard'");
     expect(production).toContain("addEventListener('touchstart'");
     expect(production).toContain('capture:true');
@@ -117,6 +121,21 @@ describe('terminal document', () => {
   it('formats SGR mouse click press and release sequences', () => {
     expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
     expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
+  });
+
+  it('restores active historical mouse tracking with SGR coordinates', () => {
+    expect(restoreTerminalMouseControls('\u001b[?1003;1006h')).toBe(
+      '\u001b[?1003;1006h',
+    );
+    expect(restoreTerminalMouseControls('\u001b[?1000;1002h\u001b[?1000l')).toBe(
+      '\u001b[?1002;1006h',
+    );
+    expect(restoreTerminalMouseControls('\u001b[?1003h\u001b[?1049l')).toBe('');
+  });
+
+  it('formats SGR mouse wheel sequences', () => {
+    expect(sgrMouseWheelSequence('up', 0, 0)).toBe('\u001b[<64;1;1M');
+    expect(sgrMouseWheelSequence('down', 42, 11)).toBe('\u001b[<65;43;12M');
   });
 
   it('focuses the helper textarea for soft-keyboard input', () => {

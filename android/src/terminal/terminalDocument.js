@@ -148,11 +148,29 @@ export function isTerminalMouseReportingActive(state) {
   return !!(state && state.modes && Object.keys(state.modes).length > 0);
 }
 
+/** Rebuild the active tracking mode from historical terminal output using SGR coordinates. */
+export function restoreTerminalMouseControls(data) {
+  var state = createTerminalMouseModeState();
+  applyTerminalMouseControls(state, data);
+  var modes = Object.keys(state.modes).sort(function (a, b) {
+    return Number(a) - Number(b);
+  });
+  return modes.length ? '\x1b[?' + modes.join(';') + ';1006h' : '';
+}
+
 /** SGR (1006) left-button press+release at 0-based screen cell coordinates. */
 export function sgrMouseClickSequence(col, row) {
   var c = Math.max(0, col | 0) + 1;
   var r = Math.max(0, row | 0) + 1;
   return '\x1b[<0;' + c + ';' + r + 'M\x1b[<0;' + c + ';' + r + 'm';
+}
+
+/** SGR (1006) mouse-wheel event at 0-based screen cell coordinates. */
+export function sgrMouseWheelSequence(direction, col, row) {
+  var button = direction === 'up' ? 64 : 65;
+  var c = Math.max(0, col | 0) + 1;
+  var r = Math.max(0, row | 0) + 1;
+  return '\x1b[<' + button + ';' + c + ';' + r + 'M';
 }
 
 /** Disable mobile IME word suggestions on xterm's helper textarea. */
@@ -332,11 +350,16 @@ export function scrollbackAndSnapshotToAnsi(scrollback, snapshot, liveOutput = '
   if (typeof liveOutput !== 'string') return null;
   const snapshotAnsi = snapshotToAnsi(snapshot);
   if (snapshotAnsi === null) return null;
+  const mouseControls =
+    snapshot.activeScreen === 'normal'
+      ? '\x1b[?1000;1002;1003;1005;1006;1015l'
+      : restoreTerminalMouseControls(scrollback);
   return (
     '\x1bc' +
     scrollback.replace(/\x00/g, '') +
     '\x1b[?1049l\x1b[0m\x1b[2J\x1b[H' +
     snapshotAnsi.slice(2) +
+    mouseControls +
     liveOutput
   );
 }
@@ -358,7 +381,9 @@ export function buildTerminalHelpersSource() {
     createTerminalMouseModeState,
     applyTerminalMouseControls,
     isTerminalMouseReportingActive,
+    restoreTerminalMouseControls,
     sgrMouseClickSequence,
+    sgrMouseWheelSequence,
     hardenTerminalTextarea,
     focusTerminalInput,
     terminalSelectionRange,
@@ -476,7 +501,7 @@ ${VIEWPORT_HELPERS}
   var KEY_SEQS={ESC:'\\x1b',TAB:'\\t',LEFT:'\\x1b[D',RIGHT:'\\x1b[C',UP:'\\x1b[A',DOWN:'\\x1b[B',ENTER:'\\r',CTRL_C:'\\x03',CTRL_D:'\\x04',CTRL_Z:'\\x1a',CTRL_L:'\\x0c',END:'\\x1b[F',PGUP:'\\x1b[5~',PGDN:'\\x1b[6~'};
   var pendingLat={},latSamples=[],ctrlArmed=false,altArmed=false;
   var outQ=[],rafPending=false,term=null,snapshotInFlight=false,snapshotToken=0;
-  var scale=1,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,touchGesture=null,pinchDistance=0,pinchScale=1,viewportLayoutRaf=0,hasAppliedInitialFit=false;
+  var scale=1,fitMode=true,selectionMode=false,mouseCarry='',mouseModeState=createTerminalMouseModeState(),selectionStart=null,touchGesture=null,pinchDistance=0,pinchScale=1,viewportLayoutRaf=0,hasAppliedInitialFit=false;
   var fontSize=DEFAULT_READABLE_FONT_SIZE,ownsSize=false,SURFACE_PAD=8;
   var gridProposer=createDebouncedGridProposer(function(cols,rows){
     if(!term)return;
@@ -644,6 +669,7 @@ ${VIEWPORT_HELPERS}
   }
   function fitView(){
     if(!term)return;var viewport=document.getElementById('viewport'),px=terminalPixels();
+    fitMode=true;
     applyScale(fitTerminalScale(viewport.clientWidth,viewport.clientHeight,px.width,px.height),true);
     viewport.scrollLeft=0;viewport.scrollTop=0;
   }
@@ -669,14 +695,18 @@ ${VIEWPORT_HELPERS}
     keepFocusedCursorVisible();
   }
   function presentSessionLayout(){
-    if(hasAppliedInitialFit)scheduleViewportLayout();
-    else{hasAppliedInitialFit=true;fitView();}
+    if(!hasAppliedInitialFit)hasAppliedInitialFit=true;
+    if(fitMode)fitView();else scheduleViewportLayout();
   }
   function scheduleViewportLayout(){
     if(viewportLayoutRaf)return;
     viewportLayoutRaf=requestAnimationFrame(function(){
       viewportLayoutRaf=0;
-      if(ownsSize)proposeOwnerGrid();else refreshViewportLayout();
+      var textarea=term&&(term.textarea||(term.element&&term.element.querySelector('.xterm-helper-textarea')));
+      var keyboardFocused=!!(textarea&&document.activeElement===textarea);
+      if(ownsSize)proposeOwnerGrid();
+      else if(fitMode&&!keyboardFocused)fitView();
+      else refreshViewportLayout();
     });
   }
   function cellMetrics(){
@@ -767,7 +797,7 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='font-size'&&typeof msg.fontSize==='number')setFontSize(msg.fontSize);
     else if(msg.type==='font-delta'&&typeof msg.delta==='number')setFontSize(fontSize+msg.delta);
     else if(msg.type==='fit')fitView();
-    else if(msg.type==='zoom'&&typeof msg.delta==='number')applyScale(scale+msg.delta);
+    else if(msg.type==='zoom'&&typeof msg.delta==='number'){fitMode=false;applyScale(scale+msg.delta);}
     else if(msg.type==='selection-mode')setSelectionMode(msg.enabled);
     else if(msg.type==='copy-selection'&&term)sendRN({type:'copy',data:term.getSelection()});
     else if(msg.type==='paste'&&term&&typeof msg.data==='string'&&msg.data.length<=32768)term.paste(msg.data);
@@ -810,7 +840,7 @@ ${VIEWPORT_HELPERS}
   },{passive:false,capture:true});
   document.getElementById('viewport').addEventListener('touchmove',function(e){
     if(selectionMode&&selectionStart&&e.touches.length===1){selectTo(terminalCell(e.touches[0]));e.preventDefault();}
-    else if(e.touches.length===2&&pinchDistance>0){touchGesture=null;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
+    else if(e.touches.length===2&&pinchDistance>0){touchGesture=null;fitMode=false;var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);applyScale(pinchTerminalScale(pinchScale,pinchDistance,d));e.preventDefault();}
     else if(touchGesture&&e.touches.length===1){
       var touch=e.touches[0],viewport=document.getElementById('viewport');
       var dx=touch.clientX-touchGesture.startX,dy=touch.clientY-touchGesture.startY;
@@ -820,23 +850,29 @@ ${VIEWPORT_HELPERS}
         var overflowY=viewport.scrollHeight>viewport.clientHeight+1;
         if((horizontal&&overflowX)||(!horizontal&&overflowY))touchGesture.kind='pan';
         else if(!horizontal&&term&&term.buffer.active.baseY>0)touchGesture.kind='history';
+        else if(!horizontal&&touchGesture.mouse)touchGesture.kind='mouse-scroll';
         else touchGesture.kind='moved';
-        if(touchGesture.kind==='pan'||touchGesture.kind==='history')touchGesture.claimed=true;
+        if(touchGesture.kind==='pan'||touchGesture.kind==='history'||touchGesture.kind==='mouse-scroll')touchGesture.claimed=true;
       }
       if(touchGesture.kind==='pan'){
         viewport.scrollLeft=touchGesture.left-dx;
         viewport.scrollTop=touchGesture.top-dy;
-      }else if(touchGesture.kind==='history'&&term){
+      }else if((touchGesture.kind==='history'||touchGesture.kind==='mouse-scroll')&&term){
         var cell=cellMetrics();
         touchGesture.historyPixels+=touch.clientY-touchGesture.lastY;
         var lines=Math.trunc(-touchGesture.historyPixels/Math.max(1,cell.height));
         if(lines){
-          term.scrollLines(lines);
+          if(touchGesture.kind==='history')term.scrollLines(lines);
+          else{
+            var screenCell=terminalScreenCell(touch);
+            var wheel=sgrMouseWheelSequence(lines<0?'up':'down',screenCell.col,screenCell.row);
+            sendInput(new Array(Math.abs(lines)+1).join(wheel));
+          }
           touchGesture.historyPixels+=lines*cell.height;
         }
       }
       touchGesture.lastX=touch.clientX;touchGesture.lastY=touch.clientY;
-      if(touchGesture.claimed||touchGesture.kind==='pan'||touchGesture.kind==='history'){
+      if(touchGesture.claimed||touchGesture.kind==='pan'||touchGesture.kind==='history'||touchGesture.kind==='mouse-scroll'){
         e.preventDefault();e.stopPropagation();
       }
     }

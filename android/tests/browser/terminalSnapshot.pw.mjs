@@ -243,6 +243,55 @@ test('scrolls terminal history with a vertical swipe while mouse reporting is ac
   expect(result.inputCount).toBe(0);
 });
 
+test('scrolls a mouse-enabled alternate-screen TUI with a vertical swipe', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (data) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify({ type: 'write', data }),
+        }),
+      );
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+    };
+
+    dispatchMessage('\u001b[?1000;1006;1049h');
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const viewport = document.getElementById('viewport');
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const startTouch = {
+      clientX: screenRect.left + screenRect.width / 2,
+      clientY: screenRect.top + 100,
+    };
+    const endTouch = {
+      clientX: startTouch.clientX,
+      clientY: startTouch.clientY + 180,
+    };
+
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [startTouch]);
+    dispatchTouch(viewport, 'touchmove', [endTouch]);
+    dispatchTouch(viewport, 'touchend', [], [endTouch]);
+
+    return window.__mobilyMessages
+      .filter((message) => message.type === 'input')
+      .map((message) => message.data);
+  });
+
+  expect(result.some((data) => /^(?:\u001b\[<64;\d+;\d+M)+$/.test(data))).toBe(true);
+});
+
 test('opens the keyboard on tap resolution and keeps it closed for swipes and pans', async ({
   page,
 }) => {
@@ -728,6 +777,118 @@ test('keeps the first paint visible while maximum scrollback starts loading', as
   expect(await page.evaluate(() => window.__mobilyTerminal.buffer.active.baseY)).toBeGreaterThan(0);
 });
 
+test('does not emit stale mouse packets when connection scrollback restores a shell', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const snapshot = textSnapshot('[mobily] shell$');
+  await dispatchSnapshot(page, snapshot);
+  await page.evaluate((currentSnapshot) => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'session-scrollback',
+          data:
+            '\u001b[?1003;1006hprevious TUI output\r\n' +
+            'history while TUI was active\r\n'.repeat(20),
+          snapshot: currentSnapshot,
+          liveOutput: '',
+        }),
+      }),
+    );
+  }, snapshot);
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminal.buffer.active.baseY))
+    .toBeGreaterThan(0);
+
+  const screen = await page.locator('.xterm-screen').boundingBox();
+  expect(screen).not.toBeNull();
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+  });
+  await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+
+  const input = await page.evaluate(() =>
+    window.__mobilyMessages
+      .filter((message) => message.type === 'input')
+      .map((message) => message.data),
+  );
+  expect(input).toEqual([]);
+});
+
+test('restores TUI swipe scrolling when connection scrollback contains mouse mode', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const snapshot = openCodeSnapshot();
+  await dispatchSnapshot(page, snapshot);
+  await page.evaluate((currentSnapshot) => {
+    window.__beforeScrollbackTerminal = window.__mobilyTerminal;
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'session-scrollback',
+          data:
+            '\u001b[?1000;1006hprevious TUI output\r\n' +
+            'history while TUI was active\r\n'.repeat(20),
+          snapshot: currentSnapshot,
+          liveOutput: '',
+        }),
+      }),
+    );
+  }, snapshot);
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyTerminal !== window.__beforeScrollbackTerminal),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(() => {
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+    };
+    const viewport = document.getElementById('viewport');
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const startTouch = {
+      clientX: screenRect.left + screenRect.width / 2,
+      clientY: screenRect.top + 40,
+    };
+    const endTouch = {
+      clientX: startTouch.clientX,
+      clientY: startTouch.clientY + 100,
+    };
+
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [startTouch]);
+    dispatchTouch(viewport, 'touchmove', [endTouch]);
+    dispatchTouch(viewport, 'touchend', [], [endTouch]);
+
+    return window.__mobilyMessages
+      .filter((message) => message.type === 'input')
+      .map((message) => message.data);
+  });
+
+  expect(result.some((data) => /^(?:\u001b\[<64;\d+;\d+M)+$/.test(data))).toBe(true);
+});
+
 test('does not duplicate live output queued when scrollback rebuild begins', async ({ page }) => {
   await page.setContent(terminalHtml, { waitUntil: 'load' });
   await expect
@@ -921,6 +1082,36 @@ test('fits a desktop Session into the phone viewport without claiming size', asy
   expect(afterZoom.scale).toBeGreaterThan(beforeZoom);
   expect(afterZoom.resizeCount).toBe(0);
   expect(afterZoom.stageWidth).toBeGreaterThan(afterZoom.viewportWidth);
+});
+
+test('keeps Fit mode fully visible when the Station grid grows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(80, 30));
+  const initial = await readTerminalFit(page);
+  expect(initial.fittedWidth).toBeLessThanOrEqual(initial.viewportWidth + 1);
+  expect(initial.fittedHeight).toBeLessThanOrEqual(initial.viewportHeight + 1);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'resize', cols: 200, rows: 60 }),
+      }),
+    );
+  });
+  await expect.poll(() => page.evaluate(() => window.__mobilyTerminal.cols)).toBe(200);
+
+  const resized = await readTerminalFit(page);
+  expect(resized.fittedWidth).toBeLessThanOrEqual(resized.viewportWidth + 1);
+  expect(resized.fittedHeight).toBeLessThanOrEqual(resized.viewportHeight + 1);
+  expect(resized.scrollLeft).toBe(0);
+  expect(resized.scrollTop).toBe(0);
 });
 
 test('fits the initial grid and preserves scale and pan after viewport and snapshot changes', async ({
