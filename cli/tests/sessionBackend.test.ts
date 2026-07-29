@@ -229,11 +229,20 @@ describe('TmuxBackend', () => {
         fake.commands.push({ file, args });
         if (args[0] === 'display-message') return 'mobily-work-1234\n';
         if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        if (args[0] === 'list-clients') return '/dev/pts/1\n/dev/pts/2\n';
         return '';
       }),
     });
     expect(hideCurrentQrPanel(fake.value)).toBe(true);
     expect(fake.commands).toContainEqual({ file: 'tmux', args: ['kill-pane', '-t', '%2'] });
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['refresh-client', '-t', '/dev/pts/1'],
+    });
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['refresh-client', '-t', '/dev/pts/2'],
+    });
   });
 
   it('resizes the marked QR pane toward a vertical share of the window', () => {
@@ -241,6 +250,7 @@ describe('TmuxBackend', () => {
       execFile: vi.fn((file: string, args: string[]) => {
         fake.commands.push({ file, args });
         if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        if (args[0] === 'list-clients') return '/dev/pts/1\n';
         return '';
       }),
     });
@@ -249,6 +259,10 @@ describe('TmuxBackend', () => {
       file: 'tmux',
       args: ['resize-pane', '-t', '%2', '-y', '50%'],
     });
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['refresh-client', '-t', '/dev/pts/1'],
+    });
   });
 
   it('clamps the marked QR pane to an exact row count', () => {
@@ -256,6 +270,7 @@ describe('TmuxBackend', () => {
       execFile: vi.fn((file: string, args: string[]) => {
         fake.commands.push({ file, args });
         if (args[0] === 'list-panes') return '%1 shell\n%2 qr\n';
+        if (args[0] === 'list-clients') return '/dev/pts/1\n';
         return '';
       }),
     });
@@ -263,6 +278,10 @@ describe('TmuxBackend', () => {
     expect(fake.commands).toContainEqual({
       file: 'tmux',
       args: ['resize-pane', '-t', '%2', '-y', '2'],
+    });
+    expect(fake.commands).toContainEqual({
+      file: 'tmux',
+      args: ['refresh-client', '-t', '/dev/pts/1'],
     });
   });
 

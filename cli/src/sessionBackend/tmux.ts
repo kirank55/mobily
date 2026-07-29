@@ -164,6 +164,7 @@ export class TmuxBackend implements SessionBackend {
       this.runtime.execFile('tmux', ['resize-pane', '-t', pane, '-y', String(paneLines)]);
       installStatusPanelClampHook(this.sessionName, this.panelDirectory, this.runtime);
       selectShellPane(this.sessionName, this.runtime);
+      refreshSessionClients(this.sessionName, this.runtime);
     }
   }
 
@@ -261,6 +262,7 @@ export function removePairingPanel(sessionName: string, runtime: SessionRuntime)
       removed = true;
     }
   }
+  if (removed) refreshSessionClients(sessionName, runtime);
   return removed;
 }
 
@@ -388,7 +390,33 @@ function forEachPairingPane(
       touched = true;
     }
   }
+  if (touched) refreshSessionClients(sessionName, runtime);
   return touched;
+}
+
+/**
+ * Force tmux to redraw clients after Mobily changes a pane layout.
+ *
+ * This is the same native refresh used by tmux's `C-b r` binding. It does not
+ * write control input to a pane or make assumptions about the foreground
+ * program.
+ */
+function refreshSessionClients(sessionName: string, runtime: SessionRuntime): void {
+  let clients = '';
+  try {
+    clients = runtime.execFile('tmux', ['list-clients', '-t', sessionName, '-F', '#{client_tty}']);
+  } catch {
+    return;
+  }
+  for (const line of clients.split('\n')) {
+    const client = line.trim();
+    if (!client) continue;
+    try {
+      runtime.execFile('tmux', ['refresh-client', '-t', client]);
+    } catch {
+      // A client may detach between list-clients and refresh-client.
+    }
+  }
 }
 
 function sessionExists(name: string, runtime: SessionRuntime): boolean {

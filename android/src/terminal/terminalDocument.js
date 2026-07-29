@@ -654,8 +654,13 @@ ${VIEWPORT_HELPERS}
   }
   function terminalPixels(){
     var screen=term&&term.element&&term.element.querySelector('.xterm-screen');
-    var cell=estimateTerminalCellSize(fontSize);
-    return {width:Math.max(1,(screen&&screen.offsetWidth||term.cols*cell.width)+SURFACE_PAD),height:Math.max(1,(screen&&screen.offsetHeight||term.rows*cell.height)+SURFACE_PAD)};
+    var cell=cellMetrics();
+    var renderedWidth=screen&&Math.max(screen.offsetWidth||0,screen.scrollWidth||0)||0;
+    var renderedHeight=screen&&Math.max(screen.offsetHeight||0,screen.scrollHeight||0)||0;
+    return {
+      width:Math.max(1,renderedWidth,term.cols*cell.width)+SURFACE_PAD,
+      height:Math.max(1,renderedHeight,term.rows*cell.height)+SURFACE_PAD
+    };
   }
   function applyScale(next,exactFit){
     if(!term)return;

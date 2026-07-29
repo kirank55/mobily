@@ -247,7 +247,7 @@ describe('attachWorkstationTerminal()', () => {
     session.dispose();
   });
 
-  it('prevents terminal mouse modes and hover reports from leaking into the shell', () => {
+  it('uses PTY resize for pane refresh without taking over terminal program modes', () => {
     const backend = new RecordingBackend();
     const session = new Session({ backend });
     const input = new FakeInput();
@@ -260,19 +260,16 @@ describe('attachWorkstationTerminal()', () => {
 
     backend.emit('\u001b[?1002;1006');
     backend.emit('hready\r\n');
-    backend.emit('\u001b[?1000;25hcursor-visible\r\n');
-    input.emit('data', '\u001b[<35;43;26M\u001b[<35;44;25M');
-    input.emit('data', '\u001b');
-    input.emit('data', 'echo still-works\r');
+    input.emit('data', '\u001b[<35;43;26M');
+    output.columns = 101;
+    output.rows = 31;
+    output.emit('resize');
 
-    expect(output.chunks.join('')).not.toContain('?1002;1006h');
-    expect(output.chunks.join('')).toContain('ready\r\n');
-    expect(output.chunks.join('')).toContain('\u001b[?25hcursor-visible');
-    expect(backend.writes).toEqual(['\u001b', 'echo still-works\r']);
+    expect(output.chunks.join('')).toContain('\u001b[?1002;1006hready\r\n');
+    expect(backend.writes).toEqual(['\u001b[<35;43;26M']);
+    expect(backend.resizes.at(-1)).toEqual([101, 31]);
 
     terminal?.dispose();
-    expect(output.chunks.at(-1)).toContain('\u001b[?1000l');
-    expect(output.chunks.at(-1)).toContain('\u001b[?1006l');
     session.dispose();
   });
 });

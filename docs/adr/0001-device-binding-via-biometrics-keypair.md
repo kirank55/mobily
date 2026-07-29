@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0010
+---
+
 # Device binding via a biometric Android Keystore keypair
 
 The device-binding auth model uses a cryptographic keypair generated in Android Keystore through a local Expo native module, rather than a client-generated UUID stored in encrypted storage.

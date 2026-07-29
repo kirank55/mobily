@@ -1084,6 +1084,44 @@ test('fits a desktop Session into the phone viewport without claiming size', asy
   expect(afterZoom.stageWidth).toBeGreaterThan(afterZoom.viewportWidth);
 });
 
+test('fits the complete grid when xterm reports a stale narrow screen width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await page.evaluate(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+    const original = descriptor.get;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() {
+        const width = original.call(this);
+        return this.classList?.contains('xterm-screen') ? width * 0.75 : width;
+      },
+    });
+  });
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(200, 60));
+
+  const bounds = await page.evaluate(() => {
+    const viewportRect = document.getElementById('viewport').getBoundingClientRect();
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    return {
+      viewportLeft: viewportRect.left,
+      viewportRight: viewportRect.right,
+      screenLeft: screenRect.left,
+      screenRight: screenRect.right,
+    };
+  });
+
+  expect(bounds.screenLeft).toBeGreaterThanOrEqual(bounds.viewportLeft - 1);
+  expect(bounds.screenRight).toBeLessThanOrEqual(bounds.viewportRight + 1);
+});
+
 test('keeps Fit mode fully visible when the Station grid grows', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.setContent(terminalHtml, { waitUntil: 'load' });
