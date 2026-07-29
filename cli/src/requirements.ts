@@ -1,8 +1,9 @@
 /**
  * Station requirements preflight: before a Station run touches tunnels, PTYs,
- * or pairing, verify the environment Mobily depends on (Node.js runtime and
- * the devtunnel helper) and report each check. A failure stops startup with
- * an actionable message — `npx mobily` never half-starts on a bad Station.
+ * or pairing, verify the environment Mobily depends on (supported host OS,
+ * Node.js runtime, and the devtunnel helper) and report each check. A failure
+ * stops startup with an actionable message — `npx mobily` never half-starts on
+ * a bad Station.
  */
 
 import { UserFacingError } from './errors.js';
@@ -25,10 +26,33 @@ export interface StationRequirement {
   readonly detail: string;
 }
 
+/** Hosts the Station currently runs on; native Windows is deferred. */
+export const SUPPORTED_STATION_PLATFORMS = ['linux', 'darwin'] as const;
+
+export type SupportedStationPlatform = (typeof SUPPORTED_STATION_PLATFORMS)[number];
+
+/** Shown when `npx mobily` runs on native Windows / PowerShell. */
+export const WINDOWS_SUPPORT_COMING_SOON_MESSAGE =
+  'Windows support is coming soon.\n' +
+  '\n' +
+  'For now, run Mobily inside WSL (Windows Subsystem for Linux):\n' +
+  '  wsl\n' +
+  '  npx mobily@latest';
+
+export function isSupportedStationPlatform(
+  platform: NodeJS.Platform,
+): platform is SupportedStationPlatform {
+  return (SUPPORTED_STATION_PLATFORMS as readonly string[]).includes(platform);
+}
+
 export function checkStationRequirements(
   runtime: StationRequirementsRuntime,
 ): StationRequirement[] {
-  return [checkNodeVersion(runtime.nodeVersion), checkDevTunnelHelper(runtime)];
+  const platform = checkPlatform(runtime.platform);
+  // Unsupported hosts stop here so `npx mobily` on Windows only shows the
+  // coming-soon / WSL guidance — not Node or devtunnel follow-on noise.
+  if (!platform.satisfied) return [platform];
+  return [platform, checkNodeVersion(runtime.nodeVersion), checkDevTunnelHelper(runtime)];
 }
 
 /** One-line rendering of a check, matching the startup checklist style. */
@@ -45,7 +69,9 @@ export function stationRequirementsFailure(
   const problems: string[] = [];
   for (const requirement of requirements) {
     if (requirement.satisfied) continue;
-    if (requirement.name === 'Node.js') {
+    if (requirement.name === 'Platform') {
+      problems.push(WINDOWS_SUPPORT_COMING_SOON_MESSAGE);
+    } else if (requirement.name === 'Node.js') {
       problems.push(
         `Mobily needs Node.js ${MINIMUM_NODE_MAJOR} or newer; this run is on Node.js ${requirement.detail.split(' ')[0]}. Upgrade Node.js (https://nodejs.org/), then run Mobily again.`,
       );
@@ -65,6 +91,15 @@ export function assertStationRequirements(
   for (const requirement of requirements) log(formatStationRequirement(requirement));
   const failure = stationRequirementsFailure(requirements, runtime.platform);
   if (failure) throw new UserFacingError(failure);
+}
+
+function checkPlatform(platform: NodeJS.Platform): StationRequirement {
+  const satisfied = isSupportedStationPlatform(platform);
+  return {
+    name: 'Platform',
+    satisfied,
+    detail: satisfied ? platform : `${platform} (unsupported)`,
+  };
 }
 
 function checkNodeVersion(nodeVersion: string): StationRequirement {

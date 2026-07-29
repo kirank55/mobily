@@ -3,9 +3,11 @@
 Day-to-day validation: run the Station CLI and the Expo Android app on a device
 or emulator. Requires Node ≥ 20 and pnpm.
 
-On Windows, run these commands **inside WSL** (`wsl`, then `cd ~/code-wsl/mobily`).
-Do not use PowerShell against `\\wsl.localhost\…` — Windows Node cannot resolve
-pnpm workspace symlinks there, and `npm`/`pnpm` fail on UNC paths.
+The Station CLI targets Linux (including Ubuntu and WSL) and macOS. On a Windows
+host, run these commands **inside WSL** (`wsl`, then `cd ~/code-wsl/mobily`).
+Native Windows / PowerShell is not supported yet — do not use PowerShell against
+`\\wsl.localhost\…` (Windows Node cannot resolve pnpm workspace symlinks there,
+and `npm`/`pnpm` fail on UNC paths).
 
 ```bash
 pnpm install

@@ -29,8 +29,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # node-pty native-build matrix — validates that node-pty 1.1.0 prebuilts
-  # load and spawn a PTY on every supported platform without requiring
-  # VS Build Tools / Xcode CLT / build-essential at install time.
+  # load and spawn a PTY on supported hosts (Linux / macOS; WSL shares the
+  # Linux path) without requiring Xcode CLT / build-essential at install time.
+  # Native Windows / PowerShell is deferred.
   # ---------------------------------------------------------------------------
   pty-native:
     name: node-pty / ${{ matrix.os }}
@@ -38,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -51,16 +52,15 @@ jobs:
           cache: pnpm
 
       # Install dependencies.  node-pty 1.1.0 ships prebuilts for Node 20 on
-      # all three platforms so no native compiler is needed.
+      # Linux and macOS so no native compiler is needed.
       - run: pnpm install --frozen-lockfile
 
       # node-pty 1.1.0 prebuilt tarballs store pty.node and spawn-helper
-      # without the execute bit set.  On POSIX systems the spawn-helper must
-      # be executable or posix_spawnp fails immediately at runtime.
+      # without the execute bit set.  The spawn-helper must be executable or
+      # posix_spawnp fails immediately at runtime.
       # pnpm stores node-pty under node_modules/.pnpm/…/node_modules/node-pty/
       # so we locate prebuilds/ with find rather than using a hardcoded path.
-      - name: Fix node-pty prebuilt permissions (POSIX only)
-        if: runner.os != 'Windows'
+      - name: Fix node-pty prebuilt permissions
         run: |
           find node_modules -path "*/node-pty/prebuilds/*" -type f \
             \( -name "spawn-helper" -o -name "*.node" \) \

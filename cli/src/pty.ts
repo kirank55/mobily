@@ -13,9 +13,17 @@
  */
 
 import * as os from 'node:os';
+import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
-import * as nodePty from 'node-pty';
+import type * as NodePty from 'node-pty';
+
+const require = createRequire(import.meta.url);
+
+/** Load the native module only when spawning — keeps `npx mobily` printable on unsupported hosts. */
+function loadNodePty(): typeof NodePty {
+  return require('node-pty') as typeof NodePty;
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -57,7 +65,7 @@ export interface IDisposable {
  */
 export interface PtyProcess {
   /** The underlying node-pty process (exposed for testing / introspection). */
-  readonly raw: nodePty.IPty;
+  readonly raw: NodePty.IPty;
   /** Write raw data to the PTY's stdin. */
   write(data: string): void;
   /** Register a listener for PTY output data. Returns a disposable handle. */
@@ -131,7 +139,7 @@ export function spawn(opts: SpawnOptions = {}): PtyProcess {
     terminalName = 'xterm-256color',
   } = opts;
 
-  const raw = nodePty.spawn(file, args, {
+  const raw = loadNodePty().spawn(file, args, {
     name: terminalName,
     cols,
     rows,

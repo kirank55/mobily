@@ -138,7 +138,7 @@ export const faqs = [
   {
     question: 'Is Mobily Android-only?',
     answer:
-      'The mobile client currently targets Android. The CLI on your PC runs on Node.js 20+ across macOS, Linux, Windows, and WSL, subject to native PTY support.',
+      'The mobile client currently targets Android. The Station CLI runs on Node.js 20+ on Linux (including Ubuntu and WSL) and macOS. Native Windows / PowerShell support is planned for a later release.',
   },
   {
     question: 'Does Mobily only work with coding agents?',

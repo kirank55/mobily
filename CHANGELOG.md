@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Android app version is `0.0.1` with application ID `io.github.kirank55.mobily`, replacing the Expo placeholder `com.anonymous.mobily`. Reinstall rather than upgrade over the `0.0.1` testing APK.
 - README, homepage, and release notes now point Android users at the GitHub Releases APK and describe the foreground notification as it ships (connection state; Session phases are not exposed in the notification).
+- Station CLI platform support is Linux (including Ubuntu and WSL) and macOS; native Windows / PowerShell is deferred. `npx mobily` on Windows prints a coming-soon message directing users to WSL. CI `pty-native` no longer runs on `windows-latest`.
 
 ### Fixed
 

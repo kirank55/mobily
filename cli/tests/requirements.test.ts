@@ -6,8 +6,10 @@ import {
   assertStationRequirements,
   checkStationRequirements,
   formatStationRequirement,
+  isSupportedStationPlatform,
   MINIMUM_NODE_MAJOR,
   stationRequirementsFailure,
+  WINDOWS_SUPPORT_COMING_SOON_MESSAGE,
   type StationRequirementsRuntime,
 } from '../src/requirements.js';
 
@@ -31,24 +33,50 @@ describe('MINIMUM_NODE_MAJOR', () => {
   });
 });
 
+describe('isSupportedStationPlatform()', () => {
+  it('accepts Linux and macOS, rejects native Windows', () => {
+    expect(isSupportedStationPlatform('linux')).toBe(true);
+    expect(isSupportedStationPlatform('darwin')).toBe(true);
+    expect(isSupportedStationPlatform('win32')).toBe(false);
+  });
+});
+
 describe('checkStationRequirements()', () => {
-  it('passes with a supported Node.js and a resolvable devtunnel helper', () => {
+  it('passes with a supported platform, Node.js, and a resolvable devtunnel helper', () => {
     const helperPath = '/home/tester/bin/devtunnel';
     const checks = checkStationRequirements(
       runtime({ fileExists: (candidate) => candidate === helperPath, env: { PATH: '' } }),
     );
 
     expect(checks).toEqual([
+      { name: 'Platform', satisfied: true, detail: 'linux' },
       { name: 'Node.js', satisfied: true, detail: 'v22.7.0 (requires 20+)' },
       { name: 'devtunnel helper', satisfied: true, detail: helperPath },
     ]);
     expect(stationRequirementsFailure(checks, 'linux')).toBeUndefined();
   });
 
+  it('fails native Windows with coming-soon WSL guidance only', () => {
+    const checks = checkStationRequirements(runtime({ platform: 'win32' }));
+
+    expect(checks).toEqual([
+      {
+        name: 'Platform',
+        satisfied: false,
+        detail: 'win32 (unsupported)',
+      },
+    ]);
+    const failure = stationRequirementsFailure(checks, 'win32');
+    expect(failure).toBe(WINDOWS_SUPPORT_COMING_SOON_MESSAGE);
+    expect(failure).toContain('Windows support is coming soon');
+    expect(failure).toContain('WSL');
+    expect(failure).toContain('npx mobily@latest');
+  });
+
   it('fails Node.js below the supported major', () => {
     const checks = checkStationRequirements(runtime({ nodeVersion: '18.19.1' }));
 
-    expect(checks[0]).toEqual({
+    expect(checks[1]).toEqual({
       name: 'Node.js',
       satisfied: false,
       detail: 'v18.19.1 (requires 20+)',
@@ -59,11 +87,11 @@ describe('checkStationRequirements()', () => {
   });
 
   it('fails the devtunnel helper with the platform install guidance', () => {
-    const checks = checkStationRequirements(runtime({ platform: 'win32' }));
+    const checks = checkStationRequirements(runtime({ platform: 'darwin' }));
 
-    expect(checks[1]).toEqual({ name: 'devtunnel helper', satisfied: false, detail: 'not found' });
-    const failure = stationRequirementsFailure(checks, 'win32');
-    expect(failure).toContain('winget install Microsoft.devtunnel');
+    expect(checks[2]).toEqual({ name: 'devtunnel helper', satisfied: false, detail: 'not found' });
+    const failure = stationRequirementsFailure(checks, 'darwin');
+    expect(failure).toContain('brew install --cask devtunnel');
     expect(failure).toContain('reopen your terminal');
   });
 
@@ -97,6 +125,7 @@ describe('assertStationRequirements()', () => {
     assertStationRequirements(runtime({ fileExists: () => true }), (line) => lines.push(line));
 
     expect(lines).toEqual([
+      '√ Platform: linux',
       '√ Node.js: v22.7.0 (requires 20+)',
       expect.stringMatching(/^√ devtunnel helper: /),
     ]);
@@ -108,6 +137,10 @@ describe('assertStationRequirements()', () => {
     expect(() =>
       assertStationRequirements(runtime({ nodeVersion: '18.19.1' }), (line) => lines.push(line)),
     ).toThrow(UserFacingError);
-    expect(lines).toEqual(['× Node.js: v18.19.1 (requires 20+)', '× devtunnel helper: not found']);
+    expect(lines).toEqual([
+      '√ Platform: linux',
+      '× Node.js: v18.19.1 (requires 20+)',
+      '× devtunnel helper: not found',
+    ]);
   });
 });

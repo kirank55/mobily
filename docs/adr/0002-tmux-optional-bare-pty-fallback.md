@@ -1,5 +1,9 @@
 # tmux is optional — bare PTY fallback on Windows
 
+> **Status note (2026-07):** Native Windows / PowerShell Station support is deferred.
+> Current supported hosts are Linux (including Ubuntu and WSL) and macOS. The bare-PTY
+> adapter remains the fallback whenever `tmux` is absent on those hosts.
+
 Session persistence wraps `tmux` when available (macOS, Linux, WSL) but falls back to a bare PTY managed by the CLI process when `tmux` is not present (native Windows without WSL).
 
 With tmux: the session survives CLI crashes and supports scrollback replay via `capture-pane`. Without tmux: the session lives as long as the CLI process and scrollback replay comes from an in-process ring buffer.
@@ -17,4 +21,4 @@ This avoids forcing Windows users into WSL just to run the CLI, while still givi
 - The tmux window uses the `largest` sizing policy for native tmux clients. Mobily's shared Session grid follows Terminal Size Ownership with the Station as the default (and currently sole Android-used) owner; Android scales that grid visually rather than claiming resize authority.
 - Mobily's tmux attachment advertises RGB support and disables the session-local tmux status row so colors and full-screen grid dimensions match the bare-PTY contract.
 - Embedded workstation rendering suppresses terminal mouse tracking so the containing terminal emulator retains normal text selection semantics.
-- Unit and integration tests cover both adapters; real tmux coverage runs when `tmux` is available (typically Linux CI). The separate CI `pty-native` matrix only validates `node-pty` spawn on Linux, macOS, and Windows.
+- Unit and integration tests cover both adapters; real tmux coverage runs when `tmux` is available (typically Linux CI). The separate CI `pty-native` matrix validates `node-pty` spawn on Linux and macOS (native Windows / PowerShell Station support is deferred).

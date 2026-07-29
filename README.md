@@ -10,7 +10,7 @@ Pair once with a Device Key, answer prompts from the couch.
 [![CI](https://github.com/kirank55/mobily/actions/workflows/ci.yml/badge.svg)](https://github.com/kirank55/mobily/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#platform-support)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20WSL%20%7C%20macOS-lightgrey.svg)](#platform-support)
 [![Android](https://img.shields.io/badge/Android-Expo-3DDC84.svg)](#platform-support)
 [![npm](https://img.shields.io/npm/v/mobily.svg)](https://www.npmjs.com/package/mobily)
 
@@ -156,9 +156,10 @@ Normal CLI shutdown detaches Mobily; it does not kill a tmux Session. Use `--kil
 
 | Platform | Status |
 | --- | --- |
-| **Linux** | Supported (Node ≥ 20, native PTY via `node-pty`) |
+| **Linux / Ubuntu** | Supported (Node ≥ 20, native PTY via `node-pty`) |
+| **WSL** | Supported (same Linux Station path; develop the monorepo inside WSL) |
 | **macOS** | Supported |
-| **Windows / WSL** | Supported; develop the monorepo inside WSL |
+| **Native Windows / PowerShell** | Not yet — planned for a later release; use WSL for now |
 
 ### Mobile app
 

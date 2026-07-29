@@ -6,7 +6,7 @@ const structuredData = {
   "@type": "SoftwareApplication",
   name: site.name,
   applicationCategory: "DeveloperApplication",
-  operatingSystem: "Android; macOS; Linux; Windows",
+  operatingSystem: "Android; macOS; Linux",
   description: site.description,
   codeRepository: site.urls.repository,
   license: site.urls.license,
