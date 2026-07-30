@@ -12,7 +12,7 @@ const nativeModule = readFileSync(
 
 describe('native Device Key authentication policy', () => {
   it('uses one short biometric grace window for reconnect challenge signing', () => {
-    expect(nativeModule).toContain('private const val AUTHENTICATION_VALIDITY_SECONDS = 60');
+    expect(nativeModule).toContain('private const val AUTHENTICATION_VALIDITY_SECONDS = 1800');
     expect(nativeModule).toContain(
       'setUserAuthenticationParameters(\n            AUTHENTICATION_VALIDITY_SECONDS,',
     );
