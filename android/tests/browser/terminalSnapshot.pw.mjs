@@ -53,9 +53,7 @@ test('re-announces readiness when React Native probes after page load', async ({
     .toBe(true);
 });
 
-test('focuses the keyboard while sending terminal button taps as mouse input', async ({
-  page,
-}) => {
+test('focuses the keyboard while sending terminal button taps as mouse input', async ({ page }) => {
   await page.setContent(terminalHtml, { waitUntil: 'load' });
   await expect
     .poll(() =>
@@ -344,8 +342,7 @@ test('opens the keyboard on tap resolution and keeps it closed for swipes and pa
     dispatchTouch('touchmove', [swipeEnd]);
     dispatchTouch('touchend', [], [swipeEnd]);
     const focusedAfterSwipe = keyboardFocused();
-    const swipedThroughHistory =
-      window.__mobilyTerminal.buffer.active.viewportY < viewportBefore;
+    const swipedThroughHistory = window.__mobilyTerminal.buffer.active.viewportY < viewportBefore;
 
     // 3. Zoomed-in still tap: touchdown stays uncancelled and the keyboard
     // opens on release.
@@ -434,6 +431,49 @@ test('returns taps to keyboard focus after a mouse-enabled TUI exits', async ({ 
   });
 
   expect(result).toEqual({ focused: true, inputCount: 0 });
+});
+
+test('does not write stale mouse packets into a shell prompt', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    const dispatchTouch = (target, type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      target.dispatchEvent(event);
+    };
+
+    dispatchMessage({ type: 'write', data: '\u001b[?1000;1006h' });
+    dispatchMessage({ type: 'write', data: '\r\n[mobily] shell$ ' });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const viewport = document.getElementById('viewport');
+    const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const touch = {
+      clientX: screenRect.left + 20,
+      clientY: screenRect.top + 20,
+    };
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [touch]);
+    dispatchTouch(viewport, 'touchend', [], [touch]);
+
+    return {
+      focused: document.activeElement?.classList.contains('xterm-helper-textarea') === true,
+      inputs: window.__mobilyMessages
+        .filter((message) => message.type === 'input')
+        .map((message) => message.data),
+    };
+  });
+
+  expect(result).toEqual({ focused: true, inputs: [] });
 });
 
 test('pans the terminal horizontally with one finger after zooming in', async ({ page }) => {
@@ -853,9 +893,7 @@ test('restores TUI swipe scrolling when connection scrollback contains mouse mod
     );
   }, snapshot);
   await expect
-    .poll(() =>
-      page.evaluate(() => window.__mobilyTerminal !== window.__beforeScrollbackTerminal),
-    )
+    .poll(() => page.evaluate(() => window.__mobilyTerminal !== window.__beforeScrollbackTerminal))
     .toBe(true);
 
   const result = await page.evaluate(() => {
@@ -1084,6 +1122,48 @@ test('fits a desktop Session into the phone viewport without claiming size', asy
   expect(afterZoom.stageWidth).toBeGreaterThan(afterZoom.viewportWidth);
 });
 
+test('fills the phone viewport with a readable grid after Android gains size ownership', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(200, 60));
+  const desktopFit = await readTerminalFit(page);
+  expect(desktopFit.fittedHeight / desktopFit.viewportHeight).toBeLessThan(0.5);
+
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'size-ownership', owned: true }),
+      }),
+    );
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'resize')),
+    )
+    .toBe(true);
+
+  const readable = await readTerminalFit(page);
+  expect(readable.scale).toBe(1);
+  expect(readable.fittedWidth).toBeLessThanOrEqual(readable.viewportWidth + 1);
+  expect(readable.fittedHeight).toBeLessThanOrEqual(readable.viewportHeight + 1);
+  expect(readable.fittedHeight / readable.viewportHeight).toBeGreaterThan(0.9);
+
+  const proposedGrid = await page.evaluate(() =>
+    window.__mobilyMessages.find((message) => message.type === 'resize'),
+  );
+  expect(proposedGrid.cols).toBeLessThan(200);
+  expect(proposedGrid.rows).toBeLessThan(60);
+});
+
 test('fits the complete grid when xterm reports a stale narrow screen width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.setContent(terminalHtml, { waitUntil: 'load' });
@@ -1202,7 +1282,9 @@ test('fits the initial grid and preserves scale and pan after viewport and snaps
   expect(snapshotPreserved.scrollTop).toBe(zoomed.scrollTop);
 });
 
-test('keeps the focused cursor visible when the keyboard shortens the viewport', async ({ page }) => {
+test('keeps the focused cursor visible when the keyboard shortens the viewport', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.setContent(terminalHtml, { waitUntil: 'load' });
   await expect
@@ -1233,8 +1315,7 @@ test('keeps the focused cursor visible when the keyboard shortens the viewport',
     const viewportRect = viewport.getBoundingClientRect();
     const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
     const cursorBottom =
-      screenRect.top +
-      ((terminal.buffer.active.cursorY + 1) * screenRect.height) / terminal.rows;
+      screenRect.top + ((terminal.buffer.active.cursorY + 1) * screenRect.height) / terminal.rows;
     const scaleMatch = /scale\(([^)]+)\)/.exec(document.getElementById('tc').style.transform || '');
     return {
       rows: terminal.rows,

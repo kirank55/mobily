@@ -21,6 +21,7 @@ type OutputListener = (data: string, latencyTags?: readonly string[]) => void;
 type ResizeListener = (cols: number, rows: number) => void;
 type SnapshotListener = (snapshot: SessionSnapshotFrame) => void;
 type ScrollbackListener = (data: string) => void;
+type TerminalSizeOwnerListener = (ownedByRequester: boolean) => void;
 
 interface StationConnectionValue {
   pairing: PairingRecord | null;
@@ -32,11 +33,15 @@ interface StationConnectionValue {
   disconnect(): void;
   retry(): void;
   sendInput(data: string, latencyTag?: string): void;
+  sendResize(cols: number, rows: number): void;
+  claimTerminalSize(): void;
+  releaseTerminalSize(): void;
   acknowledgeSnapshotApplied(): void;
   subscribeOutput(listener: OutputListener): () => void;
   subscribeResize(listener: ResizeListener): () => void;
   subscribeSnapshot(listener: SnapshotListener): () => void;
   subscribeScrollback(listener: ScrollbackListener): () => void;
+  subscribeTerminalSizeOwner(listener: TerminalSizeOwnerListener): () => void;
 }
 
 const StationConnectionContext = createContext<StationConnectionValue | null>(null);
@@ -53,7 +58,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const outputListeners = useRef(new Set<OutputListener>());
   const resizeListeners = useRef(new Set<ResizeListener>());
   const scrollbackListeners = useRef(new Set<ScrollbackListener>());
+  const terminalSizeOwnerListeners = useRef(new Set<TerminalSizeOwnerListener>());
   const latestResize = useRef<{ cols: number; rows: number } | null>(null);
+  const latestTerminalSizeOwner = useRef(false);
   const foreground = useRef(new ForegroundConnectionController());
   const [snapshotChannel] = useState(() => new SessionSnapshotChannel());
 
@@ -64,6 +71,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
     rpcRef.current = null;
     pairingRef.current = null;
     latestResize.current = null;
+    latestTerminalSizeOwner.current = false;
     snapshotChannel.reset();
     setRpc(null);
     setPairing(null);
@@ -84,6 +92,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       rpcRef.current?.disconnect();
       clientRef.current?.disconnect();
       latestResize.current = null;
+      latestTerminalSizeOwner.current = false;
       snapshotChannel.reset();
       let client!: WsClient;
       const nextRpc = new RpcClient((frame) => client.sendRpc(frame));
@@ -122,6 +131,12 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
         onScrollback: (data) => {
           for (const listener of scrollbackListeners.current) listener(data);
         },
+        onTerminalSizeOwner: ({ ownedByRequester }) => {
+          latestTerminalSizeOwner.current = ownedByRequester;
+          for (const listener of terminalSizeOwnerListeners.current) {
+            listener(ownedByRequester);
+          }
+        },
         onAlert: (message) => void foreground.current.alert(message),
         onSessionStatus: (phase, detail) => void foreground.current.updatePhase(phase, detail),
         onRpcFrame: (frame) => nextRpc.handleFrame(frame),
@@ -154,6 +169,15 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const sendInput = useCallback((data: string, latencyTag?: string) => {
     clientRef.current?.sendInput(data, latencyTag);
   }, []);
+  const sendResize = useCallback((cols: number, rows: number) => {
+    clientRef.current?.sendResize(cols, rows);
+  }, []);
+  const claimTerminalSize = useCallback(() => {
+    clientRef.current?.claimTerminalSize();
+  }, []);
+  const releaseTerminalSize = useCallback(() => {
+    clientRef.current?.releaseTerminalSize();
+  }, []);
   const acknowledgeSnapshotApplied = useCallback(() => {
     clientRef.current?.acknowledgeSnapshotApplied();
   }, []);
@@ -174,6 +198,11 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const subscribeScrollback = useCallback((listener: ScrollbackListener) => {
     scrollbackListeners.current.add(listener);
     return () => scrollbackListeners.current.delete(listener);
+  }, []);
+  const subscribeTerminalSizeOwner = useCallback((listener: TerminalSizeOwnerListener) => {
+    terminalSizeOwnerListeners.current.add(listener);
+    listener(latestTerminalSizeOwner.current);
+    return () => terminalSizeOwnerListeners.current.delete(listener);
   }, []);
 
   useEffect(() => {
@@ -204,11 +233,15 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       disconnect,
       retry,
       sendInput,
+      sendResize,
+      claimTerminalSize,
+      releaseTerminalSize,
       acknowledgeSnapshotApplied,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
       subscribeScrollback,
+      subscribeTerminalSizeOwner,
     }),
     [
       pairing,
@@ -220,11 +253,15 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       disconnect,
       retry,
       sendInput,
+      sendResize,
+      claimTerminalSize,
+      releaseTerminalSize,
       acknowledgeSnapshotApplied,
       subscribeOutput,
       subscribeResize,
       subscribeSnapshot,
       subscribeScrollback,
+      subscribeTerminalSizeOwner,
     ],
   );
   return (

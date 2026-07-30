@@ -101,6 +101,7 @@ export function pinchTerminalScale(initialScale, initialDistance, currentDistanc
 
 /** DEC private modes that enable click / drag / motion mouse reporting. */
 var TERMINAL_MOUSE_REPORTING_PARAMS = { 1000: 1, 1002: 1, 1003: 1 };
+var MOBILY_SHELL_PROMPT = '[mobily] ';
 
 /**
  * Strip mouse tracking DECSET/DECRST params (used by the workstation embed).
@@ -117,7 +118,7 @@ export function stripTerminalMouseControls(data) {
 
 /** Mutable mouse-mode tracker for the Android terminal document. */
 export function createTerminalMouseModeState() {
-  return { modes: {} };
+  return { modes: {}, promptTail: '' };
 }
 
 /**
@@ -127,7 +128,18 @@ export function createTerminalMouseModeState() {
 export function applyTerminalMouseControls(state, data) {
   if (!state || typeof data !== 'string') return data;
   if (!state.modes) state.modes = {};
-  data.replace(/\x1b\[\?([0-9;]+)([hl])/g, function (_sequence, parameters, command) {
+  var stream = (typeof state.promptTail === 'string' ? state.promptTail : '') + data;
+  var eventPattern = /\x1b\[\?([0-9;]+)([hl])|\[mobily\] /g;
+  var match;
+  while ((match = eventPattern.exec(stream))) {
+    if (match[0] === MOBILY_SHELL_PROMPT) {
+      // Mobily owns this prompt prefix, so it is a reliable process boundary:
+      // a TUI has returned to the shell even if it omitted DECRST mouse modes.
+      state.modes = {};
+      continue;
+    }
+    var parameters = match[1];
+    var command = match[2];
     var enable = command === 'h';
     var values = parameters.split(';');
     // Returning from an alternate-screen TUI is a safety boundary. If its
@@ -139,8 +151,8 @@ export function applyTerminalMouseControls(state, data) {
       if (enable) state.modes[parameter] = 1;
       else delete state.modes[parameter];
     });
-    return _sequence;
-  });
+  }
+  state.promptTail = stream.slice(-(MOBILY_SHELL_PROMPT.length - 1));
   return data;
 }
 
@@ -369,6 +381,7 @@ export function buildTerminalHelpersSource() {
     'var TERMINAL_MOUSE_REPORTING_PARAMS = ' +
       JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) +
       ';',
+    'var MOBILY_SHELL_PROMPT = ' + JSON.stringify(MOBILY_SHELL_PROMPT) + ';',
     clampTerminalScale,
     clampTerminalFontSize,
     estimateTerminalCellSize,

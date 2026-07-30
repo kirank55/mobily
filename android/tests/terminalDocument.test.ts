@@ -46,6 +46,7 @@ describe('terminal document', () => {
     expect(production).toContain('sgrMouseClickSequence');
     expect(production).toContain('sgrMouseWheelSequence');
     expect(production).toContain('restoreTerminalMouseControls');
+    expect(TERMINAL_HELPERS_JS).toContain('MOBILY_SHELL_PROMPT');
     expect(production).toContain("msg.type==='keyboard'");
     expect(production).toContain("addEventListener('touchstart'");
     expect(production).toContain('capture:true');
@@ -118,15 +119,27 @@ describe('terminal document', () => {
     expect(isTerminalMouseReportingActive(state)).toBe(false);
   });
 
+  it('clears stale mouse reporting when the Mobily shell prompt returns across chunks', () => {
+    const state = createTerminalMouseModeState();
+    applyTerminalMouseControls(state, '\u001b[?1000;1006h');
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+
+    applyTerminalMouseControls(state, '\r\n[mob');
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+    applyTerminalMouseControls(state, 'ily] kiran@station:~$ ');
+    expect(isTerminalMouseReportingActive(state)).toBe(false);
+
+    applyTerminalMouseControls(state, '\r\n[mobily] shell$ \u001b[?1002;1006h');
+    expect(isTerminalMouseReportingActive(state)).toBe(true);
+  });
+
   it('formats SGR mouse click press and release sequences', () => {
     expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
     expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
   });
 
   it('restores active historical mouse tracking with SGR coordinates', () => {
-    expect(restoreTerminalMouseControls('\u001b[?1003;1006h')).toBe(
-      '\u001b[?1003;1006h',
-    );
+    expect(restoreTerminalMouseControls('\u001b[?1003;1006h')).toBe('\u001b[?1003;1006h');
     expect(restoreTerminalMouseControls('\u001b[?1000;1002h\u001b[?1000l')).toBe(
       '\u001b[?1002;1006h',
     );

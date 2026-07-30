@@ -25,6 +25,7 @@ import { loadPairing, clearPairing } from '@/auth/storage';
 import { useStationConnection } from '@/client/StationConnection';
 import TerminalView, { type TerminalViewHandle } from '@/terminal/TerminalView';
 import { loadTerminalFontSize, saveTerminalFontSize } from '@/terminal/fontPreference';
+import { AutomaticTerminalSizeOwnership } from '@/terminal/automaticTerminalSizeOwnership';
 import { Button, Screen, Status } from '@/ui/components';
 import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 
@@ -38,11 +39,15 @@ export default function TerminalScreen() {
     disconnect,
     retry,
     sendInput,
+    sendResize,
+    claimTerminalSize,
+    releaseTerminalSize,
     acknowledgeSnapshotApplied,
     subscribeOutput,
     subscribeResize,
     subscribeSnapshot,
     subscribeScrollback,
+    subscribeTerminalSizeOwner,
   } = useStationConnection();
   const stationName = pairing?.stationName ?? 'Station';
   const [termReady, setTermReady] = useState(false);
@@ -59,6 +64,14 @@ export default function TerminalScreen() {
   const awaitingScrollback = useRef(false);
 
   const termRef = useRef<TerminalViewHandle | null>(null);
+  const [sizeOwnership] = useState(
+    () =>
+      new AutomaticTerminalSizeOwnership({
+        claim: claimTerminalSize,
+        release: releaseTerminalSize,
+        sendResize,
+      }),
+  );
 
   const handleReScan = useCallback(() => {
     disconnect();
@@ -122,10 +135,24 @@ export default function TerminalScreen() {
   }, [termReady, fontSize]);
 
   useEffect(() => {
-    if (!termReady) return;
-    // Station owns the Session grid; Android only scales the desktop view.
-    termRef.current?.setSizeOwnership(false);
-  }, [termReady]);
+    sizeOwnership.setConnected(connState === 'connected');
+  }, [connState, sizeOwnership]);
+
+  useEffect(() => {
+    return subscribeTerminalSizeOwner((ownedByRequester) => {
+      sizeOwnership.setOwnedByRequester(ownedByRequester);
+    });
+  }, [sizeOwnership, subscribeTerminalSizeOwner]);
+
+  useEffect(() => {
+    return sizeOwnership.subscribeViewOwnership((owned) => {
+      termRef.current?.setSizeOwnership(owned);
+    });
+  }, [sizeOwnership]);
+
+  useEffect(() => {
+    return () => sizeOwnership.dispose();
+  }, [sizeOwnership]);
 
   // ── App resume → reconnect if dropped ──────────────────────────────────
   useEffect(() => {
@@ -178,6 +205,7 @@ export default function TerminalScreen() {
   // ── Terminal resize → send to WS ────────────────────────────────────────
   const handleTerminalReady = useCallback(() => {
     setTermReady(true);
+    sizeOwnership.setViewReady();
     termRef.current?.setConnectionState(
       connState === 'reconnecting' ? 'reconnecting' : 'loading',
       detail,
@@ -185,7 +213,14 @@ export default function TerminalScreen() {
     const snapshot = pendingSnapshot.current;
     if (snapshot) termRef.current?.applySnapshot(snapshot);
     else termRef.current?.resize(sessionSize.current.cols, sessionSize.current.rows);
-  }, [connState, detail]);
+  }, [connState, detail, sizeOwnership]);
+
+  const handleTerminalResize = useCallback(
+    (cols: number, rows: number) => {
+      sizeOwnership.proposeGrid(cols, rows);
+    },
+    [sizeOwnership],
+  );
 
   const handleSnapshotApplied = useCallback(() => {
     setSnapshotApplied(true);
@@ -408,6 +443,7 @@ export default function TerminalScreen() {
           onReady={handleTerminalReady}
           onSnapshotApplied={handleSnapshotApplied}
           onInput={handleTermInput}
+          onResize={handleTerminalResize}
           onFontSize={handleFontSize}
           onCopy={(data) => void Clipboard.setStringAsync(data)}
           onLatencyStats={(n, p50, p95) => {
@@ -433,7 +469,13 @@ const styles = StyleSheet.create({
   },
   statusInfo: { flex: 1, gap: 2 },
   latencyText: { ...type.meta, fontSize: 9 },
-  navButton: { minHeight: minTouchTarget, justifyContent: 'center', paddingHorizontal: spacing.x2, borderWidth: 1, borderColor: colors.terminalSurface },
+  navButton: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.x2,
+    borderWidth: 1,
+    borderColor: colors.terminalSurface,
+  },
   navLink: {
     color: colors.ink,
     fontFamily: fonts.monoSemiBold,

@@ -48,6 +48,9 @@ Android keeps its loading or reconnecting overlay visible until its production
 xterm instance confirms that it parsed the snapshot. Live output queued after
 the snapshot is then applied in wire order.
 
+The Android ownership behavior described later in this decision is superseded
+by ADR 0011.
+
 That first-paint confirmation is also the release boundary for bounded
 scrollback. The CLI freezes the backend-neutral history at the snapshot
 boundary and does not begin its transfer until it receives
