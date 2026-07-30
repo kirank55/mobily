@@ -180,7 +180,7 @@ test('focuses the keyboard from blank space without turning the tap into a TUI c
   });
 });
 
-test('scrolls terminal history with a vertical swipe while mouse reporting is active', async ({
+test('sends a vertical swipe to a mouse-enabled TUI when terminal history is at bottom', async ({
   page,
 }) => {
   await page.setContent(terminalHtml, { waitUntil: 'load' });
@@ -230,15 +230,37 @@ test('scrolls terminal history with a vertical swipe while mouse reporting is ac
     dispatchTouch(viewport, 'touchmove', [endTouch]);
     dispatchTouch(viewport, 'touchend', [], [endTouch]);
 
-    return {
+    const atBottom = {
       before,
       after: window.__mobilyTerminal.buffer.active.viewportY,
-      inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
+      inputs: window.__mobilyMessages
+        .filter((message) => message.type === 'input')
+        .map((message) => message.data),
+    };
+
+    window.__mobilyTerminal.scrollLines(-10);
+    const historyBefore = window.__mobilyTerminal.buffer.active.viewportY;
+    window.__mobilyMessages = [];
+    dispatchTouch(viewport, 'touchstart', [startTouch]);
+    dispatchTouch(viewport, 'touchmove', [endTouch]);
+    dispatchTouch(viewport, 'touchend', [], [endTouch]);
+
+    return {
+      atBottom,
+      inHistory: {
+        before: historyBefore,
+        after: window.__mobilyTerminal.buffer.active.viewportY,
+        inputCount: window.__mobilyMessages.filter((message) => message.type === 'input').length,
+      },
     };
   });
 
-  expect(result.after).toBeLessThan(result.before);
-  expect(result.inputCount).toBe(0);
+  expect(result.atBottom.after).toBe(result.atBottom.before);
+  expect(result.atBottom.inputs.some((data) => /^(?:\u001b\[<64;\d+;\d+M)+$/.test(data))).toBe(
+    true,
+  );
+  expect(result.inHistory.after).toBeLessThan(result.inHistory.before);
+  expect(result.inHistory.inputCount).toBe(0);
 });
 
 test('scrolls a mouse-enabled alternate-screen TUI with a vertical swipe', async ({ page }) => {

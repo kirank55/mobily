@@ -38,6 +38,11 @@ pnpm --filter mobily-android exec playwright install --with-deps chromium
 pnpm --filter mobily-android run test:browser
 ```
 
+For the production WebView harness, OpenCode-style mouse/scroll fixtures,
+synthetic Android touch events, ownership resize setup, and focused debugging
+commands, see
+[`android/tests/browser/README.md`](../android/tests/browser/README.md).
+
 ## Terminal A — Station
 
 ```bash

@@ -866,9 +866,11 @@ ${VIEWPORT_HELPERS}
         var horizontal=Math.abs(dx)>=Math.abs(dy);
         var overflowX=viewport.scrollWidth>viewport.clientWidth+1;
         var overflowY=viewport.scrollHeight>viewport.clientHeight+1;
+        var viewingHistory=term&&term.buffer.active.viewportY<term.buffer.active.baseY;
         if((horizontal&&overflowX)||(!horizontal&&overflowY))touchGesture.kind='pan';
-        else if(!horizontal&&term&&term.buffer.active.baseY>0)touchGesture.kind='history';
+        else if(!horizontal&&viewingHistory)touchGesture.kind='history';
         else if(!horizontal&&touchGesture.mouse)touchGesture.kind='mouse-scroll';
+        else if(!horizontal&&term&&term.buffer.active.baseY>0)touchGesture.kind='history';
         else touchGesture.kind='moved';
         if(touchGesture.kind==='pan'||touchGesture.kind==='history'||touchGesture.kind==='mouse-scroll')touchGesture.claimed=true;
       }
