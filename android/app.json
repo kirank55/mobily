@@ -58,8 +58,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f2f813b1-d84b-4bab-85bc-2ed2ca938d4a"
+        "projectId": "ba230386-a68d-482d-bcd5-149a88ed485a"
       }
-    }
+    },
+    "owner": "kirankumarka43"
   }
 }
