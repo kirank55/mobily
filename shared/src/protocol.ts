@@ -26,7 +26,7 @@
  */
 
 /** Mobily wire protocol version. Incremented on breaking protocol changes. */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Maximum encoded JSON frame size accepted from either peer. */
 export const MAX_ENCODED_FRAME_CHARS = 2 * 1024 * 1024;
@@ -63,6 +63,7 @@ export const FRAME_TYPES = [
   'terminal-size-claim',
   'terminal-size-release',
   'terminal-size-owner',
+  'terminal-reset',
   'rpc',
   'rpc-stream',
   'alert',
@@ -201,6 +202,11 @@ export interface TerminalSizeOwnerFrame {
   ownedByRequester: boolean;
 }
 
+/** Android → CLI: reset the shared terminal state without sending command input. */
+export interface TerminalResetFrame {
+  type: 'terminal-reset';
+}
+
 /** Client → CLI: protocol version negotiation. Sent on WS connect. */
 export interface HelloFrame {
   type: 'hello';
@@ -279,6 +285,7 @@ export type Frame =
   | TerminalSizeClaimFrame
   | TerminalSizeReleaseFrame
   | TerminalSizeOwnerFrame
+  | TerminalResetFrame
   | RpcRequestFrame
   | RpcResponseFrame
   | RpcStreamFrame
@@ -352,6 +359,8 @@ export function decodeFrame(raw: string): Frame {
       return { type: 'terminal-size-release' };
     case 'terminal-size-owner':
       return validateTerminalSizeOwnerFrame(obj);
+    case 'terminal-reset':
+      return { type: 'terminal-reset' };
     case 'hello':
       return validateHelloFrame(obj);
     case 'hello-ack':

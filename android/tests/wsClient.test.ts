@@ -251,6 +251,26 @@ describe('WsClient', () => {
     expect(sizeOwners).toEqual([{ owner: 'android', ownedByRequester: true }]);
   });
 
+  it('requests a shared terminal reset only after authentication', async () => {
+    const { client } = createClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+
+    client.resetTerminal();
+    expect(socket.sent.map(decodeFrame)).not.toContainEqual({ type: 'terminal-reset' });
+
+    socket.receive({ type: 'hello-ack', protocolVersion: PROTOCOL_VERSION });
+    socket.receive({ type: 'auth-challenge', nonce: 'challenge' });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    socket.receive({ type: 'auth-ok' });
+    socket.receive({ type: 'resize', cols: 5, rows: 1 });
+    socket.receive(snapshot());
+
+    client.resetTerminal();
+    expect(decodeFrame(socket.sent.at(-1)!)).toEqual({ type: 'terminal-reset' });
+  });
+
   it('rejects scrollback before paint, out of order, or above the transfer limit', async () => {
     const beforePaint = createClient();
     beforePaint.client.connect();

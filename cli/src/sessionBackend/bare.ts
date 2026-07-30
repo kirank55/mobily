@@ -2,7 +2,7 @@ import type { IDisposable, PtyProcess, SpawnOptions } from '../pty.js';
 import { ScrollbackBuffer } from './scrollback.js';
 import { PtyOutputHub } from './outputHub.js';
 import { defaultSessionRuntime, type SessionRuntime } from './runtime.js';
-import type { SessionBackend } from './types.js';
+import { TERMINAL_RESET_SEQUENCE, type SessionBackend } from './types.js';
 
 export interface BareBackendOptions extends SpawnOptions {
   scrollbackBytes?: number;
@@ -32,6 +32,10 @@ export class BareBackend implements SessionBackend {
 
   write(data: string): void {
     this.pty.write(data);
+  }
+
+  resetTerminal(): void {
+    this.hub.push(TERMINAL_RESET_SEQUENCE);
   }
 
   resize(cols: number, rows: number): void {

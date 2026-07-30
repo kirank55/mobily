@@ -40,6 +40,7 @@ export default function TerminalScreen() {
     retry,
     sendInput,
     sendResize,
+    resetTerminal,
     claimTerminalSize,
     releaseTerminalSize,
     acknowledgeSnapshotApplied,
@@ -55,7 +56,6 @@ export default function TerminalScreen() {
   const [latencyStats, setLatencyStats] = useState<{ n: number; p50: number; p95: number } | null>(
     null,
   );
-  const [selectionMode, setSelectionMode] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [fontSize, setFontSize] = useState<number | null>(null);
   const sessionSize = useRef({ cols: 120, rows: 40 });
@@ -234,18 +234,15 @@ export default function TerminalScreen() {
     });
   }, []);
 
-  const toggleSelection = useCallback(() => {
-    setSelectionMode((enabled) => {
-      termRef.current?.setSelectionMode(!enabled);
-      return !enabled;
-    });
-  }, []);
-
   const pasteClipboard = useCallback(() => {
     void Clipboard.getStringAsync().then((data) => {
       if (data) termRef.current?.paste(data);
     });
   }, []);
+
+  const handleReset = useCallback(() => {
+    resetTerminal();
+  }, [resetTerminal]);
 
   const toggleKeyboard = useCallback(() => {
     if (keyboardVisible) {
@@ -413,13 +410,12 @@ export default function TerminalScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.controlButton, selectionMode && styles.controlButtonActive]}
-            onPress={toggleSelection}
+            style={styles.controlButton}
+            onPress={handleReset}
             accessibilityRole="button"
-            accessibilityState={{ selected: selectionMode }}
-            accessibilityLabel="Toggle terminal selection"
+            accessibilityLabel="Reset terminal"
           >
-            <Text style={[styles.controlText, selectionMode && styles.controlActive]}>Select</Text>
+            <Text style={styles.controlText}>Reset</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.controlButton}

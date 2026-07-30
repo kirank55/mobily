@@ -119,6 +119,7 @@ function prepareFakeBackend(
 ) {
   return prepareDevTunnelsBackend({
     processId: 4242,
+    tunnelIdFactory: () => 'abc',
     ...options,
     runtime,
     ownershipStore: runtime.ownershipStore,
@@ -348,6 +349,7 @@ describe('Temporary Tunnel startup recovery', () => {
     const backend = await prepareFakeBackend(runtime, {
       runId: 'current-run',
       isProcessAlive: () => false,
+      tunnelIdFactory: () => 'new-tunnel',
     });
 
     expect(runtime.calls.map((call) => call.args)).toEqual([['user', 'show']]);
@@ -363,6 +365,8 @@ describe('Temporary Tunnel startup recovery', () => {
     expect(runtime.calls.map((call) => call.args)).toEqual([
       ['user', 'show'],
       ['delete', 'stale-tunnel'],
+      ['create', 'new-tunnel', '--allow-anonymous'],
+      ['port', 'create', 'new-tunnel', '-p', '4321', '--protocol', 'http'],
     ]);
     expect(runtime.ownershipStore.records.size).toBe(1);
   });
@@ -375,6 +379,7 @@ describe('Temporary Tunnel startup recovery', () => {
     const backend = await prepareFakeBackend(runtime, {
       runId: 'current-run',
       isProcessAlive: (processId) => processId === 111,
+      tunnelIdFactory: () => 'current',
     });
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
@@ -382,7 +387,11 @@ describe('Temporary Tunnel startup recovery', () => {
     host.stdout.write('https://current-4321.usw2.devtunnels.ms/');
     await connecting;
 
-    expect(runtime.calls.map((call) => call.args)).toEqual([['user', 'show']]);
+    expect(runtime.calls.map((call) => call.args)).toEqual([
+      ['user', 'show'],
+      ['create', 'current', '--allow-anonymous'],
+      ['port', 'create', 'current', '-p', '4321', '--protocol', 'http'],
+    ]);
     expect([...runtime.ownershipStore.records.values()]).toContainEqual(
       staleOwnership({ tunnelId: 'live-tunnel' }),
     );
@@ -396,7 +405,10 @@ describe('Temporary Tunnel startup recovery', () => {
       { exitCode: 1, stdout: '', stderr: 'Tunnel was not found' },
     );
 
-    const backend = await prepareFakeBackend(runtime, { isProcessAlive: () => false });
+    const backend = await prepareFakeBackend(runtime, {
+      isProcessAlive: () => false,
+      tunnelIdFactory: () => 'current',
+    });
     const host = new FakeHostProcess();
     runtime.hosts.push(host);
     const connecting = backend.connect(4321);
@@ -444,22 +456,32 @@ describe('DevTunnelsBackend', () => {
 
     const connecting = backend.connect(4321);
     host.stdout.write(
-      'Hosting port 4321 at https://abc.usw2.devtunnels.ms:4321/, ' +
-        'https://abc-4321.usw2.devtunnels.ms/ and ' +
-        'https://abc-4321-inspect.usw2.devtunnels.ms/\n',
+      'Hosting port: 4321\n' +
+        'Connect via browser: https://9790th8d-4321.asse.devtunnels.ms\n' +
+        'Inspect network activity: https://9790th8d-4321-inspect.asse.devtunnels.ms\n' +
+        'Ready to accept connections for tunnel: abc.asse\n',
     );
     const connection = await connecting;
 
-    expect(runtime.hostCalls[0]?.args).toEqual([
-      'host',
-      '-p',
-      '4321',
-      '--allow-anonymous',
-      '--protocol',
-      'http',
+    expect(runtime.calls.map((call) => call.args)).toEqual([
+      ['user', 'show'],
+      ['create', 'abc', '--allow-anonymous'],
+      ['port', 'create', 'abc', '-p', '4321', '--protocol', 'http'],
     ]);
-    expect(connection.url).toBe('wss://abc-4321.usw2.devtunnels.ms/');
+    expect(runtime.hostCalls[0]?.args).toEqual(['host', 'abc']);
+    expect(connection.url).toBe('wss://9790th8d-4321.asse.devtunnels.ms/');
     expect(runtime.ownershipStore.events).toEqual([
+      {
+        action: 'save',
+        ownership: {
+          version: 1,
+          tunnelId: 'abc',
+          ownerRunId: 'run-123',
+          ownerProcessId: 4242,
+          createdAt: '2026-07-21T07:00:00.000Z',
+          state: 'creating',
+        },
+      },
       {
         action: 'save',
         ownership: {
@@ -474,25 +496,22 @@ describe('DevTunnelsBackend', () => {
     ]);
   });
 
-  it('does not report a tunnel ready when durable ownership recording fails', async () => {
+  it('does not create a tunnel when planned ownership recording fails', async () => {
     const runtime = new FakeRuntime();
-    runtime.results.push(
-      { exitCode: 0, stdout: 'Logged in', stderr: '' },
-      { exitCode: 0, stdout: '', stderr: '' },
-    );
     runtime.ownershipStore.saveError = new Error('disk unavailable');
-    const host = new FakeHostProcess();
-    runtime.hosts.push(host);
     const backend = await prepareFakeBackend(runtime, { runId: 'run-record-failure' });
 
     const connecting = backend.connect(4321);
-    host.stdout.write('https://abc-4321.usw2.devtunnels.ms/');
 
     await expect(connecting).rejects.toThrow(
-      "could not record ownership of temporary tunnel 'abc'",
+      "could not record ownership of planned temporary tunnel 'abc'",
     );
-    expect(host.signals).toEqual(['SIGINT']);
-    expect(runtime.calls.map((call) => call.args)).toContainEqual(['delete', 'abc']);
+    expect(runtime.hostCalls).toHaveLength(0);
+    expect(runtime.calls.map((call) => call.args)).not.toContainEqual([
+      'create',
+      'abc',
+      '--allow-anonymous',
+    ]);
   });
 
   it.each(['linux', 'win32'] as const)(
@@ -540,6 +559,8 @@ describe('DevTunnelsBackend', () => {
     const runtime = new FakeRuntime();
     runtime.results.push(
       { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
       { exitCode: 1, stdout: '', stderr: 'Error: service unavailable' },
     );
     const host = new FakeHostProcess();
@@ -563,6 +584,8 @@ describe('DevTunnelsBackend', () => {
     const runtime = new FakeRuntime();
     runtime.results.push(
       { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
       { exitCode: 1, stdout: '', stderr: 'Error: Tunnel abc was not found.' },
     );
     const host = new FakeHostProcess();
@@ -596,6 +619,7 @@ describe('DevTunnelsBackend', () => {
     const backend = await prepareFakeBackend(runtime, {
       runId: 'current-run',
       isProcessAlive: (processId) => processId === 999,
+      tunnelIdFactory: () => 'owned',
     });
     const connecting = backend.connect(4321);
     host.stdout.write('https://owned-4321.usw2.devtunnels.ms/');
@@ -631,14 +655,69 @@ describe('DevTunnelsBackend', () => {
 
     const connecting = backend.connect(4321);
     await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(1));
-    host.stderr.write('Error: unsupported helper version\n');
+    host.stderr.write(
+      'Tunnel service error: Invalid arguments. Batch update of ports is not supported. ' +
+        'Add, update, or delete ports individually instead.\n' +
+        'Request ID: f23f5484-982e-43a9-8b8b-9742a043e0e9\n',
+    );
     host.exit(2);
 
     await expect(connecting).rejects.toEqual(
       new UserFacingError(
-        'Dev Tunnels stopped before it was ready (exit 2). unsupported helper version',
+        "Dev Tunnels stopped before it was ready (exit 2). Invalid arguments. Batch update of ports is not supported. Add, update, or delete ports individually instead. Mobily deleted its temporary tunnel 'abc'.",
       ),
     );
+  });
+
+  it('records and removes its temporary tunnel when hosting is rate limited', async () => {
+    const runtime = new FakeRuntime();
+    const host = new FakeHostProcess();
+    runtime.hosts.push(host);
+    const backend = await prepareFakeBackend(runtime);
+
+    const connecting = backend.connect(4321);
+    await vi.waitFor(() => expect(runtime.hostCalls).toHaveLength(1));
+    host.stderr.write('Rate limit exceeded. Please wait about a minute and try again.\n');
+    host.exit(1);
+
+    await expect(connecting).rejects.toThrow(
+      'Review tunnels with `devtunnel list` and delete an unused tunnel with ' +
+        '`devtunnel delete <tunnel-id>`.',
+    );
+    const savedOwnership = runtime.ownershipStore.events.find(
+      (event) => event.action === 'save',
+    )?.ownership;
+    expect(savedOwnership).toBeDefined();
+    expect(runtime.calls).toContainEqual({
+      args: ['delete', savedOwnership!.tunnelId],
+      inheritStdio: false,
+    });
+    expect(runtime.ownershipStore.records.size).toBe(0);
+  });
+
+  it('removes the planned tunnel identity when creation itself is rate limited', async () => {
+    const runtime = new FakeRuntime();
+    runtime.results.push(
+      { exitCode: 0, stdout: 'Logged in', stderr: '' },
+      {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Rate limit exceeded. Please wait about a minute and try again.',
+      },
+      { exitCode: 1, stdout: '', stderr: 'Tunnel abc was not found.' },
+    );
+    const backend = await prepareFakeBackend(runtime);
+
+    await expect(backend.connect(4321)).rejects.toThrow(
+      'Review tunnels with `devtunnel list` and delete an unused tunnel with ' +
+        '`devtunnel delete <tunnel-id>`.',
+    );
+    expect(runtime.hostCalls).toHaveLength(0);
+    expect(runtime.calls).toContainEqual({
+      args: ['delete', 'abc'],
+      inheritStdio: false,
+    });
+    expect(runtime.ownershipStore.records.size).toBe(0);
   });
 
   it('explains how to clear unused tunnels when the account quota is full', async () => {
@@ -654,7 +733,7 @@ describe('DevTunnelsBackend', () => {
 
     await expect(connecting).rejects.toEqual(
       new UserFacingError(
-        'Dev Tunnels quota is full. Delete unused tunnels with `devtunnel delete-all`, then try again.',
+        "Dev Tunnels quota is full. Review tunnels with `devtunnel list` and delete an unused tunnel with `devtunnel delete <tunnel-id>`, then try again. Mobily deleted its temporary tunnel 'abc'.",
       ),
     );
   });
@@ -686,7 +765,12 @@ describe('DevTunnelsBackend', () => {
     runtime.interactive = true;
     runtime.results.push(
       { exitCode: 0, stdout: 'Initially logged in', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
       { exitCode: 0, stdout: 'Token expired', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
       { exitCode: 0, stdout: '', stderr: '' },
     );
     runtime.promptAnswers.push('');
@@ -704,7 +788,7 @@ describe('DevTunnelsBackend', () => {
     await expect(connecting).resolves.toMatchObject({
       url: 'wss://abc-4321.usw2.devtunnels.ms/',
     });
-    expect(runtime.calls.at(-1)).toEqual({
+    expect(runtime.calls).toContainEqual({
       args: ['user', 'login', '-g', '-d'],
       inheritStdio: true,
     });

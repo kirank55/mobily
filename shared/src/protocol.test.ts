@@ -227,6 +227,14 @@ describe('round-trip: Terminal Size Ownership frames', () => {
   });
 });
 
+describe('round-trip: terminal reset frame', () => {
+  it('preserves the Session-level reset control request', () => {
+    expect(decodeFrame(encodeFrame({ type: 'terminal-reset' }))).toEqual({
+      type: 'terminal-reset',
+    });
+  });
+});
+
 describe('round-trip: union type narrowing', () => {
   it('returns the correct discriminant for each frame type', () => {
     const frames: Frame[] = [
@@ -365,7 +373,7 @@ describe('PROTOCOL_VERSION', () => {
     expect(typeof PROTOCOL_VERSION).toBe('number');
     expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
     expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-    expect(PROTOCOL_VERSION).toBe(7);
+    expect(PROTOCOL_VERSION).toBe(8);
   });
 });
 

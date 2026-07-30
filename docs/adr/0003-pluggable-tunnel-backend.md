@@ -22,11 +22,20 @@ tunnel lifecycle. Operator setup steps live in the root `README.md`.
 
 ### Durable Temporary Tunnel ownership
 
-Every Dev Tunnel created by Mobily is a Temporary Tunnel. After the helper
-returns its remote identity, Mobily atomically writes a private ownership record
-under `~/.mobily/temporary-tunnels/` before exposing the tunnel URL. A record
+Every Dev Tunnel created by Mobily is a Temporary Tunnel. Mobily chooses the
+tunnel identity locally and atomically writes a private ownership record under
+`~/.mobily/temporary-tunnels/` before asking the provider to create it. A record
 contains the tunnel identity, a distinct CLI run identity, its creation time,
-its owning process identity, and its lifecycle state (`ready` or `deleting`).
+its owning process identity, and its lifecycle state (`creating`, `ready`, or
+`deleting`). This lets startup failures, including provider rate limits, delete
+the exact planned identity without listing or adopting account resources.
+
+Startup creates that identity, adds the local HTTP port with the provider's
+single-port command, and then hosts the configured tunnel. Mobily does not ask
+`devtunnel host` to batch-update ports on an existing identity.
+The provider may expose that port through a public relay hostname whose label
+does not match the management tunnel identity; cleanup continues to use only
+the locally chosen and recorded management identity.
 
 Normal shutdown first marks that exact record as deleting, stops the helper,
 and explicitly asks the provider to delete that tunnel identity. Provider

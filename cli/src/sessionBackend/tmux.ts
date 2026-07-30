@@ -74,6 +74,14 @@ export class TmuxBackend implements SessionBackend {
     this.pty.write(data);
   }
 
+  resetTerminal(): void {
+    const pane = findShellPane(this.sessionName, this.runtime);
+    if (!pane) throw new Error('interactive tmux pane not found');
+    // `send-keys -R` resets tmux's terminal state; no key or command is sent
+    // to the application running inside the pane.
+    this.runtime.execFile('tmux', ['send-keys', '-R', '-t', pane]);
+  }
+
   resize(cols: number, rows: number): void {
     this.pty.resize(cols, rows);
   }

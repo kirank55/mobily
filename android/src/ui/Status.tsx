@@ -3,9 +3,17 @@ import { colors, fonts, spacing } from './theme';
 
 export type StatusTone = 'neutral' | 'success' | 'warning' | 'danger';
 
-export function Status({ label, tone = 'neutral' }: { label: string; tone?: StatusTone }) {
+export function Status({
+  label,
+  tone = 'neutral',
+  centered = false,
+}: {
+  label: string;
+  tone?: StatusTone;
+  centered?: boolean;
+}) {
   return (
-    <View style={[styles.status, styles[`${tone}Status`]]}>
+    <View style={[styles.status, centered && styles.centeredStatus, styles[`${tone}Status`]]}>
       <View style={[styles.statusDot, styles[`${tone}Dot`]]} />
       <Text style={[styles.statusLabel, styles[`${tone}StatusLabel`]]} numberOfLines={1}>
         {label}
@@ -26,6 +34,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.x2,
     flexShrink: 1,
   },
+  centeredStatus: { alignSelf: 'center' },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusLabel: {
     fontFamily: fonts.monoSemiBold,

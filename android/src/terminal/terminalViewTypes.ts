@@ -18,6 +18,8 @@ export interface TerminalViewHandle {
   /** Nudge the readable font size up or down. */
   adjustFontSize(delta: number): void;
   fit(): void;
+  /** Repaint every terminal row without changing the Session buffer. */
+  refresh(): void;
   zoomIn(): void;
   zoomOut(): void;
   setSelectionMode(enabled: boolean): void;

@@ -20,7 +20,7 @@ export function StatePanel({
     <View style={styles.statePanel} accessibilityLiveRegion="polite">
       {loading ? <ActivityIndicator color={colors.ink} /> : null}
       <View style={styles.stateStatus}>
-        <Status label={label} tone={tone} />
+        <Status label={label} tone={tone} centered />
       </View>
       {detail ? <Text style={styles.stateDetail}>{detail}</Text> : null}
       {action}

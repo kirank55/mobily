@@ -29,6 +29,7 @@ class RecordingBackend implements SessionBackend {
   readonly attachCommand = null;
   readonly writes: string[] = [];
   readonly resizes: Array<[number, number]> = [];
+  resets = 0;
   readonly dataListeners = new Set<(data: string) => void>();
   readonly exitListeners = new Set<(event: { exitCode: number; signal?: number }) => void>();
 
@@ -42,6 +43,9 @@ class RecordingBackend implements SessionBackend {
   }
   resize(cols: number, rows: number): void {
     this.resizes.push([cols, rows]);
+  }
+  resetTerminal(): void {
+    this.resets += 1;
   }
   onData(listener: (data: string) => void): IDisposable {
     this.dataListeners.add(listener);
@@ -304,6 +308,27 @@ describe('WebSocket → PTY round-trip', () => {
       { timeout: 5000, interval: 50 },
     );
   }, 15000);
+
+  it('resets the shared Session without writing command input into the foreground program', async () => {
+    const backend = new RecordingBackend();
+    const session = new Session({ backend });
+    const authenticated = vi.fn();
+    session.onAuthenticatedClient(authenticated);
+    sessions.push(session);
+    const server = await startServer({ session });
+    servers.push(server);
+
+    const ws = new WebSocket(server.url);
+    await waitForOpen(ws);
+    conns.push(ws);
+    await vi.waitFor(() => expect(authenticated).toHaveBeenCalledOnce());
+
+    sendFrame(ws, { type: 'terminal-reset' });
+
+    await vi.waitFor(() => expect(backend.resets).toBe(1));
+    expect(backend.writes).toEqual([]);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
 
   it('replies with an error output frame for malformed input', async () => {
     const session = new Session({ cols: 80, rows: 24 });

@@ -27,6 +27,7 @@ class RecordingBackend implements SessionBackend {
   write(data: string): void {
     this.writes.push(data);
   }
+  resetTerminal(): void {}
   resize(cols: number, rows: number): void {
     this.resizes.push([cols, rows]);
   }

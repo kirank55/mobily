@@ -193,6 +193,11 @@ export class WsClient {
     if (this.ready) this.send({ type: 'resize', cols, rows });
   }
 
+  /** Reset the shared Session terminal without sending foreground-program input. */
+  resetTerminal(): void {
+    if (this.ready) this.send({ type: 'terminal-reset' });
+  }
+
   claimTerminalSize(): void {
     if (this.ready) this.send({ type: 'terminal-size-claim' });
   }
@@ -503,6 +508,7 @@ export class WsClient {
       case 'session-snapshot-applied':
       case 'terminal-size-claim':
       case 'terminal-size-release':
+      case 'terminal-reset':
         socket.close(WS_CLOSE_CODES.PROTOCOL_ERROR, 'unexpected server frame');
         break;
       case 'resize':

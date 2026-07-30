@@ -13,10 +13,7 @@ vi.mock('../src/workstation/tmuxAttach.js', async (importOriginal) => {
 });
 
 import type { WorkstationInput, WorkstationOutput } from '../src/workstation/embedded.js';
-import {
-  beginWorkstationPresence,
-  planWorkstationPresence,
-} from '../src/workstation/presence.js';
+import { beginWorkstationPresence, planWorkstationPresence } from '../src/workstation/presence.js';
 import { Session } from '../src/session.js';
 import type { SessionBackend } from '../src/sessionBackend/types.js';
 import type { ExitEvent, IDisposable } from '../src/pty.js';
@@ -41,6 +38,7 @@ class RecordingBackend implements SessionBackend {
   }
 
   write(): void {}
+  resetTerminal(): void {}
   resize(): void {}
   onData(listener: (data: string) => void): IDisposable {
     this.dataListeners.add(listener);

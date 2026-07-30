@@ -34,6 +34,7 @@ interface StationConnectionValue {
   retry(): void;
   sendInput(data: string, latencyTag?: string): void;
   sendResize(cols: number, rows: number): void;
+  resetTerminal(): void;
   claimTerminalSize(): void;
   releaseTerminalSize(): void;
   acknowledgeSnapshotApplied(): void;
@@ -172,6 +173,9 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
   const sendResize = useCallback((cols: number, rows: number) => {
     clientRef.current?.sendResize(cols, rows);
   }, []);
+  const resetTerminal = useCallback(() => {
+    clientRef.current?.resetTerminal();
+  }, []);
   const claimTerminalSize = useCallback(() => {
     clientRef.current?.claimTerminalSize();
   }, []);
@@ -234,6 +238,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       retry,
       sendInput,
       sendResize,
+      resetTerminal,
       claimTerminalSize,
       releaseTerminalSize,
       acknowledgeSnapshotApplied,
@@ -254,6 +259,7 @@ export function StationConnectionProvider({ children }: PropsWithChildren) {
       retry,
       sendInput,
       sendResize,
+      resetTerminal,
       claimTerminalSize,
       releaseTerminalSize,
       acknowledgeSnapshotApplied,

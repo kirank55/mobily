@@ -104,6 +104,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       fit() {
         postToWebView({ type: 'fit' });
       },
+      refresh() {
+        postToWebView({ type: 'refresh' });
+      },
       zoomIn() {
         postToWebView({ type: 'zoom', delta: 0.15 });
       },

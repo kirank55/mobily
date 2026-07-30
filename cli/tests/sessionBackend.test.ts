@@ -27,6 +27,7 @@ import {
   CONNECTED_WORKSTATION_PANEL_HEIGHT,
 } from '../src/workstation/tmuxAttach.js';
 import { defaultSessionRuntime } from '../src/sessionBackend/runtime.js';
+import { TERMINAL_RESET_SEQUENCE } from '../src/sessionBackend/types.js';
 
 class FakePty implements PtyProcess {
   readonly raw = {} as PtyProcess['raw'];
@@ -105,6 +106,10 @@ describe('BareBackend', () => {
     expect(backend.kind).toBe('bare');
     expect(backend.attachCommand).toBeNull();
 
+    backend.resetTerminal();
+    expect(received.at(-1)).toBe(TERMINAL_RESET_SEQUENCE);
+    expect(fake.pty.writes).toEqual(['echo ready\r']);
+
     backend.dispose();
     expect(fake.pty.killed).toBe(true);
   });
@@ -125,6 +130,33 @@ describe('BareBackend', () => {
 });
 
 describe('TmuxBackend', () => {
+  it('resets tmux terminal state without sending keys to the foreground program', () => {
+    const fake = runtime({
+      execFile: vi.fn((file: string, args: string[]) => {
+        fake.commands.push({ file, args });
+        if (args[0] === 'list-panes') return '%1 \n%2 qr\n';
+        return '';
+      }),
+    });
+    const backend = new TmuxBackend(
+      { cwd: '/workspace', sessionName: 'mobily-existing' },
+      fake.value,
+    );
+    fake.commands.length = 0;
+
+    backend.resetTerminal();
+
+    expect(fake.commands).toEqual([
+      {
+        file: 'tmux',
+        args: ['list-panes', '-t', 'mobily-existing', '-F', '#{pane_id} #{@mobily_role}'],
+      },
+      { file: 'tmux', args: ['send-keys', '-R', '-t', '%1'] },
+    ]);
+    expect(fake.pty.writes).toEqual([]);
+    backend.dispose();
+  });
+
   it('creates, configures, captures, and attaches a named session without a shell', () => {
     const fake = runtime({
       execFile: vi.fn((file: string, args: string[]) => {
@@ -528,6 +560,26 @@ describe.skipIf(!tmuxAvailable)('real tmux integration', () => {
     names.splice(names.indexOf(name), 1);
     expect(() => execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' })).toThrow();
   }, 20_000);
+
+  it('clears the shared tmux pane while leaving its foreground shell interactive', async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mobily-tmux-reset-')));
+    directories.push(cwd);
+    const name = `mobily-reset-${process.pid}-${Date.now()}`;
+    names.push(name);
+    const backend = new TmuxBackend({ cwd, sessionName: name, cols: 80, rows: 12 });
+    const capture = (): string =>
+      execFileSync('tmux', ['capture-pane', '-p', '-t', name], { encoding: 'utf8' });
+
+    backend.write("printf 'VISIBLE_BEFORE_RESET\\n'\r");
+    await vi.waitFor(() => expect(capture()).toContain('VISIBLE_BEFORE_RESET'));
+
+    backend.resetTerminal();
+    await vi.waitFor(() => expect(capture()).not.toContain('VISIBLE_BEFORE_RESET'));
+
+    backend.write("printf 'SHELL_STILL_INTERACTIVE\\n'\r");
+    await vi.waitFor(() => expect(capture()).toContain('SHELL_STILL_INTERACTIVE'));
+    backend.dispose();
+  });
 
   it('pins pairing details in a marked tmux pane', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mobily-tmux-panel-')));

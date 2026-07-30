@@ -53,6 +53,133 @@ test('re-announces readiness when React Native probes after page load', async ({
     .toBe(true);
 });
 
+test('refreshes every terminal row without changing the buffer contents', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    const terminal = window.__mobilyTerminal;
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: 'keep this terminal content' }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const before = window.__mobilyTerminalLines();
+    const refreshCalls = [];
+    const originalRefresh = terminal.refresh.bind(terminal);
+    terminal.refresh = (start, end) => {
+      refreshCalls.push([start, end]);
+      return originalRefresh(start, end);
+    };
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'refresh' }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    return {
+      before,
+      after: window.__mobilyTerminalLines(),
+      refreshCalls,
+      rows: terminal.rows,
+    };
+  });
+
+  expect(result.refreshCalls).toEqual([[0, result.rows - 1]]);
+  expect(result.after).toEqual(result.before);
+});
+
+test('applies the shared Session reset without writing input into the active command', async ({
+  page,
+}) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const result = await page.evaluate(async () => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: 'foreground TUI content' }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    window.__mobilyMessages = [];
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'write', data: '\u001bc' }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    return {
+      lines: window.__mobilyTerminalLines(),
+      sessionInputs: window.__mobilyMessages.filter((message) => message.type === 'input'),
+    };
+  });
+
+  expect(result.lines.every((line) => line === '')).toBe(true);
+  expect(result.sessionInputs).toEqual([]);
+});
+
+test('keeps TUI scrolling and clicking active after the shared Session reset', async ({ page }) => {
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  const inputs = await page.evaluate(async () => {
+    const dispatchMessage = (message) =>
+      window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    const dispatchTouch = (type, touches, changedTouches = touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: touches });
+      Object.defineProperty(event, 'changedTouches', { value: changedTouches });
+      document.getElementById('viewport').dispatchEvent(event);
+    };
+
+    dispatchMessage({ type: 'write', data: '\u001b[?1000;1006;1049h' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    dispatchMessage({ type: 'write', data: '\u001bc' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const screen = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const start = {
+      clientX: screen.left + screen.width / 2,
+      clientY: screen.top + 100,
+    };
+    const end = { clientX: start.clientX, clientY: start.clientY + 180 };
+    const tap = { clientX: screen.left + 20, clientY: screen.top + 20 };
+
+    window.__mobilyMessages = [];
+    dispatchTouch('touchstart', [start]);
+    dispatchTouch('touchmove', [end]);
+    dispatchTouch('touchend', [], [end]);
+    dispatchTouch('touchstart', [tap]);
+    dispatchTouch('touchend', [], [tap]);
+
+    return window.__mobilyMessages
+      .filter((message) => message.type === 'input')
+      .map((message) => message.data);
+  });
+
+  expect(inputs.some((data) => /^(?:\u001b\[<64;\d+;\d+M)+$/.test(data))).toBe(true);
+  expect(inputs.some((data) => /^\u001b\[<0;\d+;\d+M\u001b\[<0;\d+;\d+m$/.test(data))).toBe(true);
+});
+
 test('focuses the keyboard while sending terminal button taps as mouse input', async ({ page }) => {
   await page.setContent(terminalHtml, { waitUntil: 'load' });
   await expect
@@ -1186,7 +1313,62 @@ test('fills the phone viewport with a readable grid after Android gains size own
   expect(proposedGrid.rows).toBeLessThan(60);
 });
 
-test('fits the complete grid when xterm reports a stale narrow screen width', async ({ page }) => {
+test('keeps the full owned terminal width visible while a narrower grid is pending', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 390 });
+  await page.setContent(terminalHtml, { waitUntil: 'load' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'ready')),
+    )
+    .toBe(true);
+
+  await dispatchSnapshot(page, openCodeSnapshotForGrid(200, 60));
+  await page.evaluate(() => {
+    window.__mobilyMessages = [];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'size-ownership', owned: true }),
+      }),
+    );
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mobilyMessages.some((message) => message.type === 'resize')),
+    )
+    .toBe(true);
+  const landscapeGrid = await page.evaluate(() => ({
+    cols: window.__mobilyTerminal.cols,
+    rows: window.__mobilyTerminal.rows,
+  }));
+
+  await page.evaluate(async () => {
+    document.getElementById('root').style.width = '390px';
+    document.getElementById('root').style.height = '720px';
+    window.dispatchEvent(new Event('resize'));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+
+  const pendingResize = await readTerminalFit(page);
+  expect(pendingResize.fittedWidth).toBeLessThanOrEqual(pendingResize.viewportWidth + 1);
+  expect(pendingResize.scrollLeft).toBe(0);
+
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminal.cols))
+    .toBeLessThan(landscapeGrid.cols);
+  await expect
+    .poll(() => page.evaluate(() => window.__mobilyTerminal.rows))
+    .toBeGreaterThan(landscapeGrid.rows);
+
+  const portraitGrid = await readTerminalFit(page);
+  expect(portraitGrid.fittedWidth).toBeLessThanOrEqual(portraitGrid.viewportWidth + 1);
+  expect(portraitGrid.fittedHeight / portraitGrid.viewportHeight).toBeGreaterThan(0.9);
+});
+
+test('fits the complete grid when xterm reports stale narrow renderer metrics', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.setContent(terminalHtml, { waitUntil: 'load' });
   await expect
@@ -1195,31 +1377,43 @@ test('fits the complete grid when xterm reports a stale narrow screen width', as
     )
     .toBe(true);
 
-  await page.evaluate(() => {
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
-    const original = descriptor.get;
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
-      configurable: true,
-      get() {
-        const width = original.call(this);
-        return this.classList?.contains('xterm-screen') ? width * 0.75 : width;
-      },
-    });
-  });
-
   await dispatchSnapshot(page, openCodeSnapshotForGrid(200, 60));
 
-  const bounds = await page.evaluate(() => {
+  const bounds = await page.evaluate(async () => {
+    const terminal = window.__mobilyTerminal;
+    const dimensions = terminal._core._renderService.dimensions;
+    const correctCellWidth = dimensions.css.cell.width;
+    dimensions.css.cell.width = correctCellWidth * 0.5;
+    const screen = document.querySelector('.xterm-screen');
+    for (const property of ['offsetWidth', 'scrollWidth']) {
+      const staleWidth = screen[property] * 0.5;
+      Object.defineProperty(screen, property, {
+        configurable: true,
+        get: () => staleWidth,
+      });
+    }
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'fit' }),
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
     const viewportRect = document.getElementById('viewport').getBoundingClientRect();
     const screenRect = document.querySelector('.xterm-screen').getBoundingClientRect();
+    const surfaceWidth = Number.parseFloat(document.getElementById('tc').style.width);
     return {
       viewportLeft: viewportRect.left,
       viewportRight: viewportRect.right,
       screenLeft: screenRect.left,
       screenRight: screenRect.right,
+      surfaceWidth,
+      logicalGridWidth: terminal.cols * correctCellWidth + 8,
     };
   });
 
+  expect(bounds.surfaceWidth).toBeGreaterThanOrEqual(bounds.logicalGridWidth - 1);
   expect(bounds.screenLeft).toBeGreaterThanOrEqual(bounds.viewportLeft - 1);
   expect(bounds.screenRight).toBeLessThanOrEqual(bounds.viewportRight + 1);
 });

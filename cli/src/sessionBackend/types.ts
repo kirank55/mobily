@@ -1,6 +1,8 @@
 import type { ExitEvent, IDisposable } from '../pty.js';
 
 export const MOBILY_CLI_PID_ENV = 'MOBILY_CLI_PID';
+/** ANSI Reset to Initial State, emitted as terminal output rather than process input. */
+export const TERMINAL_RESET_SEQUENCE = '\u001bc';
 
 export type SessionBackendKind = 'bare' | 'tmux';
 
@@ -10,6 +12,8 @@ export interface SessionBackend {
   readonly sessionName: string | null;
   readonly attachCommand: string | null;
   write(data: string): void;
+  /** Reset every viewer's terminal state without typing into the foreground process. */
+  resetTerminal(): void;
   resize(cols: number, rows: number): void;
   onData(listener: (data: string) => void): IDisposable;
   onExit(listener: (event: ExitEvent) => void): IDisposable;

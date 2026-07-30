@@ -61,6 +61,7 @@ export interface PrepareDevTunnelsOptions {
   readonly processId?: number;
   readonly isProcessAlive?: (processId: number) => boolean;
   readonly now?: () => Date;
+  readonly tunnelIdFactory?: () => string;
 }
 
 const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
@@ -89,6 +90,8 @@ export async function prepareDevTunnelsBackend(
     processId: options.processId ?? process.pid,
     isProcessAlive: options.isProcessAlive ?? isProcessAlive,
     now: options.now ?? (() => new Date()),
+    tunnelIdFactory:
+      options.tunnelIdFactory ?? (() => `mobily-${randomUUID().replaceAll('-', '').slice(0, 20)}`),
   });
 }
 
@@ -177,6 +180,7 @@ export class DevTunnelsBackend implements TunnelBackend {
       readonly processId: number;
       readonly isProcessAlive: (processId: number) => boolean;
       readonly now: () => Date;
+      readonly tunnelIdFactory: () => string;
     },
   ) {}
 
@@ -204,80 +208,102 @@ export class DevTunnelsBackend implements TunnelBackend {
   }
 
   private async startHost(localPort: number): Promise<TunnelConnection> {
-    const child = this.runtime.spawnHost(this.executable, [
-      'host',
-      '-p',
-      String(localPort),
-      '--allow-anonymous',
-      '--protocol',
-      'http',
-    ]);
-    let url: string;
-    try {
-      url = await waitForTunnelUrl(
-        child,
-        localPort,
-        this.options.readinessTimeoutMs,
-        this.options.verbose ? (text) => this.runtime.write(text) : undefined,
-      );
-    } catch (error) {
-      await stopHost(child);
-      throw error;
-    }
-
-    const tunnelId = extractTunnelId(url, localPort);
-    if (!tunnelId) {
-      await stopHost(child);
-      throw new UserFacingError(
-        'Dev Tunnels returned a URL without a usable tunnel identity. The temporary tunnel was stopped before Mobily reported it ready.',
-      );
-    }
-    const ownership: TemporaryTunnelOwnership = {
+    const tunnelId = this.options.tunnelIdFactory();
+    const creatingOwnership: TemporaryTunnelOwnership = {
       version: 1,
       tunnelId,
       ownerRunId: this.options.runId,
       ownerProcessId: this.options.processId,
       createdAt: this.options.now().toISOString(),
-      state: 'ready',
+      state: 'creating',
     };
     try {
-      await this.options.ownershipStore.save(ownership);
+      await this.options.ownershipStore.save(creatingOwnership);
     } catch (error) {
-      await stopHost(child);
-      try {
-        await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
-      } catch {
-        // The original durable-record failure is authoritative: the tunnel was
-        // never reported ready, and helper shutdown still gets its normal
-        // chance to remove the temporary resource.
-      }
       throw new UserFacingError(
-        `Mobily could not record ownership of temporary tunnel '${tunnelId}', so it was not reported ready. ${error instanceof Error ? error.message : String(error)}`,
+        `Mobily could not record ownership of planned temporary tunnel '${tunnelId}', so no Dev Tunnel was created. ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
-    let disconnected = false;
-    return {
-      url,
-      disconnect: async (signal?: AbortSignal) => {
-        if (disconnected) return;
-        disconnected = true;
-        const deletingOwnership: TemporaryTunnelOwnership = {
-          ...ownership,
-          state: 'deleting',
-        };
-        try {
-          await this.options.ownershipStore.save(deletingOwnership);
-        } catch {
-          // Keep cleaning: if deletion fails, the already-durable "ready"
-          // record remains sufficient for a later recovery attempt.
-        }
-        await stopHost(child);
+    let child: DevTunnelHostProcess | undefined;
+    try {
+      const creation = await this.runtime.run(
+        this.executable,
+        ['create', tunnelId, '--allow-anonymous'],
+        { inheritStdio: false },
+      );
+      if (creation.exitCode !== 0) throw devTunnelCommandError(creation);
+
+      const portCreation = await this.runtime.run(
+        this.executable,
+        ['port', 'create', tunnelId, '-p', String(localPort), '--protocol', 'http'],
+        { inheritStdio: false },
+      );
+      if (portCreation.exitCode !== 0) throw devTunnelCommandError(portCreation);
+
+      child = this.runtime.spawnHost(this.executable, ['host', tunnelId]);
+      const url = await waitForTunnelUrl(
+        child,
+        localPort,
+        this.options.readinessTimeoutMs,
+        this.options.verbose ? (text) => this.runtime.write(text) : undefined,
+      );
+
+      const ownership: TemporaryTunnelOwnership = {
+        ...creatingOwnership,
+        state: 'ready',
+      };
+      await this.options.ownershipStore.save(ownership);
+
+      let disconnected = false;
+      return {
+        url,
+        disconnect: async (signal?: AbortSignal) => {
+          if (disconnected) return;
+          disconnected = true;
+          const deletingOwnership: TemporaryTunnelOwnership = {
+            ...ownership,
+            state: 'deleting',
+          };
+          try {
+            await this.options.ownershipStore.save(deletingOwnership);
+          } catch {
+            // Keep cleaning: if deletion fails, the already-durable "ready"
+            // record remains sufficient for a later recovery attempt.
+          }
+          await stopHost(child!);
+          await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
+          if (signal?.aborted) return;
+          await this.options.ownershipStore.remove(ownership);
+        },
+      };
+    } catch (error) {
+      if (child) await stopHost(child);
+      const deletingOwnership: TemporaryTunnelOwnership = {
+        ...creatingOwnership,
+        state: 'deleting',
+      };
+      try {
+        await this.options.ownershipStore.save(deletingOwnership);
+      } catch {
+        // The durable "creating" record remains enough for startup recovery.
+      }
+      try {
         await deleteTemporaryTunnel(this.runtime, this.executable, tunnelId);
-        if (signal?.aborted) return;
-        await this.options.ownershipStore.remove(ownership);
-      },
-    };
+      } catch (cleanupError) {
+        throw combineStartupAndCleanupErrors(error, cleanupError);
+      }
+      try {
+        await this.options.ownershipStore.remove(deletingOwnership);
+      } catch {
+        throw new UserFacingError(
+          `${userFacingMessage(error)} Mobily deleted temporary tunnel '${tunnelId}' but could not remove its recovery record. Check access to ~/.mobily/temporary-tunnels before rerunning Mobily.`,
+        );
+      }
+      throw new UserFacingError(
+        `${userFacingMessage(error)} Mobily deleted its temporary tunnel '${tunnelId}'.`,
+      );
+    }
   }
 }
 
@@ -377,7 +403,15 @@ async function waitForTunnelUrl(
       if (isTunnelQuotaError(output)) {
         finish({
           error: new UserFacingError(
-            'Dev Tunnels quota is full. Delete unused tunnels with `devtunnel delete-all`, then try again.',
+            'Dev Tunnels quota is full. Review tunnels with `devtunnel list` and delete an unused tunnel with `devtunnel delete <tunnel-id>`, then try again.',
+          ),
+        });
+        return;
+      }
+      if (isRateLimitError(output)) {
+        finish({
+          error: new UserFacingError(
+            'Dev Tunnels rate limit exceeded. Wait about a minute and try again. Review tunnels with `devtunnel list` and delete an unused tunnel with `devtunnel delete <tunnel-id>`.',
           ),
         });
         return;
@@ -406,6 +440,40 @@ function isTunnelQuotaError(output: string): boolean {
   );
 }
 
+function isRateLimitError(output: string): boolean {
+  return /\b(?:rate limit exceeded|too many requests|http 429)\b/i.test(output);
+}
+
+function devTunnelCommandError(result: CommandResult): UserFacingError {
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (isTunnelQuotaError(output)) {
+    return new UserFacingError(
+      'Dev Tunnels quota is full. Review tunnels with `devtunnel list` and delete an unused tunnel with `devtunnel delete <tunnel-id>`, then try again.',
+    );
+  }
+  if (isRateLimitError(output)) {
+    return new UserFacingError(
+      'Dev Tunnels rate limit exceeded. Wait about a minute and try again. Review tunnels with `devtunnel list` and delete an unused tunnel with `devtunnel delete <tunnel-id>`.',
+    );
+  }
+  return new UserFacingError(
+    `Dev Tunnels could not create its temporary tunnel (exit ${result.exitCode}).${conciseHelperDetail(output)}`,
+  );
+}
+
+function userFacingMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function combineStartupAndCleanupErrors(
+  startupError: unknown,
+  cleanupError: unknown,
+): UserFacingError {
+  return new UserFacingError(
+    `${userFacingMessage(startupError)} ${userFacingMessage(cleanupError)}`,
+  );
+}
+
 function extractTunnelUrl(output: string, localPort: number): string | undefined {
   const matches = output.match(/https:\/\/[^\s,]+\.devtunnels\.ms(?::\d+)?\/?/gi) ?? [];
   const candidates = matches
@@ -424,16 +492,6 @@ function extractTunnelUrl(output: string, localPort: number): string | undefined
   const url = new URL(selected);
   url.protocol = 'wss:';
   return url.toString();
-}
-
-function extractTunnelId(tunnelUrl: string, localPort: number): string | undefined {
-  const url = new URL(tunnelUrl);
-  const tunnelPortLabel = url.hostname.split('.')[0];
-  const portSuffix = `-${localPort}`;
-  if (tunnelPortLabel?.endsWith(portSuffix)) {
-    return tunnelPortLabel.slice(0, -portSuffix.length);
-  }
-  return url.port === String(localPort) ? tunnelPortLabel : undefined;
 }
 
 async function deleteTemporaryTunnel(
@@ -459,9 +517,9 @@ function conciseHelperDetail(output: string): string {
   const line = output
     .split(/\r?\n/)
     .map((value) => value.trim())
-    .filter(Boolean)
+    .filter((value) => Boolean(value) && !/^request id:/i.test(value) && !/^at\s+/i.test(value))
     .at(-1);
-  const sanitized = line?.replace(/^error:?\s*/i, '').replace(/^\s*at\s+/, '');
+  const sanitized = line?.replace(/^(?:tunnel service )?error:?\s*/i, '');
   return sanitized ? ` ${sanitized.slice(0, 240)}` : '';
 }
 

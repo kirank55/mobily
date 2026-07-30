@@ -432,6 +432,16 @@ export class Session {
         }
         this.backend.write(frame.data);
         break;
+      case 'terminal-reset':
+        try {
+          this.backend.resetTerminal();
+        } catch (err) {
+          this.sendTo(ws, {
+            type: 'output',
+            data: `mobily: terminal reset failed — ${errorText(err)}\r\n`,
+          });
+        }
+        break;
       case 'resize':
         if (this.sizeOwner !== ws) {
           this.sizeOwnership.sendSizeOwnershipState(ws);

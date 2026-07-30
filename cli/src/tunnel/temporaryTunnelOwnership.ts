@@ -15,7 +15,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 
-export type TemporaryTunnelLifecycleState = 'ready' | 'deleting';
+export type TemporaryTunnelLifecycleState = 'creating' | 'ready' | 'deleting';
 
 export interface TemporaryTunnelOwnership {
   readonly version: 1;
@@ -107,7 +107,9 @@ function isTemporaryTunnelOwnership(value: unknown): value is TemporaryTunnelOwn
     (candidate.ownerProcessId === undefined ||
       (Number.isInteger(candidate.ownerProcessId) && candidate.ownerProcessId! > 0)) &&
     typeof candidate.createdAt === 'string' &&
-    (candidate.state === 'ready' || candidate.state === 'deleting')
+    (candidate.state === 'creating' ||
+      candidate.state === 'ready' ||
+      candidate.state === 'deleting')
   );
 }
 
