@@ -5,9 +5,48 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------------------------------------------------------------------------
-  # Main CI — typecheck, lint, build, test (all packages via turbo)
+  # Path filters — skip expensive jobs when unrelated paths change
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      android_browser: ${{ steps.filter.outputs.android_browser }}
+      pty: ${{ steps.filter.outputs.pty }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need prior commit for push-event diffs (paths-filter).
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android_browser:
+              - 'android/**'
+              - 'shared/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+            pty:
+              - 'cli/**'
+              - 'shared/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+
+  # ---------------------------------------------------------------------------
+  # Main CI — typecheck, lint, build, unit/integration tests (turbo)
+  # Playwright browser tests run in android-browser when those paths change.
   # ---------------------------------------------------------------------------
   ci:
     runs-on: ubuntu-latest
@@ -24,22 +63,40 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
-      - run: pnpm --filter mobily-android exec playwright install --with-deps chromium
       - run: pnpm test
 
   # ---------------------------------------------------------------------------
-  # node-pty native-build matrix — validates that node-pty 1.1.0 prebuilts
-  # load and spawn a PTY on supported hosts (Linux / macOS; WSL shares the
-  # Linux path) without requiring Xcode CLT / build-essential at install time.
-  # Native Windows / PowerShell is deferred.
+  # Android Playwright — Chromium install + browser tests when Android/shared
+  # (or lockfile / CI wiring) changes. Linux unit tests always run in `ci`.
+  # ---------------------------------------------------------------------------
+  android-browser:
+    needs: changes
+    if: needs.changes.outputs.android_browser == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mobily/shared build
+      - run: pnpm --filter mobily-android exec playwright install --with-deps chromium
+      - run: pnpm --filter mobily-android run test:browser
+
+  # ---------------------------------------------------------------------------
+  # node-pty on macOS — Linux spawn is covered by `ci` (cli pty tests).
+  # Validates that node-pty 1.1.0 prebuilts load and spawn a PTY on macOS
+  # without requiring Xcode CLT at install time. Native Windows is deferred.
   # ---------------------------------------------------------------------------
   pty-native:
-    name: node-pty / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: node-pty / macos
+    needs: changes
+    if: needs.changes.outputs.pty == 'true'
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4

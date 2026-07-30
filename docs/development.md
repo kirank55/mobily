@@ -16,9 +16,11 @@ pnpm build
 
 ## Supported gate before manual testing
 
-CI (`.github/workflows/ci.yml`) runs `pnpm typecheck`, `pnpm lint`, `pnpm build`,
-and `pnpm test` (after Playwright Chromium install for Android). Prefer that full
-gate when you can. For a faster local preflight before manual device testing:
+CI (`.github/workflows/ci.yml`) always runs `pnpm typecheck`, `pnpm lint`,
+`pnpm build`, and `pnpm test` (Vitest across packages; Android `test` is unit-only).
+Playwright Chromium (`pnpm --filter mobily-android run test:browser`) and the
+macOS `pty-native` job run only when relevant paths change. Prefer the full local
+gate when you can. For a faster preflight before manual device testing:
 
 ```bash
 pnpm typecheck
@@ -26,10 +28,15 @@ pnpm --filter mobily-android lint
 pnpm build
 pnpm --filter @mobily/shared test
 pnpm --filter mobily test
-pnpm --filter mobily-android exec vitest run
+pnpm --filter mobily-android test
 ```
 
-Use `vitest run` for the Android unit gate when you want to skip Playwright.
+When Android browser coverage matters locally:
+
+```bash
+pnpm --filter mobily-android exec playwright install --with-deps chromium
+pnpm --filter mobily-android run test:browser
+```
 
 ## Terminal A — Station
 
