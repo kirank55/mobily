@@ -4,16 +4,14 @@ Status: ready-for-agent
 
 ## Progress
 
-- State: **bug reproduced in cloud; fix pending** (test-only branch, no source fix)
+- State: **fixed on `test/issue-2-c`**
 - Branch: `test/issue-2-c`
 - Report: `.scratch/android-terminal-rash-bugs/issue-2-android-browser-test-report-c.md`
 - Done:
-  - Reproduced on the production WebView document (Playwright) and headless xterm: after `\x1b[?1049h` without `\x1b[?1049l`, `[mobily] ` leaves `buffer.active.type === 'alternate'` and 200 lines keep `baseY === 0` / no history swipe — matching the on-device `VERDICT=RED` evidence
-  - Confirmed orderly `\x1b[?1049l` exit still accumulates scrollback and accepts vertical history gestures; key row stays visible
-  - Added characterization + pending-fix regression tests (`test.fail` / `it.fails`) in `android/tests/browser/abruptAltScreenScrollback.pw.mjs` and `android/tests/terminalDocument.test.ts`
-  - Android unit suite green (84); browser suite 29/30 with only the pre-existing OpenCode snapshot failure
-- Not done:
-  - No fix implemented; product still only clears mouse modes on `[mobily] `, not alternate screen
+  - Reproduced then fixed: `applyTerminalMouseControls` tracks DECSET/DECRST 47/1047/1049 and injects `\x1b[?1049l` when `[mobily] ` arrives while still on the alternate screen (including chunk-straddling prompts)
+  - Regenerated `xtermAssets.generated.ts`
+  - Permanent regressions in `android/tests/browser/abruptAltScreenScrollback.pw.mjs` and `android/tests/terminalDocument.test.ts`
+  - Android unit 86 green; issue 2 Playwright 3/3; full browser 28/29 with only the pre-existing OpenCode snapshot failure
 
 ## What to build
 
@@ -23,13 +21,13 @@ The recovery must not damage correctly restored alternate-screen sessions or int
 
 ## Acceptance criteria
 
-- [ ] Killing or interrupting an alternate-screen TUI without its cleanup sequence returns the terminal to a normal-screen shell state. _(fails today — reproduced on `test/issue-2-c`; regression pinned)_
-- [ ] Printing more lines than the visible grid after recovery produces non-zero xterm scrollback. _(fails today — `baseY === 0` after 200 lines)_
-- [ ] A vertical history gesture changes the xterm viewport position. _(fails today after abrupt exit; works after orderly exit)_
-- [ ] The Mobily header and terminal controls remain usable throughout recovery. _(key row stays visible in repro)_
-- [ ] An orderly alternate-screen exit continues to render correctly. _(covered green in new characterization)_
-- [ ] Session Snapshot and transferred scrollback restoration continue to work for both normal and alternate screens. _(existing browser suite)_
-- [ ] A regression test covers a Mobily shell prompt arriving while xterm is still in alternate-screen mode. _(added as `test.fail` / `it.fails`; remove markers when fixed)_
+- [x] Killing or interrupting an alternate-screen TUI without its cleanup sequence returns the terminal to a normal-screen shell state.
+- [x] Printing more lines than the visible grid after recovery produces non-zero xterm scrollback.
+- [x] A vertical history gesture changes the xterm viewport position.
+- [x] The Mobily header and terminal controls remain usable throughout recovery.
+- [x] An orderly alternate-screen exit continues to render correctly.
+- [x] Session Snapshot and transferred scrollback restoration continue to work for both normal and alternate screens. _(existing browser suite still green aside from the pre-existing OpenCode snapshot case)_
+- [x] A regression test covers a Mobily shell prompt arriving while xterm is still in alternate-screen mode.
 
 ## Blocked by
 
@@ -69,6 +67,13 @@ Cloud run reproduced the scrollback loss headlessly (see
 - Orderly `\x1b[?1049l` path still yields `normal` with non-zero `baseY` and a
   working history swipe.
 - Root cause confirmed at the client: `applyTerminalMouseControls` clears mouse
-  modes on the Mobily prompt boundary but does not leave the alternate screen;
-  `prepareOutput` writes the raw stream into xterm unchanged.
-- No product source was changed on this branch.
+  modes on the Mobily prompt boundary but did not leave the alternate screen;
+  `prepareOutput` wrote the raw stream into xterm unchanged.
+
+### 2026-07-31 — fix on `test/issue-2-c`
+
+`applyTerminalMouseControls` now tracks alternate-screen DEC modes and injects
+`\x1b[?1049l` immediately before a Mobily prompt that arrives while still on the
+alternate buffer. Orderly exits that already emit `1049l` are unchanged.
+Regressions cover abrupt recovery, history swipe, orderly exit, and
+chunk-straddling prompts.

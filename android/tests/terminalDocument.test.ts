@@ -142,7 +142,7 @@ describe('terminal document', () => {
     expect(state.alternateScreen).toBe(true);
 
     expect(applyTerminalMouseControls(state, '\r\n[mobily] shell$ ')).toBe(
-      '\u001b[?1049l\r\n[mobily] shell$ ',
+      '\r\n\u001b[?1049l[mobily] shell$ ',
     );
     expect(state.alternateScreen).toBe(false);
 
