@@ -39,3 +39,15 @@ mServedInputConnection=null
 Supporting report:
 
 `/home/kiran/code-wsl/playground/.test-evidence/aggressive-rash-test/report.md`
+
+### 2026-07-31 — worktree `test/issue-1-c` CLI + Android attempt
+
+Cloud worktree run tried to validate this ticket by running the Station CLI and
+the Expo Android app (see
+`.scratch/android-terminal-rash-bugs/issue-1-cli-android-test-report-c.md`).
+
+- Official CLI reaches Dev Tunnel GitHub device-code login; no headless credentials.
+- Local TLS WSS stand-in + emulator APK/Metro path were stood up; System UI / app
+  ANRs under software emulation (`-accel off`, no KVM) blocked a stable paired
+  terminal, so Show-keyboard / `mInputShown` acceptance was not verified.
+- Native IME module unit/policy tests still pass in this worktree.
