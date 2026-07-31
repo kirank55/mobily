@@ -60,6 +60,9 @@ pnpm --filter mobily-android android
 
 Scan the CLI QR from the app pair screen.
 
+For starting, checking, stopping, and troubleshooting the local Android
+emulator, see [`android-emulator.md`](android-emulator.md).
+
 ## Publishing the CLI
 
 Tagged releases (`v*`) run [`.github/workflows/release.yml`](../.github/workflows/release.yml),
