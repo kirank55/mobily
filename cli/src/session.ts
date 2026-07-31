@@ -35,6 +35,7 @@ import {
   type SessionStatusFrame,
 } from '@mobily/shared';
 import type { ExitEvent, IDisposable, SpawnOptions } from './pty.js';
+import { MouseReportingGuard, MOUSE_REPORTING_BOUNDARY_FLUSH } from './mouseReportingGuard.js';
 import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpcRouter.js';
 import { BareBackend } from './sessionBackend/bare.js';
@@ -136,6 +137,7 @@ export class Session {
   private readonly handshake?: SessionHandshake;
   private readonly scrollback: SessionScrollback;
   private readonly sizeOwnership: SessionSizeOwnership;
+  private readonly mouseReportingGuard = new MouseReportingGuard();
   private readonly revocationSweep?: ReturnType<typeof setInterval>;
 
   constructor(opts: SessionOptions = {}) {
@@ -221,6 +223,9 @@ export class Session {
     const pendingInitialOutput: string[] = [];
     const acceptBackendOutput = (data: string): void => {
       this.deliverLocalOutput(data);
+      if (this.mouseReportingGuard.trackOutput(data)) {
+        this.backend.write(MOUSE_REPORTING_BOUNDARY_FLUSH);
+      }
       this.screen.write(data, () => {
         this.broadcast({ type: 'output', data });
         this.alertDetector.push(data);
@@ -231,7 +236,10 @@ export class Session {
       else acceptBackendOutput(data);
     });
     const initialOutput = this.backend.captureVisibleScreen();
-    if (initialOutput.length > 0) this.screen.write(initialOutput);
+    if (initialOutput.length > 0) {
+      this.mouseReportingGuard.trackOutput(initialOutput);
+      this.screen.write(initialOutput);
+    }
     initializingScreen = false;
     for (const data of pendingInitialOutput) acceptBackendOutput(data);
 
@@ -284,7 +292,9 @@ export class Session {
     this.localTerminal = state;
     return {
       input: (data) => {
-        if (active && !this.exited) this.backend.write(data);
+        if (active && !this.exited && this.mouseReportingGuard.trackInput(data)) {
+          this.backend.write(data);
+        }
       },
       resize: (cols, rows) => {
         if (active && !this.exited) this.applyStationResize(cols, rows);
@@ -430,7 +440,9 @@ export class Session {
             if (tags.length > 256) tags.splice(0, tags.length - 256);
           }
         }
-        this.backend.write(frame.data);
+        if (this.mouseReportingGuard.trackInput(frame.data)) {
+          this.backend.write(frame.data);
+        }
         break;
       case 'terminal-reset':
         try {
