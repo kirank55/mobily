@@ -134,6 +134,64 @@ describe('terminal document', () => {
     expect(isTerminalMouseReportingActive(state)).toBe(true);
   });
 
+  it('characterization (issue 02): abrupt alt-screen exit retains no xterm scrollback after 200 lines', async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+    const terminal = new Terminal({ allowProposedApi: true, cols: 80, rows: 24, scrollback: 5_000 });
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049h\u001b[2J\u001b[HABRUPT TUI', resolve),
+    );
+    // Shell prompt returns without DECRST 1049 — xterm stays on the alternate buffer.
+    await new Promise<void>((resolve) => terminal.write('\r\n[mobily] shell$ ', resolve));
+    await new Promise<void>((resolve) => terminal.write(lines, resolve));
+
+    expect(terminal.buffer.active.type).toBe('alternate');
+    expect(terminal.buffer.active.baseY).toBe(0);
+    expect(terminal.buffer.active.viewportY).toBe(0);
+    terminal.dispose();
+  });
+
+  it('characterization (issue 02): orderly alt-screen exit accumulates normal-screen scrollback', async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+    const terminal = new Terminal({ allowProposedApi: true, cols: 80, rows: 24, scrollback: 5_000 });
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049h\u001b[2J\u001b[HORDERLY TUI', resolve),
+    );
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049l\r\n[mobily] shell$ ', resolve),
+    );
+    await new Promise<void>((resolve) => terminal.write(lines, resolve));
+
+    expect(terminal.buffer.active.type).toBe('normal');
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+    terminal.dispose();
+  });
+
+  it.fails(
+    'regression (issue 02, pending fix): Mobily prompt while still in alternate-screen recovers scrollback',
+    async () => {
+      // Today the WebView writes `[mobily] ` without injecting `\x1b[?1049l`, so
+      // xterm stays on the alternate buffer. Assert the desired recovered state
+      // against that prompt-only path; remove `.fails` once the product leaves
+      // alternate screen at the Mobily process boundary.
+      const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+      const terminal = new Terminal({
+        allowProposedApi: true,
+        cols: 80,
+        rows: 24,
+        scrollback: 5_000,
+      });
+      await new Promise<void>((resolve) =>
+        terminal.write('\u001b[?1049h\u001b[2J\u001b[HABRUPT TUI', resolve),
+      );
+      await new Promise<void>((resolve) => terminal.write('\r\n[mobily] shell$ ', resolve));
+      await new Promise<void>((resolve) => terminal.write(lines, resolve));
+
+      expect(terminal.buffer.active.type).toBe('normal');
+      expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+      terminal.dispose();
+    },
+  );
+
   it('formats SGR mouse click press and release sequences', () => {
     expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
     expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
