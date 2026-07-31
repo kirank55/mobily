@@ -5,6 +5,7 @@ export type TerminalBridgeMessage =
   | { readonly type: 'resize'; readonly cols: number; readonly rows: number }
   | { readonly type: 'font-size'; readonly fontSize: number }
   | { readonly type: 'copy'; readonly data: string }
+  | { readonly type: 'request-ime' }
   | {
       readonly type: 'latency-stats';
       readonly n: number;
@@ -44,6 +45,8 @@ export function parseTerminalBridgeMessage(raw: string): TerminalBridgeMessage |
       return typeof message['data'] === 'string' && message['data'].length <= 1_000_000
         ? { type: 'copy', data: message['data'] }
         : null;
+    case 'request-ime':
+      return { type: 'request-ime' };
     case 'latency-stats':
       return isNonNegativeNumber(message['n']) &&
         isNonNegativeNumber(message['p50']) &&

@@ -841,7 +841,8 @@ ${VIEWPORT_HELPERS}
     else if(msg.type==='copy-selection'&&term)sendRN({type:'copy',data:term.getSelection()});
     else if(msg.type==='paste'&&term&&typeof msg.data==='string'&&msg.data.length<=32768)term.paste(msg.data);
     else if(msg.type==='keyboard'&&typeof msg.visible==='boolean'&&term){
-      if(msg.visible)focusTerminalInput(term);else term.blur();
+      if(msg.visible){focusTerminalInput(term);sendRN({type:'request-ime'});}
+      else term.blur();
     }
     else if(msg.type==='get-latency-stats')emitLatStats();
   }
@@ -924,8 +925,10 @@ ${VIEWPORT_HELPERS}
       if(touch&&Math.hypot(touch.clientX-touchGesture.startX,touch.clientY-touchGesture.startY)<=12){
         // The keyboard opens only here: a tap that never became a swipe, pan,
         // or pinch. Swipes and pans never touch the textarea, so the IME stays
-        // closed for them.
+        // closed for them. request-ime asks Android to serve the WebView and
+        // show the soft keyboard after DOM focus alone.
         focusTerminalInput(term);
+        sendRN({type:'request-ime'});
         if(touchGesture.mouse&&isTouchInsideTerminalScreen(touch)){
           var cell=terminalScreenCell(touch);
           sendInput(sgrMouseClickSequence(cell.col,cell.row));

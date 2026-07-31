@@ -48,6 +48,7 @@ describe('terminal document', () => {
     expect(production).toContain('restoreTerminalMouseControls');
     expect(TERMINAL_HELPERS_JS).toContain('MOBILY_SHELL_PROMPT');
     expect(production).toContain("msg.type==='keyboard'");
+    expect(production).toContain("sendRN({type:'request-ime'})");
     expect(production).toContain("addEventListener('touchstart'");
     expect(production).toContain('capture:true');
     expect(production).toContain('touchmove');

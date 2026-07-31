@@ -25,6 +25,7 @@ describe('parseTerminalBridgeMessage()', () => {
       fontSize: 16,
     });
     expect(parseTerminalBridgeMessage('{"type":"ready"}')).toEqual({ type: 'ready' });
+    expect(parseTerminalBridgeMessage('{"type":"request-ime"}')).toEqual({ type: 'request-ime' });
     expect(
       parseTerminalBridgeMessage(JSON.stringify({ type: 'copy', data: 'selected text' })),
     ).toEqual({ type: 'copy', data: 'selected text' });

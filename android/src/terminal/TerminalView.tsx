@@ -22,6 +22,7 @@ import {
   type RendererStartupState,
 } from './rendererStartup';
 import { buildTerminalDocument } from './terminalDocument';
+import { hideTerminalSoftKeyboard, showTerminalSoftKeyboard } from './terminalIme';
 import type { TerminalViewHandle, TerminalViewProps } from './terminalViewTypes';
 import { colors, fonts, minTouchTarget, spacing, type } from '@/ui/theme';
 
@@ -62,6 +63,14 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   const postToWebView = useCallback((msg: Record<string, unknown>) => {
     webViewRef.current?.postMessage(JSON.stringify(msg));
+  }, []);
+
+  const requestNativeIme = useCallback(() => {
+    // Native focus makes RNCWebView eligible to become the served input view.
+    webViewRef.current?.requestFocus?.();
+    void showTerminalSoftKeyboard().catch((error) => {
+      console.warn('[Mobily][Terminal] Failed to show Android soft keyboard', error);
+    });
   }, []);
 
   useEffect(() => {
@@ -123,10 +132,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         postToWebView({ type: 'paste', data });
       },
       showKeyboard() {
+        // Focus the helper textarea in the document first; the document replies
+        // with request-ime once DOM focus is set so native showSoftInput runs
+        // against a served WebView input connection.
+        webViewRef.current?.requestFocus?.();
         postToWebView({ type: 'keyboard', visible: true });
       },
       hideKeyboard() {
         postToWebView({ type: 'keyboard', visible: false });
+        void hideTerminalSoftKeyboard().catch((error) => {
+          console.warn('[Mobily][Terminal] Failed to hide Android soft keyboard', error);
+        });
       },
       getLatencyStats() {
         postToWebView({ type: 'get-latency-stats' });
@@ -158,12 +174,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         case 'copy':
           onCopy?.(msg.data);
           break;
+        case 'request-ime':
+          requestNativeIme();
+          break;
         case 'latency-stats':
           onLatencyStats?.(msg.n, msg.p50, msg.p95);
           break;
       }
     },
-    [onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats],
+    [onSnapshotApplied, onInput, onResize, onFontSize, onCopy, onLatencyStats, requestNativeIme],
   );
 
   const WebViewAny = WebView as unknown as React.ComponentType<Record<string, unknown>>;
