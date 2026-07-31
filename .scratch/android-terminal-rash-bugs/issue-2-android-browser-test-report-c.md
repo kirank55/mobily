@@ -51,6 +51,7 @@ orderly after 200: normal baseY 178
 | `pnpm --filter mobily-android exec vitest run tests/terminalDocument.test.ts` | 16 passed (includes 2 characterizations + 1 `it.fails`) |
 | `pnpm --filter mobily-android test` | 21 files / 84 tests green |
 | `pnpm --filter mobily-android exec playwright test abruptAltScreenScrollback` | 4 passed (3 characterizations + 1 expected-fail regression) |
+| `pnpm --filter mobily-android run test:browser` | 29 passed, 1 pre-existing failure (`renders a detailed OpenCode-like Session Snapshot in the production document` — documented in AGENTS.md, red on `main`) |
 
 ## Acceptance criteria status
 

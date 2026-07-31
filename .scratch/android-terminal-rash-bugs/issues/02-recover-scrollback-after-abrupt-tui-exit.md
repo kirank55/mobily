@@ -11,6 +11,7 @@ Status: ready-for-agent
   - Reproduced on the production WebView document (Playwright) and headless xterm: after `\x1b[?1049h` without `\x1b[?1049l`, `[mobily] ` leaves `buffer.active.type === 'alternate'` and 200 lines keep `baseY === 0` / no history swipe — matching the on-device `VERDICT=RED` evidence
   - Confirmed orderly `\x1b[?1049l` exit still accumulates scrollback and accepts vertical history gestures; key row stays visible
   - Added characterization + pending-fix regression tests (`test.fail` / `it.fails`) in `android/tests/browser/abruptAltScreenScrollback.pw.mjs` and `android/tests/terminalDocument.test.ts`
+  - Android unit suite green (84); browser suite 29/30 with only the pre-existing OpenCode snapshot failure
 - Not done:
   - No fix implemented; product still only clears mouse modes on `[mobily] `, not alternate screen
 
