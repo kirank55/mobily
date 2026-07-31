@@ -1,0 +1,502 @@
+### ENV
+node: v24.14.1
+pnpm: 10.30.3
+node path: /home/kiran/.nvm/versions/node/v24.14.1/bin/node
+pnpm path: /home/kiran/.nvm/versions/node/v24.14.1/bin/pnpm
+
+### CMD1: pnpm --filter mobily exec vitest run tests/cliArgs.test.ts tests/cliHelp.test.ts
+
+ RUN  v2.1.9 /home/kiran/code-wsl/mobily/cli
+
+ ✓ tests/cliHelp.test.ts (1 test) 5ms
+ ✓ tests/cliArgs.test.ts (2 tests) 13ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  09:04:56
+   Duration  1.34s (transform 643ms, setup 0ms, collect 805ms, tests 18ms, environment 1ms, prepare 368ms)
+
+### CMD1 EXIT: 0
+
+### CMD2: pnpm --filter mobily-website exec vitest run
+
+ RUN  v3.2.7 /home/kiran/code-wsl/mobily/website
+
+ ❯ tests/MarketingPage.test.tsx (14 tests | 2 failed) 192ms
+   ✓ copyText > uses the Clipboard API when available 5ms
+   ✓ copyText > falls back to a temporary textarea 2ms
+   ✓ copyText > uses the fallback when Clipboard API access is rejected 2ms
+   ✓ copyText > reports failure when no copy surface exists 1ms
+   × MarketingPage > renders the rewritten conversion path and required sections 83ms
+     → expected '<link rel="preload" as="image" imageS…' to contain 'id="features"'
+   ✓ MarketingPage > ships an accessible initial mobile-menu state 36ms
+   ✓ MarketingPage > keeps every authentic workflow chapter in the initial document 20ms
+   ✓ MarketingPage > renders command controls with live feedback and exact CLI commands 14ms
+   ✓ MarketingPage > keeps motion optional in the stylesheet 7ms
+   ✓ MarketingPage > exposes the Soft Console semantic token contract 2ms
+   × MarketingPage > states the tmux and Dev Tunnels limitations accurately 9ms
+     → expected '<link rel="preload" as="image" imageS…' to contain 'bare PTY survives phone disconnects o…'
+   ✓ getMenuFocusWrapTarget > wraps forward from the last item to the first 0ms
+   ✓ getMenuFocusWrapTarget > wraps backward from the first item to the last 0ms
+   ✓ getMenuFocusWrapTarget > does not interfere with focus inside the menu 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/MarketingPage.test.tsx > MarketingPage > renders the rewritten conversion path and required sections
+AssertionError: expected '<link rel="preload" as="image" imageS…' to contain 'id="features"'
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- id="features"[39m
+[31m+ <link rel="preload" as="image" imageSrcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=256&amp;q=75 256w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=384&amp;q=75 384w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" imageSizes="(max-width: 900px) 38vw, 180px"/><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="nav-shell"><a class="wordmark" href="#top"><span class="wordmark-lockup" aria-label="Mobily"><span class="wordmark-mark" aria-hidden="true">&gt;_</span><span>MOBILY</span></span></a><nav class="desktop-nav" aria-label="Primary navigation"><a href="#how-it-works">Workflow</a><a href="#features">Features</a><a href="#security">Security</a><a href="#faq">FAQ</a></nav><div class="nav-actions"><a class="nav-text-link" href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer">GITHUB ↗</a><a class="button button--small button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">VIEW RELEASES ↓</a></div><button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu"><span>MENU</span><i aria-hidden="true">=</i></button></div><div id="mobile-menu" class="mobile-menu" role="dialog" aria-modal="true" aria-label="Navigation menu" hidden=""><nav class="mobile-nav" aria-label="Mobile navigation"><a href="#how-it-works"><span>01</span><strong>Workflow</strong><span>↘</span></a><a href="#features"><span>02</span><strong>Features</strong><span>↘</span></a><a href="#security"><span>03</span><strong>Security</strong><span>↘</span></a><a href="#faq"><span>04</span><strong>FAQ</strong><span>↘</span></a><a href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer"><span>05</span><strong>GitHub</strong><span>↗</span></a><a class="button button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">VIEW RELEASES ↓</a></nav></div></header><main id="main"><section class="hero" id="top"><div class="container hero-grid"><div class="hero-copy"><p class="hero-kicker"><span class="status-dot status-dot--success"></span> Same Session. Same Terminal.</p><h1><span>PC to pocket. Full Control.</span><span>Never miss a coding session.</span></h1><p class="hero-lede">Control the live terminal on your PC from Android securely.</p><div class="hero-cta-row"><div class="command-block command-block--compact"><span class="command-prompt" aria-hidden="true">$</span><code>npx mobily</code><button type="button" aria-label="Copy command: npx mobily"><span aria-live="polite">COPY</span></button></div><a class="button button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">DOWNLOAD ANDROID APK ↓</a></div></div><div class="hero-product" aria-label="Live terminal session data flowing securely from a desktop PC to an Android phone"><div class="hero-product-bar" aria-hidden="true"><span>SESSION ROUTE / 001</span><strong><i class="status-dot status-dot--success"></i> DEVICE LINK ACTIVE</strong><span>28 MS / LIVE</span></div><div class="hero-transfer" aria-hidden="true"><div class="hero-endpoint hero-endpoint--desktop"><div class="hero-endpoint-label"><span>01 / WORKSTATION</span><b>STUDIO-PC</b></div><div class="hero-desktop"><div class="hero-desktop-bar"><span><i></i><i></i><i></i></span><b>~/CODE/MOBILY — PNPM TEST</b></div><div class="hero-desktop-screen"><p><span class="hero-terminal-prompt">›</span> pnpm test</p><p class="hero-terminal-muted">mobily@0.9.0 / studio-pc</p><p><span class="hero-terminal-pass">✓</span> protocol.test.ts <small>18 tests</small></p><p><span class="hero-terminal-pass">✓</span> pairing.test.ts <small>9 tests</small></p><p><span class="hero-terminal-pass">✓</span> auth.test.ts <small>14 tests</small></p><p class="hero-terminal-summary">Tests 74 passed</p><p><span class="hero-terminal-prompt">›</span> <i class="hero-terminal-cursor"></i></p></div><div class="hero-desktop-stand"><i></i><span></span></div></div></div><div class="hero-data-path"><span class="hero-route-label hero-route-label--out">LIVE OUTPUT</span><div class="hero-data-track"><span></span><i class="hero-packet hero-packet--one">01</i><i class="hero-packet hero-packet--two">10</i><i class="hero-packet hero-packet--three">01</i></div><div class="hero-data-track hero-data-track--reverse"><span></span><i class="hero-packet hero-packet--return">10</i></div><span class="hero-route-label hero-route-label--in">SIGNED INPUT</span></div><div class="hero-endpoint hero-endpoint--phone"><div class="hero-endpoint-label"><span>02 / ANDROID</span><b>POCKET TERMINAL</b></div><div class="hero-phone"><div class="hero-phone-speaker"></div><img alt="" loading="eager" width="920" height="2048" decoding="async" data-nimg="1" class="hero-device-screenshot" style="color:transparent" sizes="(max-width: 900px) 38vw, 180px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=256&amp;q=75 256w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=384&amp;q=75 384w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div></div><div class="hero-product-footer" aria-hidden="true"><span>NO MOBILY RELAY</span><span>ANDROID KEYSTORE</span><span>SESSION: SECURE</span></div></div></div></section><section class="workflow-section" id="how-it-works"><div class="container"><div class="workflow-layout"><div class="workflow-stage" aria-live="polite"><div class="workflow-stage-meta"><span>ONE-TIME CODE</span><span>01 / 04</span></div><div class="workflow-screens"><div class="workflow-screen" data-active="true"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily&#x27;s secure one-time QR pairing screen on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="A live Mobily terminal Session showing passing tests on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily showing multiple paired PCs and terminals and their status" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily Git workflow showing changed files, staging actions, and a code diff" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75"/></div></div></div><div class="workflow-meter" role="tablist" aria-label="Workflow steps"><button type="button" role="tab" aria-selected="true" aria-label="01 PAIR ONCE" data-active="true"></button><button type="button" role="tab" aria-selected="false" aria-label="02 KEEP IT LIVE" data-active="false"></button><button type="button" role="tab" aria-selected="false" aria-label="03 MOVE BETWEEN" data-active="false"></button><button type="button" role="tab" aria-selected="false" aria-label="04 CLOSE THE LOOP" data-active="false"></button></div></div><div class="workflow-chapters"><article class="workflow-chapter" data-story-chapter="pair" data-active="true"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily&#x27;s secure one-time QR pairing screen on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>01</span><span>PAIR ONCE</span></div><h3>Bind your phone to the terminal.</h3><p>Scan the one-time QR code. Mobily creates a Device Key in Android Keystore and sends only its public key to the CLI.</p></article><article class="workflow-chapter" data-story-chapter="terminal" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="A live Mobily terminal Session showing passing tests on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>02</span><span>KEEP IT LIVE</span></div><h3>Return to the same visible terminal.</h3><p>Receive the current Session Snapshot, send input, use special keys, and answer a waiting prompt from Android.</p></article><article class="workflow-chapter" data-story-chapter="stations" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily showing multiple paired PCs and terminals and their status" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>03</span><span>MOVE BETWEEN</span></div><h3>Keep every paired PC close.</h3><p>Switch among terminals on your PC, cloud machine, home server, or laptop without scanning the pairing code again.</p></article><article class="workflow-chapter" data-story-chapter="git" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily Git workflow showing changed files, staging actions, and a code diff" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>04</span><span>CLOSE THE LOOP</span></div><h3>Handle the small Git moments natively.</h3><p>Review diffs, stage or unstage files, switch local branches, and commit from a phone-sized interface.</p></article></div></div></div></section><section class="setup-section" id="get-started"><div class="container setup-grid"><div class="section-heading section-heading--inverse"><p class="section-kicker"><span>04</span> / START</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">One command.</span><span class="section-title-line">One scan.</span></h2><p class="section-body">Start the CLI on your PC, then install the Android app from GitHub Releases or build it from source. The first Dev Tunnels run guides authentication and setup.</p></div><div class="setup-console"><div class="setup-console-title"><span>QUICK START</span><span>NODE.JS 20+</span></div><div class="setup-step"><span>01</span><div><strong>RUN ON YOUR PC</strong><div class="command-block"><span class="command-prompt" aria-hidden="true">$</span><code>npx mobily</code><button type="button" aria-label="Copy command: npx mobily"><span aria-live="polite">COPY</span></button></div></div></div><div class="setup-step"><span>02</span><div><strong>INSTALL ON ANDROID</strong><a class="button button--paper" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">DOWNLOAD ANDROID APK ↓</a><small>Pre-release APK builds are published through GitHub Releases. Prefer source? Run <code>pnpm --filter mobily-android android</code>.</small></div></div></div></div></section><section class="security-section" id="security"><div class="container security-grid"><div class="security-copy" data-reveal="true"><div class="section-heading"><p class="section-kicker"><span>03</span> / TRUST MODEL</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">Your PC.</span><span class="section-title-line section-title-line--ink">Your phone.</span><span class="section-title-line">Your keys.</span></h2><p class="section-body">The private Device Key stays in Android Keystore. Each reconnect signs a fresh challenge; the CLI verifies it before opening the Session.</p></div><a class="text-link" href="https://github.com/kirank55/mobily/blob/main/SECURITY.md" target="_blank" rel="noreferrer">READ THE SECURITY MODEL ↗</a></div><div class="security-model" data-reveal="true"><div class="security-route" role="img" aria-label="Security illustration: your PC sends an encrypted challenge through a TLS tunnel; the non-exportable key on your Android phone signs it and the PC verifies the response"><div class="security-route-meta" aria-hidden="true"><span>AUTHENTICATED SESSION</span><span>NO MOBILY RELAY</span></div><div class="security-route-canvas" aria-hidden="true"><div class="security-device security-device--pc"><div class="security-monitor"><span>&gt;_</span><i></i><i></i><i></i></div><div class="security-monitor-stand"></div><strong>YOUR PC</strong><small>CLI + PUBLIC KEY</small></div><div class="security-tunnel"><strong>TLS CHANNEL</strong><div class="security-tunnel-track"><span></span><i>01</i><i>10</i><i>01</i></div><small>CHALLENGE → SIGN → VERIFY</small></div><div class="security-device security-device--phone"><div class="security-key-phone"><span>KEY</span><i></i></div><strong>YOUR PHONE</strong><small>ANDROID KEYSTORE</small></div></div><div class="security-route-legend" aria-hidden="true"><span><i class="status-dot status-dot--success"></i> PRIVATE KEY NEVER LEAVES</span><span>FRESH CHALLENGE / EVERY RECONNECT</span></div></div></div><div class="security-proofs" data-reveal="true"><article><span>01</span><div><h3>The private key stays on the phone.</h3><p>The CLI receives the Device Key&#x27;s public key, never the non-exportable private key created by Android Keystore.</p></div></article><article><span>02</span><div><h3>Reconnects prove device identity.</h3><p>Your PC sends a fresh challenge and opens the Session only after Android signs it successfully.</p></div></article><article><span>03</span><div><h3>Mobily operates no relay.</h3><p>Remote access uses Microsoft Dev Tunnels. Mobily does not operate a relay of its own.</p></div></article></div></div></section><section class="faq-section" id="faq"><div class="container faq-grid"><div data-reveal="true"><div class="section-heading"><p class="section-kicker"><span>05</span> / FAQ</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">The details</span><span class="section-title-line">developers ask.</span></h2><p class="section-body">Mobily is intentionally small, explicit, and open. The repository carries the complete technical story.</p></div><a class="text-link" href="https://github.com/kirank55/mobily#readme" target="_blank" rel="noreferrer">READ THE DOCUMENTATION ↗</a></div><div class="faq-list" data-reveal="true"><details><summary><span>01</span><strong>Is Mobily Android-only?</strong><i aria-hidden="true">+</i></summary><p>The mobile client currently targets Android. The CLI on your PC runs on Node.js 20+ across macOS, Linux, Windows, and WSL, subject to native PTY support.</p></details><details><summary><span>02</span><strong>Does Mobily only work with coding agents?</strong><i aria-hidden="true">+</i></summary><p>No. Mobily carries a normal terminal Session, so it works with shells, build tools, editors, coding agents, and other terminal-based workflows.</p></details><details><summary><span>03</span><strong>Does my terminal pass through a Mobily cloud?</strong><i aria-hidden="true">+</i></summary><p>No Mobily-operated cloud exists. Access currently uses Microsoft Dev Tunnels between your PC and phone.</p></details><details><summary><span>04</span><strong>What survives a disconnect?</strong><i aria-hidden="true">+</i></summary><p>A tmux-backed Session can survive phone disconnects and CLI restarts. The bare PTY fallback survives phone disconnects only while the CLI process remains alive.</p></details><details><summary><span>05</span><strong>Do I need an account?</strong><i aria-hidden="true">+</i></summary><p>First-time Dev Tunnels setup may ask you to sign in with GitHub or Microsoft. The phone never needs a Microsoft account.</p></details><details><summary><span>06</span><strong>How do Android updates work?</strong><i aria-hidden="true">+</i></summary><p>Install the pre-release APK from GitHub Releases, or build the Expo app from this repository (`pnpm --filter mobily-android android` or EAS). New APK builds are attached to GitHub Releases as they ship; tagged `v*` releases publish the `mobily` CLI to npm.</p></details></div></div></section></main><footer class="site-footer"><div class="container footer-grid"><div><a class="wordmark" href="#top"><span class="wordmark-lockup" aria-label="Mobily"><span class="wordmark-mark" aria-hidden="true">&gt;_</span><span>MOBILY</span></span></a><p>A secure Android companion for terminal-based development.</p></div><p class="footer-statement">NEVER MISS A<br/>CODING SESSION.</p><div class="footer-links"><a href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer">GITHUB ↗</a><a href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">RELEASES ↗</a><a href="https://github.com/kirank55/mobily#readme" target="_blank" rel="noreferrer">DOCUMENTATION ↗</a><a href="https://github.com/kirank55/mobily/blob/main/SECURITY.md" target="_blank" rel="noreferrer">SECURITY ↗</a></div></div><div class="container footer-bottom"><span>© 2026 MOBILY CONTRIBUTORS</span><a href="https://github.com/kirank55/mobily/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT LICENSED ↗</a><span>BUILT IN THE OPEN.</span></div></footer>[39m
+
+ ❯ tests/MarketingPage.test.tsx:86:20
+     84|     expect(markup).not.toContain('hero-status');
+     85|     expect(markup).not.toContain('hero-index');
+     86|     expect(markup).toContain('id="features"');
+       |                    ^
+     87|     expect(markup).toContain('id="how-it-works"');
+     88|     expect(markup).toContain('id="security"');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/MarketingPage.test.tsx > MarketingPage > states the tmux and Dev Tunnels limitations accurately
+AssertionError: expected '<link rel="preload" as="image" imageS…' to contain 'bare PTY survives phone disconnects o…'
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- bare PTY survives phone disconnects only while the CLI stays alive[39m
+[31m+ <link rel="preload" as="image" imageSrcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=256&amp;q=75 256w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=384&amp;q=75 384w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" imageSizes="(max-width: 900px) 38vw, 180px"/><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="nav-shell"><a class="wordmark" href="#top"><span class="wordmark-lockup" aria-label="Mobily"><span class="wordmark-mark" aria-hidden="true">&gt;_</span><span>MOBILY</span></span></a><nav class="desktop-nav" aria-label="Primary navigation"><a href="#how-it-works">Workflow</a><a href="#features">Features</a><a href="#security">Security</a><a href="#faq">FAQ</a></nav><div class="nav-actions"><a class="nav-text-link" href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer">GITHUB ↗</a><a class="button button--small button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">VIEW RELEASES ↓</a></div><button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu"><span>MENU</span><i aria-hidden="true">=</i></button></div><div id="mobile-menu" class="mobile-menu" role="dialog" aria-modal="true" aria-label="Navigation menu" hidden=""><nav class="mobile-nav" aria-label="Mobile navigation"><a href="#how-it-works"><span>01</span><strong>Workflow</strong><span>↘</span></a><a href="#features"><span>02</span><strong>Features</strong><span>↘</span></a><a href="#security"><span>03</span><strong>Security</strong><span>↘</span></a><a href="#faq"><span>04</span><strong>FAQ</strong><span>↘</span></a><a href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer"><span>05</span><strong>GitHub</strong><span>↗</span></a><a class="button button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">VIEW RELEASES ↓</a></nav></div></header><main id="main"><section class="hero" id="top"><div class="container hero-grid"><div class="hero-copy"><p class="hero-kicker"><span class="status-dot status-dot--success"></span> Same Session. Same Terminal.</p><h1><span>PC to pocket. Full Control.</span><span>Never miss a coding session.</span></h1><p class="hero-lede">Control the live terminal on your PC from Android securely.</p><div class="hero-cta-row"><div class="command-block command-block--compact"><span class="command-prompt" aria-hidden="true">$</span><code>npx mobily</code><button type="button" aria-label="Copy command: npx mobily"><span aria-live="polite">COPY</span></button></div><a class="button button--inverse" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">DOWNLOAD ANDROID APK ↓</a></div></div><div class="hero-product" aria-label="Live terminal session data flowing securely from a desktop PC to an Android phone"><div class="hero-product-bar" aria-hidden="true"><span>SESSION ROUTE / 001</span><strong><i class="status-dot status-dot--success"></i> DEVICE LINK ACTIVE</strong><span>28 MS / LIVE</span></div><div class="hero-transfer" aria-hidden="true"><div class="hero-endpoint hero-endpoint--desktop"><div class="hero-endpoint-label"><span>01 / WORKSTATION</span><b>STUDIO-PC</b></div><div class="hero-desktop"><div class="hero-desktop-bar"><span><i></i><i></i><i></i></span><b>~/CODE/MOBILY — PNPM TEST</b></div><div class="hero-desktop-screen"><p><span class="hero-terminal-prompt">›</span> pnpm test</p><p class="hero-terminal-muted">mobily@0.9.0 / studio-pc</p><p><span class="hero-terminal-pass">✓</span> protocol.test.ts <small>18 tests</small></p><p><span class="hero-terminal-pass">✓</span> pairing.test.ts <small>9 tests</small></p><p><span class="hero-terminal-pass">✓</span> auth.test.ts <small>14 tests</small></p><p class="hero-terminal-summary">Tests 74 passed</p><p><span class="hero-terminal-prompt">›</span> <i class="hero-terminal-cursor"></i></p></div><div class="hero-desktop-stand"><i></i><span></span></div></div></div><div class="hero-data-path"><span class="hero-route-label hero-route-label--out">LIVE OUTPUT</span><div class="hero-data-track"><span></span><i class="hero-packet hero-packet--one">01</i><i class="hero-packet hero-packet--two">10</i><i class="hero-packet hero-packet--three">01</i></div><div class="hero-data-track hero-data-track--reverse"><span></span><i class="hero-packet hero-packet--return">10</i></div><span class="hero-route-label hero-route-label--in">SIGNED INPUT</span></div><div class="hero-endpoint hero-endpoint--phone"><div class="hero-endpoint-label"><span>02 / ANDROID</span><b>POCKET TERMINAL</b></div><div class="hero-phone"><div class="hero-phone-speaker"></div><img alt="" loading="eager" width="920" height="2048" decoding="async" data-nimg="1" class="hero-device-screenshot" style="color:transparent" sizes="(max-width: 900px) 38vw, 180px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=256&amp;q=75 256w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=384&amp;q=75 384w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div></div><div class="hero-product-footer" aria-hidden="true"><span>NO MOBILY RELAY</span><span>ANDROID KEYSTORE</span><span>SESSION: SECURE</span></div></div></div></section><section class="workflow-section" id="how-it-works"><div class="container"><div class="workflow-layout"><div class="workflow-stage" aria-live="polite"><div class="workflow-stage-meta"><span>ONE-TIME CODE</span><span>01 / 04</span></div><div class="workflow-screens"><div class="workflow-screen" data-active="true"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily&#x27;s secure one-time QR pairing screen on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="A live Mobily terminal Session showing passing tests on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily showing multiple paired PCs and terminals and their status" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75"/></div></div><div class="workflow-screen" data-active="false"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily Git workflow showing changed files, staging actions, and a code diff" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75"/></div></div></div><div class="workflow-meter" role="tablist" aria-label="Workflow steps"><button type="button" role="tab" aria-selected="true" aria-label="01 PAIR ONCE" data-active="true"></button><button type="button" role="tab" aria-selected="false" aria-label="02 KEEP IT LIVE" data-active="false"></button><button type="button" role="tab" aria-selected="false" aria-label="03 MOVE BETWEEN" data-active="false"></button><button type="button" role="tab" aria-selected="false" aria-label="04 CLOSE THE LOOP" data-active="false"></button></div></div><div class="workflow-chapters"><article class="workflow-chapter" data-story-chapter="pair" data-active="true"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily&#x27;s secure one-time QR pairing screen on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fpairing.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>01</span><span>PAIR ONCE</span></div><h3>Bind your phone to the terminal.</h3><p>Scan the one-time QR code. Mobily creates a Device Key in Android Keystore and sends only its public key to the CLI.</p></article><article class="workflow-chapter" data-story-chapter="terminal" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="A live Mobily terminal Session showing passing tests on Android" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fterminal.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>02</span><span>KEEP IT LIVE</span></div><h3>Return to the same visible terminal.</h3><p>Receive the current Session Snapshot, send input, use special keys, and answer a waiting prompt from Android.</p></article><article class="workflow-chapter" data-story-chapter="stations" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily showing multiple paired PCs and terminals and their status" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fstations.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>03</span><span>MOVE BETWEEN</span></div><h3>Keep every paired PC close.</h3><p>Switch among terminals on your PC, cloud machine, home server, or laptop without scanning the pairing code again.</p></article><article class="workflow-chapter" data-story-chapter="git" data-active="false"><div class="workflow-mobile-visual"><div class="product-frame "><div class="product-frame-bar" aria-hidden="true"><span>MOBILY / ANDROID</span><span>LIVE PRODUCT</span></div><img alt="Mobily Git workflow showing changed files, staging actions, and a code diff" loading="lazy" width="920" height="2048" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 900px) 78vw, 320px" srcSet="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=640&amp;q=75 640w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=750&amp;q=75 750w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=828&amp;q=75 828w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1080&amp;q=75 1080w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1200&amp;q=75 1200w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=1920&amp;q=75 1920w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=2048&amp;q=75 2048w, /_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75 3840w" src="/_next/image?url=%2Fproduct%2Fgit.webp&amp;w=3840&amp;q=75"/></div></div><div class="chapter-meta"><span>04</span><span>CLOSE THE LOOP</span></div><h3>Handle the small Git moments natively.</h3><p>Review diffs, stage or unstage files, switch local branches, and commit from a phone-sized interface.</p></article></div></div></div></section><section class="setup-section" id="get-started"><div class="container setup-grid"><div class="section-heading section-heading--inverse"><p class="section-kicker"><span>04</span> / START</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">One command.</span><span class="section-title-line">One scan.</span></h2><p class="section-body">Start the CLI on your PC, then install the Android app from GitHub Releases or build it from source. The first Dev Tunnels run guides authentication and setup.</p></div><div class="setup-console"><div class="setup-console-title"><span>QUICK START</span><span>NODE.JS 20+</span></div><div class="setup-step"><span>01</span><div><strong>RUN ON YOUR PC</strong><div class="command-block"><span class="command-prompt" aria-hidden="true">$</span><code>npx mobily</code><button type="button" aria-label="Copy command: npx mobily"><span aria-live="polite">COPY</span></button></div></div></div><div class="setup-step"><span>02</span><div><strong>INSTALL ON ANDROID</strong><a class="button button--paper" href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">DOWNLOAD ANDROID APK ↓</a><small>Pre-release APK builds are published through GitHub Releases. Prefer source? Run <code>pnpm --filter mobily-android android</code>.</small></div></div></div></div></section><section class="security-section" id="security"><div class="container security-grid"><div class="security-copy" data-reveal="true"><div class="section-heading"><p class="section-kicker"><span>03</span> / TRUST MODEL</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">Your PC.</span><span class="section-title-line section-title-line--ink">Your phone.</span><span class="section-title-line">Your keys.</span></h2><p class="section-body">The private Device Key stays in Android Keystore. Each reconnect signs a fresh challenge; the CLI verifies it before opening the Session.</p></div><a class="text-link" href="https://github.com/kirank55/mobily/blob/main/SECURITY.md" target="_blank" rel="noreferrer">READ THE SECURITY MODEL ↗</a></div><div class="security-model" data-reveal="true"><div class="security-route" role="img" aria-label="Security illustration: your PC sends an encrypted challenge through a TLS tunnel; the non-exportable key on your Android phone signs it and the PC verifies the response"><div class="security-route-meta" aria-hidden="true"><span>AUTHENTICATED SESSION</span><span>NO MOBILY RELAY</span></div><div class="security-route-canvas" aria-hidden="true"><div class="security-device security-device--pc"><div class="security-monitor"><span>&gt;_</span><i></i><i></i><i></i></div><div class="security-monitor-stand"></div><strong>YOUR PC</strong><small>CLI + PUBLIC KEY</small></div><div class="security-tunnel"><strong>TLS CHANNEL</strong><div class="security-tunnel-track"><span></span><i>01</i><i>10</i><i>01</i></div><small>CHALLENGE → SIGN → VERIFY</small></div><div class="security-device security-device--phone"><div class="security-key-phone"><span>KEY</span><i></i></div><strong>YOUR PHONE</strong><small>ANDROID KEYSTORE</small></div></div><div class="security-route-legend" aria-hidden="true"><span><i class="status-dot status-dot--success"></i> PRIVATE KEY NEVER LEAVES</span><span>FRESH CHALLENGE / EVERY RECONNECT</span></div></div></div><div class="security-proofs" data-reveal="true"><article><span>01</span><div><h3>The private key stays on the phone.</h3><p>The CLI receives the Device Key&#x27;s public key, never the non-exportable private key created by Android Keystore.</p></div></article><article><span>02</span><div><h3>Reconnects prove device identity.</h3><p>Your PC sends a fresh challenge and opens the Session only after Android signs it successfully.</p></div></article><article><span>03</span><div><h3>Mobily operates no relay.</h3><p>Remote access uses Microsoft Dev Tunnels. Mobily does not operate a relay of its own.</p></div></article></div></div></section><section class="faq-section" id="faq"><div class="container faq-grid"><div data-reveal="true"><div class="section-heading"><p class="section-kicker"><span>05</span> / FAQ</p><h2 class="section-title"><span class="section-title-line section-title-line--ink">The details</span><span class="section-title-line">developers ask.</span></h2><p class="section-body">Mobily is intentionally small, explicit, and open. The repository carries the complete technical story.</p></div><a class="text-link" href="https://github.com/kirank55/mobily#readme" target="_blank" rel="noreferrer">READ THE DOCUMENTATION ↗</a></div><div class="faq-list" data-reveal="true"><details><summary><span>01</span><strong>Is Mobily Android-only?</strong><i aria-hidden="true">+</i></summary><p>The mobile client currently targets Android. The CLI on your PC runs on Node.js 20+ across macOS, Linux, Windows, and WSL, subject to native PTY support.</p></details><details><summary><span>02</span><strong>Does Mobily only work with coding agents?</strong><i aria-hidden="true">+</i></summary><p>No. Mobily carries a normal terminal Session, so it works with shells, build tools, editors, coding agents, and other terminal-based workflows.</p></details><details><summary><span>03</span><strong>Does my terminal pass through a Mobily cloud?</strong><i aria-hidden="true">+</i></summary><p>No Mobily-operated cloud exists. Access currently uses Microsoft Dev Tunnels between your PC and phone.</p></details><details><summary><span>04</span><strong>What survives a disconnect?</strong><i aria-hidden="true">+</i></summary><p>A tmux-backed Session can survive phone disconnects and CLI restarts. The bare PTY fallback survives phone disconnects only while the CLI process remains alive.</p></details><details><summary><span>05</span><strong>Do I need an account?</strong><i aria-hidden="true">+</i></summary><p>First-time Dev Tunnels setup may ask you to sign in with GitHub or Microsoft. The phone never needs a Microsoft account.</p></details><details><summary><span>06</span><strong>How do Android updates work?</strong><i aria-hidden="true">+</i></summary><p>Install the pre-release APK from GitHub Releases, or build the Expo app from this repository (`pnpm --filter mobily-android android` or EAS). New APK builds are attached to GitHub Releases as they ship; tagged `v*` releases publish the `mobily` CLI to npm.</p></details></div></div></section></main><footer class="site-footer"><div class="container footer-grid"><div><a class="wordmark" href="#top"><span class="wordmark-lockup" aria-label="Mobily"><span class="wordmark-mark" aria-hidden="true">&gt;_</span><span>MOBILY</span></span></a><p>A secure Android companion for terminal-based development.</p></div><p class="footer-statement">NEVER MISS A<br/>CODING SESSION.</p><div class="footer-links"><a href="https://github.com/kirank55/mobily" target="_blank" rel="noreferrer">GITHUB ↗</a><a href="https://github.com/kirank55/mobily/releases/latest" target="_blank" rel="noreferrer">RELEASES ↗</a><a href="https://github.com/kirank55/mobily#readme" target="_blank" rel="noreferrer">DOCUMENTATION ↗</a><a href="https://github.com/kirank55/mobily/blob/main/SECURITY.md" target="_blank" rel="noreferrer">SECURITY ↗</a></div></div><div class="container footer-bottom"><span>© 2026 MOBILY CONTRIBUTORS</span><a href="https://github.com/kirank55/mobily/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT LICENSED ↗</a><span>BUILT IN THE OPEN.</span></div></footer>[39m
+
+ ❯ tests/MarketingPage.test.tsx:142:20
+    140|   it('states the tmux and Dev Tunnels limitations accurately', () => {
+    141|     const markup = renderToStaticMarkup(<MarketingPage />);
+    142|     expect(markup).toContain('bare PTY survives phone disconnects only…
+       |                    ^
+    143|     expect(markup).toContain('GitHub or Microsoft');
+    144|     expect(markup).toContain('The phone never needs a Microsoft accoun…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 12 passed (14)
+   Start at  09:04:58
+   Duration  1.71s (transform 197ms, setup 0ms, collect 395ms, tests 192ms, environment 0ms, prepare 228ms)
+
+undefined
+/home/kiran/code-wsl/mobily/website:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run
+### CMD2 EXIT: 1
+
+### CMD3: pnpm --filter mobily-android exec vitest run
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /home/kiran/code-wsl/mobily/android
+
+ ✓ tests/rpcClient.test.ts (4 tests) 17ms
+ ✓ tests/diffParser.test.ts (3 tests) 7ms
+ ✓ tests/readableTerminalGrid.test.ts (4 tests) 16ms
+ ✓ tests/rendererStartup.test.ts (3 tests) 12ms
+ ✓ tests/terminalBridge.test.ts (3 tests) 8ms
+ ✓ tests/foreground.test.ts (4 tests) 14ms
+stdout | tests/pairing.test.ts > pairWithStation() > logs protocol versions when the QR version does not match the app
+[Mobily][Pairing] Pairing started { protocolVersion: 8, pinnedTransport: false }
+
+stdout | tests/pairing.test.ts > pairWithStation() > stops before key generation when a secure lock screen is not configured
+[Mobily][Pairing] Pairing started { protocolVersion: 7, pinnedTransport: false }
+[Mobily][Pairing] Checking secure lock screen and strong biometrics
+[Mobily][Pairing] Device security check completed {
+  available: false,
+  reason: 'secure-lock-screen-not-configured',
+  biometricStatus: 11,
+  deviceSecure: false
+}
+
+stderr | tests/pairing.test.ts > pairWithStation() > stops before key generation when a secure lock screen is not configured
+[Mobily][Pairing] Device security requirements not met {
+  reason: 'secure-lock-screen-not-configured',
+  biometricStatus: 11,
+  deviceSecure: false
+}
+
+stdout | tests/pairing.test.ts > pairWithStation() > logs the native error when Device Key creation fails
+[Mobily][Pairing] Pairing started { protocolVersion: 7, pinnedTransport: false }
+[Mobily][Pairing] Checking secure lock screen and strong biometrics
+[Mobily][Pairing] Device security check completed {
+  available: true,
+  reason: 'available',
+  biometricStatus: 0,
+  deviceSecure: true
+}
+[Mobily][Pairing] Creating Device Key in Android Keystore
+
+stdout | tests/pairing.test.ts > pairWithStation() > validates the Station response before saving a pairing
+[Mobily][Pairing] Pairing started { protocolVersion: 7, pinnedTransport: false }
+[Mobily][Pairing] Checking secure lock screen and strong biometrics
+[Mobily][Pairing] Device security check completed {
+  available: true,
+  reason: 'available',
+  biometricStatus: 0,
+  deviceSecure: true
+}
+[Mobily][Pairing] Creating Device Key in Android Keystore
+[Mobily][Pairing] Device Key created { hardwareBacked: true, securityLevel: 'trusted-environment' }
+[Mobily][Pairing] Requesting biometric confirmation
+[Mobily][Pairing] Device Key ownership confirmed
+[Mobily][Pairing] Sending pairing request to Station
+[Mobily][Pairing] Station responded { status: 200, ok: true }
+[Mobily][Pairing] Pairing completed { stationName: 'test-station' }
+
+stdout | tests/pairing.test.ts > pairWithStation() > rejects endpoint substitution in a successful HTTP response
+[Mobily][Pairing] Pairing started { protocolVersion: 7, pinnedTransport: false }
+[Mobily][Pairing] Checking secure lock screen and strong biometrics
+[Mobily][Pairing] Device security check completed {
+  available: true,
+  reason: 'available',
+  biometricStatus: 0,
+  deviceSecure: true
+}
+[Mobily][Pairing] Creating Device Key in Android Keystore
+[Mobily][Pairing] Device Key created { hardwareBacked: true, securityLevel: 'trusted-environment' }
+[Mobily][Pairing] Requesting biometric confirmation
+[Mobily][Pairing] Device Key ownership confirmed
+[Mobily][Pairing] Sending pairing request to Station
+[Mobily][Pairing] Station responded { status: 200, ok: true }
+
+stderr | tests/pairing.test.ts > pairWithStation() > rejects endpoint substitution in a successful HTTP response
+[Mobily][Pairing] Station returned an invalid pairing response {
+  stationName: 'attacker',
+  tunnelUrl: 'wss://other.example.devtunnels.ms',
+  expectedTunnelUrl: 'wss://station.example.devtunnels.ms',
+  protocolVersion: 7,
+  expectedProtocolVersion: 7
+}
+[Mobily][Pairing] Pairing failed { reason: 'Station returned an invalid pairing response.' }
+
+stdout | tests/pairing.test.ts > pairWithStation() > uses the native pinned request for a self-signed local Station
+[Mobily][Pairing] Pairing started { protocolVersion: 7, pinnedTransport: true }
+[Mobily][Pairing] Checking secure lock screen and strong biometrics
+[Mobily][Pairing] Device security check completed {
+  available: true,
+  reason: 'available',
+  biometricStatus: 0,
+  deviceSecure: true
+}
+[Mobily][Pairing] Creating Device Key in Android Keystore
+[Mobily][Pairing] Device Key created { hardwareBacked: true, securityLevel: 'trusted-environment' }
+[Mobily][Pairing] Requesting biometric confirmation
+[Mobily][Pairing] Device Key ownership confirmed
+[Mobily][Pairing] Sending pairing request to Station
+[Mobily][Pairing] Station responded { status: 200, ok: true }
+[Mobily][Pairing] Pairing completed { stationName: 'local-station' }
+
+ ✓ tests/pairing.test.ts (6 tests) 46ms
+ ✓ tests/storage.test.ts (7 tests) 41ms
+stdout | tests/wsClient.test.ts > WsClient > completes version negotiation and Device Key authentication before terminal I/O
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > completes version negotiation and Device Key authentication before terminal I/O
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > rejects snapshots before authentication, after first paint, or above the frame limit
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+ ✓ tests/deviceKey.test.ts (3 tests) 35ms
+stdout | tests/wsClient.test.ts > WsClient > rejects snapshots before authentication, after first paint, or above the frame limit
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+
+stdout | tests/wsClient.test.ts > WsClient > requests history only after first paint and assembles one ordered bounded transfer
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > requests history only after first paint and assembles one ordered bounded transfer
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > claims and releases Terminal Size Ownership only after authentication
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > claims and releases Terminal Size Ownership only after authentication
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > rejects scrollback before paint, out of order, or above the transfer limit
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > rejects scrollback before paint, out of order, or above the transfer limit
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > rejects scrollback before paint, out of order, or above the transfer limit
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > distinguishes a Device Key signing failure from biometric cancellation
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+
+stdout | tests/wsClient.test.ts > WsClient > reports an explicitly cancelled biometric prompt as cancellation
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+
+stderr | tests/wsClient.test.ts > WsClient > reports an explicitly cancelled biometric prompt as cancellation
+[Mobily][Connection] Biometric authentication was cancelled
+
+stdout | tests/wsClient.test.ts > WsClient > allows retry after a transient biometric failure
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+
+stdout | tests/wsClient.test.ts > WsClient > maps permanent close codes to user-facing failures without reconnecting
+[Mobily][Connection] Connecting to paired Station
+
+stdout | tests/wsClient.test.ts > WsClient > delivers authenticated terminal alerts to the app
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > delivers authenticated terminal alerts to the app
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > delivers authenticated session-status phases to the app
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+stdout | tests/wsClient.test.ts > WsClient > delivers authenticated session-status phases to the app
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > rejects terminal alerts before authentication completes
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+
+stdout | tests/wsClient.test.ts > WsClient > reconnects transient failures with exponential backoff
+[Mobily][Connection] Connecting to paired Station
+
+ ✓ tests/stationRecency.test.ts (1 test) 15ms
+stdout | tests/wsClient.test.ts > WsClient > retains the current frame until reconnect snapshot replacement and ignores superseded sockets
+[Mobily][Connection] Connecting to paired Station
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+ ✓ tests/sessionSnapshotChannel.test.ts (2 tests) 38ms
+ ✓ tests/probe.test.ts (1 test) 12ms
+stdout | tests/wsClient.test.ts > WsClient > retains the current frame until reconnect snapshot replacement and ignores superseded sockets
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+[Mobily][Connection] Socket opened; starting protocol negotiation
+[Mobily][Connection] Protocol negotiation completed
+[Mobily][Connection] Station requested Device Key authentication
+[Mobily][Connection] Device Key response sent
+
+ ✓ tests/terminalDocument.test.ts (10 tests) 357ms
+   ✓ terminal document > loads maximum scrollback behind the already-painted current screen 300ms
+ ✓ tests/theme.test.ts (2 tests) 8ms
+stdout | tests/wsClient.test.ts > WsClient > retains the current frame until reconnect snapshot replacement and ignores superseded sockets
+[Mobily][Connection] Device Key accepted; awaiting Session Snapshot
+[Mobily][Connection] Session Snapshot received; terminal connected
+
+stdout | tests/wsClient.test.ts > WsClient > rejects plaintext Station transport before opening a socket
+[Mobily][Connection] Connecting to paired Station
+
+ ✓ tests/wsClient.test.ts (15 tests) 783ms
+ ✓ tests/qr.test.ts (2 tests) 18ms
+ ✓ tests/fontPreference.test.ts (2 tests) 15ms
+
+ Test Files  17 passed (17)
+      Tests  72 passed (72)
+   Start at  09:05:02
+   Duration  2.53s (transform 3.37s, setup 0ms, collect 6.01s, tests 1.44s, environment 14ms, prepare 5.64s)
+
+### CMD3 EXIT: 0
+
+### CMD4: pnpm typecheck
+
+> mobily-monorepo@0.0.0 typecheck /home/kiran/code-wsl/mobily
+> turbo run typecheck
+
+• turbo 2.10.4
+
+   • Packages in scope: @mobily/shared, mobily, mobily-android, mobily-website
+   • Running typecheck in 4 packages
+   • Remote caching disabled
+
+@mobily/shared:build: cache miss, executing 5d6995580bf85631
+mobily-website:typecheck: cache miss, executing 5c2625ce250db248
+@mobily/shared:typecheck: cache miss, executing 80f94aa4f7b1bf2d
+@mobily/shared:typecheck: 
+@mobily/shared:typecheck: > @mobily/shared@0.0.0 typecheck /home/kiran/code-wsl/mobily/shared
+@mobily/shared:typecheck: > tsc --noEmit
+@mobily/shared:typecheck: 
+mobily-website:typecheck: 
+mobily-website:typecheck: > mobily-website@0.1.0 typecheck /home/kiran/code-wsl/mobily/website
+mobily-website:typecheck: > tsc --noEmit
+mobily-website:typecheck: 
+@mobily/shared:build: 
+@mobily/shared:build: > @mobily/shared@0.0.0 build /home/kiran/code-wsl/mobily/shared
+@mobily/shared:build: > tsup
+@mobily/shared:build: 
+@mobily/shared:build: CLI Building entry: src/index.ts
+@mobily/shared:build: CLI Using tsconfig: tsconfig.json
+@mobily/shared:build: CLI tsup v8.5.1
+@mobily/shared:build: CLI Using tsup config: /home/kiran/code-wsl/mobily/shared/tsup.config.ts
+@mobily/shared:build: CLI Target: node20
+@mobily/shared:build: CLI Cleaning output folder
+@mobily/shared:build: ESM Build start
+@mobily/shared:build: ESM dist/index.js     20.70 KB
+@mobily/shared:build: ESM dist/index.js.map 47.20 KB
+@mobily/shared:build: ESM ⚡️ Build success in 43ms
+@mobily/shared:build: DTS Build start
+@mobily/shared:build: DTS ⚡️ Build success in 1206ms
+@mobily/shared:build: DTS dist/index.d.ts 12.43 KB
+mobily:typecheck: cache miss, executing e915afb1de4f2eb6
+mobily-android:typecheck: cache miss, executing be33e5ef2616b17f
+mobily-android:typecheck: 
+mobily-android:typecheck: > mobily-android@0.0.1 typecheck /home/kiran/code-wsl/mobily/android
+mobily-android:typecheck: > tsc --noEmit
+mobily-android:typecheck: 
+mobily:typecheck: 
+mobily:typecheck: > mobily@0.1.0 typecheck /home/kiran/code-wsl/mobily/cli
+mobily:typecheck: > tsc --noEmit
+mobily:typecheck: 
+mobily-website:typecheck: app/layout.tsx(4,1): error TS2578: Unused '@ts-expect-error' directive.
+mobily-website:typecheck:  ELIFECYCLE  Command failed with exit code 2.
+mobily-android:typecheck:  ELIFECYCLE  Command failed.
+mobily:typecheck:  ELIFECYCLE  Command failed.
+mobily-website#typecheck:  ERROR  command (/home/kiran/code-wsl/mobily/website) /home/kiran/.nvm/versions/node/v24.14.1/bin/pnpm run typecheck exited (2)
+
+ Tasks:    2 successful, 5 total
+Cached:    0 cached, 5 total
+  Time:    6.433s 
+Failed:    mobily-website#typecheck
+
+ ERROR  run failed: command  exited (2)
+ ELIFECYCLE  Command failed with exit code 2.
+### CMD4 EXIT: 2
+
+### CMD5: pnpm build
+
+> mobily-monorepo@0.0.0 build /home/kiran/code-wsl/mobily
+> turbo run build
+
+• turbo 2.10.4
+
+   • Packages in scope: @mobily/shared, mobily, mobily-android, mobily-website
+   • Running build in 4 packages
+   • Remote caching disabled
+
+@mobily/shared:build: cache miss, executing 924239789e98b4a3
+mobily-website:build: cache miss, executing 2cc6054994c57d52
+mobily-website:build: 
+mobily-website:build: > mobily-website@0.1.0 build /home/kiran/code-wsl/mobily/website
+mobily-website:build: > next build && node tests/assert-vercel-output.mjs
+mobily-website:build: 
+@mobily/shared:build: 
+@mobily/shared:build: > @mobily/shared@0.0.0 build /home/kiran/code-wsl/mobily/shared
+@mobily/shared:build: > tsup
+@mobily/shared:build: 
+@mobily/shared:build: CLI Building entry: src/index.ts
+@mobily/shared:build: CLI Using tsconfig: tsconfig.json
+@mobily/shared:build: CLI tsup v8.5.1
+@mobily/shared:build: CLI Using tsup config: /home/kiran/code-wsl/mobily/shared/tsup.config.ts
+@mobily/shared:build: CLI Target: node20
+@mobily/shared:build: CLI Cleaning output folder
+@mobily/shared:build: ESM Build start
+@mobily/shared:build: ESM dist/index.js     20.70 KB
+@mobily/shared:build: ESM dist/index.js.map 47.20 KB
+@mobily/shared:build: ESM ⚡️ Build success in 23ms
+@mobily/shared:build: DTS Build start
+mobily-website:build: ▲ Next.js 16.2.6 (Turbopack)
+mobily-website:build: 
+mobily-website:build:   Creating an optimized production build ...
+@mobily/shared:build: DTS ⚡️ Build success in 2072ms
+@mobily/shared:build: DTS dist/index.d.ts 12.43 KB
+mobily:build: cache miss, executing 15e89fc77f4d629b
+mobily:build: 
+mobily:build: > mobily@0.1.0 build /home/kiran/code-wsl/mobily/cli
+mobily:build: > tsup
+mobily:build: 
+mobily:build: CLI Building entry: src/index.ts
+mobily:build: CLI Using tsconfig: tsconfig.json
+mobily:build: CLI tsup v8.5.1
+mobily:build: CLI Using tsup config: /home/kiran/code-wsl/mobily/cli/tsup.config.ts
+mobily:build: CLI Target: node20
+mobily:build: CLI Cleaning output folder
+mobily:build: ESM Build start
+mobily:build: ESM dist/index.js     139.85 KB
+mobily:build: ESM dist/index.js.map 307.70 KB
+mobily:build: ESM ⚡️ Build success in 408ms
+mobily-website:build: ✓ Compiled successfully in 3.6s
+mobily-website:build:   Running TypeScript ...
+mobily-website:build: Failed to type check.
+mobily-website:build: 
+mobily-website:build: ./app/layout.tsx:4:1
+mobily-website:build: Type error: Unused '@ts-expect-error' directive.
+mobily-website:build: 
+mobily-website:build:   [90m2 |[0m [36mimport[0m { headers } [36mfrom[0m [32m'next/headers'[0m;
+mobily-website:build:   [90m3 |[0m [36mimport[0m { [33mGeist[0m } [36mfrom[0m [32m'next/font/google'[0m;
+mobily-website:build: [31m[1m>[0m [90m4 |[0m [90m// @ts-expect-error - no built-in TS declarations for this package[0m
+mobily-website:build:   [90m  |[0m [31m[1m^[0m
+mobily-website:build:   [90m5 |[0m [36mimport[0m [32m'@fontsource-variable/jetbrains-mono'[0m;
+mobily-website:build:   [90m6 |[0m [36mimport[0m [32m'./globals.css'[0m;
+mobily-website:build:   [90m7 |[0m [36mimport[0m { site } [36mfrom[0m [32m'@/content'[0m;
+mobily-website:build: Next.js build worker exited with code: 1 and signal: null
+mobily-website:build:  ELIFECYCLE  Command failed with exit code 1.
+mobily-website#build:  ERROR  command (/home/kiran/code-wsl/mobily/website) /home/kiran/.nvm/versions/node/v24.14.1/bin/pnpm run build exited (1)
+
+ Tasks:    2 successful, 3 total
+Cached:    0 cached, 3 total
+  Time:    8.203s 
+Failed:    mobily-website#build
+
+ ERROR  run failed: command  exited (1)
+ ELIFECYCLE  Command failed with exit code 1.
+### CMD5 EXIT: 1
+
+### ALL DONE
