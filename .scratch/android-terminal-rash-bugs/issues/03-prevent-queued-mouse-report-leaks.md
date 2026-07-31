@@ -4,17 +4,17 @@ Status: ready-for-agent
 
 ## Progress
 
-- State: **bug reproduced in cloud; fix pending** (test-only branch, no source fix)
+- State: **fixed CLI-side; verified at wire/PTY level in cloud** (on-device verification pending on a capable host)
 - Branch: `test/issue-3-c`
 - Report: `.scratch/android-terminal-rash-bugs/issue-3-cli-test-report-c.md`
 - Done:
-  - Reproduced the leak deterministically over the real wire protocol (bare PTY bash + `Session` + `startServer` + `ws` client): `cli/tests/queuedMouseReports.integration.test.ts` with fixture `cli/tests/fixtures/stalled-mouse-tui.mjs`
-  - Both abrupt (SIGKILL) and clean (SIGTERM + DECRST) exits leak: readline inserts `35;5;3M35;18;14M...` at the returned prompt and Enter executes it (`bash: 35: command not found`, ...)
-  - Added both acceptance regression tests as `it.fails` (green now, flip red when a fix lands)
-  - Confirmed mechanism: sender is fire-and-forget; CLI writes every `input` frame to the PTY; bytes queue unread in the tty buffer and are re-read by the shell after the process boundary — Android-side stale-mouse suppression can only gate future gestures
-  - Full gates green: root `pnpm typecheck` / `lint` / `build` / `test`, Android unit (81), browser suite (25/26; one failure is the pre-existing snapshot case documented in AGENTS.md)
+  - Reproduced the leak deterministically over the real wire protocol (bare PTY bash + `Session` + `startServer` + `ws` client): both abrupt (SIGKILL) and clean (SIGTERM + DECRST) exits leaked `35;5;3M35;18;14M...` into the returned prompt, executed as commands on Enter
+  - Fix: `cli/src/mouseReportingGuard.ts` — tracks mouse ownership on the output stream (DECSET 1000/1002/1003 arms; the `[mobily] ` prompt is the process boundary) and writes VINTR (`\x03`) at the boundary when mouse reports were forwarded, so the line discipline discards the queued input (SIGINT also aborts any readline line already polluted); post-boundary in-flight mouse packets are dropped for 1500 ms
+  - Wired into `cli/src/session.ts` across all output and both input paths (WS `input` frames + embedded workstation)
+  - Regression coverage: `cli/tests/mouseReportingGuard.test.ts` (12 unit tests) + rewritten `cli/tests/queuedMouseReports.integration.test.ts` (abrupt kill, clean exit, active-TUI delivery, keyboard-only no-interrupt) with fixtures `stalled-mouse-tui.mjs` / `reading-mouse-tui.mjs`
+  - Full gates green: root `pnpm typecheck` / `lint` / `build` / `test`; CLI 25 files/234 tests; Android unit 81; browser suite 25/26 (one failure is the pre-existing snapshot case documented in AGENTS.md)
 - Not done:
-  - No fix implemented; fix must cover packets already queued in the tty input buffer, not only future pointer events
+  - On-device confirmation against the ticket's `hover-string-repro.ps1` harness (needs real device + tunnel; bash shows a transient `^C` at the boundary by design when mouse input flowed)
 
 ## What to build
 
@@ -24,13 +24,13 @@ Normal mouse clicks, hover handling, and swipe-to-wheel behavior must continue w
 
 ## Acceptance criteria
 
-- [ ] Pointer movement while a TUI is stalled cannot produce literal SGR mouse strings in the returning shell. _(fails today — reproduced on `test/issue-3-c`; regression pinned as `it.fails`)_
-- [ ] Killing a stalled mouse-enabled TUI leaves a clean, empty shell prompt. _(fails today — reproduced; regression pinned as `it.fails`)_
-- [ ] No queued mouse packet can execute or modify a shell command after the process boundary. _(fails today — leaked packets execute as shell commands in the repro)_
-- [ ] Mouse clicks and swipe-generated wheel packets still reach an active mouse-enabled TUI. _(covered by the existing Playwright browser suite, green)_
-- [ ] Future pointer events remain suppressed after the Mobily shell prompt clears mouse mode. _(covered by the existing Playwright browser suite, green)_
-- [ ] A regression test queues mouse movement before the prompt/process exit and verifies that the shell receives no mouse-report input. _(added as `it.fails` in `cli/tests/queuedMouseReports.integration.test.ts`; remove `.fails` when fixed)_
-- [ ] Clean and abrupt TUI exits are both covered. _(both reproduced: SIGTERM clean exit and SIGKILL abrupt exit leak identically)_
+- [x] Pointer movement while a TUI is stalled cannot produce literal SGR mouse strings in the returning shell. _(fixed: boundary flush discards queued input; stale post-boundary packets dropped)_
+- [x] Killing a stalled mouse-enabled TUI leaves a clean, empty shell prompt. _(fixed + tested; bash shows a transient `^C` above the empty prompt)_
+- [x] No queued mouse packet can execute or modify a shell command after the process boundary. _(fixed + tested: no `command not found` after Enter)_
+- [x] Mouse clicks and swipe-generated wheel packets still reach an active mouse-enabled TUI. _(wire-level reading-TUI test + existing Playwright browser suite)_
+- [x] Future pointer events remain suppressed after the Mobily shell prompt clears mouse mode. _(existing Android suppression, browser suite green; CLI also drops in-flight packets for 1500 ms)_
+- [x] A regression test queues mouse movement before the prompt/process exit and verifies that the shell receives no mouse-report input. _(`cli/tests/queuedMouseReports.integration.test.ts`, abrupt + clean variants)_
+- [x] Clean and abrupt TUI exits are both covered. _(SIGTERM clean exit and SIGKILL abrupt exit, both tested)_
 
 ## Blocked by
 
@@ -68,7 +68,21 @@ Cloud run reproduced the leak headlessly at the PTY boundary (see
   CLI writes every `input` frame straight to the PTY; existing stale-mouse
   suppression only gates future gestures, so a fix must also drain/cover packets
   already queued before the prompt appears.
-- `cli/tests/queuedMouseReports.integration.test.ts` (fixture
-  `cli/tests/fixtures/stalled-mouse-tui.mjs`) contains two bug-characterization
-  tests (pass) and two acceptance regression tests (`it.fails` — remove the
-  marker once fixed). No product source was changed on this branch.
+
+### 2026-07-31 — fix: CLI-side boundary flush (`MouseReportingGuard`)
+
+- The Session now tracks mouse ownership on the output stream and flushes
+  queued input at the `[mobily] ` prompt boundary by writing VINTR when mouse
+  reports were forwarded since the TUI took ownership. DECRST/1049l do not
+  disarm (queued packets predate them; only the prompt proves the shell is
+  reading). In-flight mouse packets are dropped for 1500 ms post-boundary.
+- All seven acceptance criteria pass in the new unit + wire-level integration
+  tests; keyboard-only TUI sessions never trigger the flush (no spurious
+  interrupts). tmux with default `mouse off` neither re-emits DECSET nor lets
+  clients generate mouse packets, so the guard's arming condition matches the
+  leak's precondition on every backend.
+- Trade-off: when mouse input flowed, a TUI exit emits one VINTR — bash shows
+  `^C` above a fresh, empty prompt (zsh/fish show nothing). Chosen over letting
+  `35;5;3M…` execute as a command.
+- Left for a capable host: on-device confirmation with the aggressive hover
+  harness.
