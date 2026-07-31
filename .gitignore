@@ -32,7 +32,6 @@ Thumbs.db
 skills-lock.json
 
 # Local working notes / tool caches
-.scratch/
 .commandcode/
 .cursor/
 website/.vinext/
