@@ -59,6 +59,8 @@ export function pinchTerminalScale(
 export function stripTerminalMouseControls(data: string): string;
 export interface TerminalMouseModeState {
   modes: Record<string, number>;
+  promptTail?: string;
+  alternateScreen?: boolean;
 }
 export function createTerminalMouseModeState(): TerminalMouseModeState;
 export function applyTerminalMouseControls(state: TerminalMouseModeState, data: string): string;
