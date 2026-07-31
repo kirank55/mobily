@@ -43,6 +43,15 @@ orderly after 200: normal baseY 178
 - `android/tests/terminalDocument.test.ts` — matching headless xterm
   characterization + `it.fails` acceptance pin
 
+### Commands and results
+
+| Command | Result |
+| --- | --- |
+| `pnpm --filter @mobily/shared build` | required once (dist missing in fresh env) |
+| `pnpm --filter mobily-android exec vitest run tests/terminalDocument.test.ts` | 16 passed (includes 2 characterizations + 1 `it.fails`) |
+| `pnpm --filter mobily-android test` | 21 files / 84 tests green |
+| `pnpm --filter mobily-android exec playwright test abruptAltScreenScrollback` | 4 passed (3 characterizations + 1 expected-fail regression) |
+
 ## Acceptance criteria status
 
 | Criterion | Result in this run |
