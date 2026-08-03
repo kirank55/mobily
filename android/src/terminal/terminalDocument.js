@@ -101,7 +101,11 @@ export function pinchTerminalScale(initialScale, initialDistance, currentDistanc
 
 /** DEC private modes that enable click / drag / motion mouse reporting. */
 var TERMINAL_MOUSE_REPORTING_PARAMS = { 1000: 1, 1002: 1, 1003: 1 };
+/** DEC private modes that switch the alternate screen buffer. */
+var TERMINAL_ALTERNATE_SCREEN_PARAMS = { 47: 1, 1047: 1, 1049: 1 };
 var MOBILY_SHELL_PROMPT = '[mobily] ';
+/** Leave alternate screen so shell output can accumulate normal-buffer scrollback. */
+var LEAVE_ALTERNATE_SCREEN = '\x1b[?1049l';
 
 /**
  * Strip mouse tracking DECSET/DECRST params (used by the workstation embed).
@@ -116,26 +120,43 @@ export function stripTerminalMouseControls(data) {
   });
 }
 
-/** Mutable mouse-mode tracker for the Android terminal document. */
+/** Mutable mouse-mode / alternate-screen tracker for the Android terminal document. */
 export function createTerminalMouseModeState() {
-  return { modes: {}, promptTail: '' };
+  return { modes: {}, promptTail: '', alternateScreen: false };
 }
 
 /**
  * Preserve DEC mouse controls in `data` while updating whether click reporting
- * is active. Returns `data` unchanged (aside from string identity).
+ * is active. When the Mobily shell prompt returns while xterm is still on the
+ * alternate screen (abrupt TUI exit without DECRST 1049), inject a leave
+ * sequence so subsequent shell output accumulates normal-buffer scrollback.
  */
 export function applyTerminalMouseControls(state, data) {
   if (!state || typeof data !== 'string') return data;
   if (!state.modes) state.modes = {};
-  var stream = (typeof state.promptTail === 'string' ? state.promptTail : '') + data;
+  var promptTail = typeof state.promptTail === 'string' ? state.promptTail : '';
+  var stream = promptTail + data;
   var eventPattern = /\x1b\[\?([0-9;]+)([hl])|\[mobily\] /g;
   var match;
+  var leaveAt = [];
+  var straddlingReplay = '';
   while ((match = eventPattern.exec(stream))) {
     if (match[0] === MOBILY_SHELL_PROMPT) {
       // Mobily owns this prompt prefix, so it is a reliable process boundary:
-      // a TUI has returned to the shell even if it omitted DECRST mouse modes.
+      // a TUI has returned to the shell even if it omitted DECRST mouse modes
+      // or the alternate-screen leave sequence.
       state.modes = {};
+      if (state.alternateScreen) {
+        state.alternateScreen = false;
+        var dataIndex = match.index - promptTail.length;
+        if (dataIndex < 0) {
+          // Prompt completed across chunks: the already-written prefix lived on
+          // the alternate buffer (discarded by leave). Replay it on normal.
+          straddlingReplay = LEAVE_ALTERNATE_SCREEN + promptTail.slice(match.index);
+        } else {
+          leaveAt.push(dataIndex);
+        }
+      }
       continue;
     }
     var parameters = match[1];
@@ -147,13 +168,27 @@ export function applyTerminalMouseControls(state, data) {
     // packets into the shell prompt that becomes visible next.
     if (!enable && values.indexOf('1049') >= 0) state.modes = {};
     values.forEach(function (parameter) {
+      if (TERMINAL_ALTERNATE_SCREEN_PARAMS[parameter]) state.alternateScreen = enable;
       if (!TERMINAL_MOUSE_REPORTING_PARAMS[parameter]) return;
       if (enable) state.modes[parameter] = 1;
       else delete state.modes[parameter];
     });
   }
   state.promptTail = stream.slice(-(MOBILY_SHELL_PROMPT.length - 1));
-  return data;
+  if (!leaveAt.length && !straddlingReplay) return data;
+  var output = data;
+  if (leaveAt.length) {
+    leaveAt.sort(function (a, b) {
+      return b - a;
+    });
+    var last = -1;
+    leaveAt.forEach(function (at) {
+      if (at === last) return;
+      last = at;
+      output = output.slice(0, at) + LEAVE_ALTERNATE_SCREEN + output.slice(at);
+    });
+  }
+  return straddlingReplay ? straddlingReplay + output : output;
 }
 
 export function isTerminalMouseReportingActive(state) {
@@ -381,7 +416,11 @@ export function buildTerminalHelpersSource() {
     'var TERMINAL_MOUSE_REPORTING_PARAMS = ' +
       JSON.stringify(TERMINAL_MOUSE_REPORTING_PARAMS) +
       ';',
+    'var TERMINAL_ALTERNATE_SCREEN_PARAMS = ' +
+      JSON.stringify(TERMINAL_ALTERNATE_SCREEN_PARAMS) +
+      ';',
     'var MOBILY_SHELL_PROMPT = ' + JSON.stringify(MOBILY_SHELL_PROMPT) + ';',
+    'var LEAVE_ALTERNATE_SCREEN = ' + JSON.stringify(LEAVE_ALTERNATE_SCREEN) + ';',
     clampTerminalScale,
     clampTerminalFontSize,
     estimateTerminalCellSize,

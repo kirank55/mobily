@@ -134,6 +134,96 @@ describe('terminal document', () => {
     expect(isTerminalMouseReportingActive(state)).toBe(true);
   });
 
+  it('leaves the alternate screen when the Mobily shell prompt returns without DECRST 1049', () => {
+    const state = createTerminalMouseModeState();
+    expect(applyTerminalMouseControls(state, '\u001b[?1049h\u001b[2J\u001b[HABRUPT')).toBe(
+      '\u001b[?1049h\u001b[2J\u001b[HABRUPT',
+    );
+    expect(state.alternateScreen).toBe(true);
+
+    expect(applyTerminalMouseControls(state, '\r\n[mobily] shell$ ')).toBe(
+      '\r\n\u001b[?1049l[mobily] shell$ ',
+    );
+    expect(state.alternateScreen).toBe(false);
+
+    // Orderly leave already cleared alternate screen — do not inject again.
+    applyTerminalMouseControls(state, '\u001b[?1049h');
+    expect(state.alternateScreen).toBe(true);
+    expect(applyTerminalMouseControls(state, '\u001b[?1049l\r\n[mobily] shell$ ')).toBe(
+      '\u001b[?1049l\r\n[mobily] shell$ ',
+    );
+    expect(state.alternateScreen).toBe(false);
+  });
+
+  it('replays a chunk-straddling Mobily prompt onto the normal screen after abrupt exit', () => {
+    const state = createTerminalMouseModeState();
+    applyTerminalMouseControls(state, '\u001b[?1049h');
+    expect(state.alternateScreen).toBe(true);
+
+    expect(applyTerminalMouseControls(state, '\r\n[mob')).toBe('\r\n[mob');
+    expect(applyTerminalMouseControls(state, 'ily] shell$ ')).toBe(
+      '\u001b[?1049l[mobily] shell$ ',
+    );
+    expect(state.alternateScreen).toBe(false);
+  });
+
+  it('raw xterm without Mobily recovery retains no scrollback after abrupt alt-screen exit', async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+    const terminal = new Terminal({ allowProposedApi: true, cols: 80, rows: 24, scrollback: 5_000 });
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049h\u001b[2J\u001b[HABRUPT TUI', resolve),
+    );
+    await new Promise<void>((resolve) => terminal.write('\r\n[mobily] shell$ ', resolve));
+    await new Promise<void>((resolve) => terminal.write(lines, resolve));
+
+    expect(terminal.buffer.active.type).toBe('alternate');
+    expect(terminal.buffer.active.baseY).toBe(0);
+    terminal.dispose();
+  });
+
+  it('characterization (issue 02): orderly alt-screen exit accumulates normal-screen scrollback', async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+    const terminal = new Terminal({ allowProposedApi: true, cols: 80, rows: 24, scrollback: 5_000 });
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049h\u001b[2J\u001b[HORDERLY TUI', resolve),
+    );
+    await new Promise<void>((resolve) =>
+      terminal.write('\u001b[?1049l\r\n[mobily] shell$ ', resolve),
+    );
+    await new Promise<void>((resolve) => terminal.write(lines, resolve));
+
+    expect(terminal.buffer.active.type).toBe('normal');
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+    terminal.dispose();
+  });
+
+  it('recovers scrollback when Mobily prompt arrives while still in alternate-screen', async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}\r\n`).join('');
+    const terminal = new Terminal({
+      allowProposedApi: true,
+      cols: 80,
+      rows: 24,
+      scrollback: 5_000,
+    });
+    const state = createTerminalMouseModeState();
+    await new Promise<void>((resolve) =>
+      terminal.write(
+        applyTerminalMouseControls(state, '\u001b[?1049h\u001b[2J\u001b[HABRUPT TUI'),
+        resolve,
+      ),
+    );
+    await new Promise<void>((resolve) =>
+      terminal.write(applyTerminalMouseControls(state, '\r\n[mobily] shell$ '), resolve),
+    );
+    await new Promise<void>((resolve) =>
+      terminal.write(applyTerminalMouseControls(state, lines), resolve),
+    );
+
+    expect(terminal.buffer.active.type).toBe('normal');
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+    terminal.dispose();
+  });
+
   it('formats SGR mouse click press and release sequences', () => {
     expect(sgrMouseClickSequence(0, 0)).toBe('\u001b[<0;1;1M\u001b[<0;1;1m');
     expect(sgrMouseClickSequence(42, 11)).toBe('\u001b[<0;43;12M\u001b[<0;43;12m');
