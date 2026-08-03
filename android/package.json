@@ -56,6 +56,8 @@
     "test:browser": "playwright test",
     "prebuild": "expo prebuild --platform android",
     "build:android": "expo run:android",
+    "apk:build": "pnpm generate:terminal-assets && cd android && ./gradlew :app:assembleDebug",
+    "apk:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk",
     "eas-dev": "pnpm install --frozen-lockfile && pnpm exec expo prebuild --platform android --clean && pnpm exec eas build:dev --profile development --platform android",
     "eas-prod": "pnpm exec eas build --profile preview --platform android"
   }
