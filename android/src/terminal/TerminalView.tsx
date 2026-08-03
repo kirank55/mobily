@@ -66,8 +66,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, []);
 
   const requestNativeIme = useCallback(() => {
-    // Native focus makes RNCWebView eligible to become the served input view.
-    webViewRef.current?.requestFocus?.();
     void showTerminalSoftKeyboard().catch((error) => {
       console.warn('[Mobily][Terminal] Failed to show Android soft keyboard', error);
     });
@@ -135,6 +133,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         // Focus the helper textarea in the document first; the document replies
         // with request-ime once DOM focus is set so native showSoftInput runs
         // against a served WebView input connection.
+        // Native focus is requested once before the DOM transition. Repeating
+        // it after the textarea focuses replaces Chromium's WebEditText input
+        // connection with Android's fallback connection on Android 16.
         webViewRef.current?.requestFocus?.();
         postToWebView({ type: 'keyboard', visible: true });
       },

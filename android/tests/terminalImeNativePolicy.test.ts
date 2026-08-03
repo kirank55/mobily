@@ -14,9 +14,10 @@ describe('native terminal IME policy', () => {
   it('serves the WebView input connection before treating showSoftInput as success', () => {
     expect(nativeModule).toContain('Name("MobilyTerminalIme")');
     expect(nativeModule).toContain('AsyncFunction("showSoftKeyboard")');
-    expect(nativeModule).toContain('imm.restartInput(webView)');
+    expect(nativeModule).not.toContain('imm.restartInput(webView)');
     expect(nativeModule).toContain('imm.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT)');
-    expect(nativeModule).toContain('val served = imm.isActive(webView)');
+    expect(nativeModule).toContain('val served = imm.isActive(webView) && imm.isAcceptingText');
+    expect(nativeModule).toContain('isVisible(WindowInsetsCompat.Type.ime()) == true');
     expect(nativeModule).toContain('"served" to true');
     expect(nativeModule).toContain('reason" to "not-served"');
   });

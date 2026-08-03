@@ -8,6 +8,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
@@ -68,13 +70,16 @@ class MobilyTerminalImeModule : Module() {
       return
     }
 
-    webView.isFocusable = true
-    webView.isFocusableInTouchMode = true
-    webView.requestFocus()
-    webView.requestFocusFromTouch()
-
     val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    attemptShow(webView, imm, promise, attemptsRemaining = 12)
+    // Give Chromium a frame to turn the focused DOM textarea into the
+    // WebView's native input connection before asking Android to show the IME.
+    // Do not call restartInput here: Chromium has already created the
+    // WebEditText connection, and restarting the native WebView replaces it
+    // with a fallback connection (inputType=0) on Android 16.
+    webView.postDelayed(
+      { attemptShow(webView, imm, promise, attemptsRemaining = 12) },
+      100L,
+    )
   }
 
   private fun attemptShow(
@@ -84,40 +89,56 @@ class MobilyTerminalImeModule : Module() {
     attemptsRemaining: Int,
   ) {
     if (!webView.isFocused) {
-      webView.requestFocus()
-      webView.requestFocusFromTouch()
+      if (attemptsRemaining <= 0) {
+        promise.resolve(
+          mapOf(
+            "shown" to false,
+            "served" to false,
+            "reason" to "webview-not-focused",
+          ),
+        )
+        return
+      }
+      webView.postDelayed(
+        { attemptShow(webView, imm, promise, attemptsRemaining - 1) },
+        100L,
+      )
+      return
     }
-    // Rebuild the input connection after the document focuses xterm's textarea.
-    imm.restartInput(webView)
     val accepted = imm.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT)
-    val served = imm.isActive(webView)
-
-    if (served) {
-      promise.resolve(
-        mapOf(
-          "shown" to true,
-          "served" to true,
-          "accepted" to accepted,
-        ),
-      )
-      return
-    }
-
-    if (attemptsRemaining <= 0) {
-      promise.resolve(
-        mapOf(
-          "shown" to false,
-          "served" to false,
-          "accepted" to accepted,
-          "reason" to "not-served",
-        ),
-      )
-      return
-    }
-
     webView.postDelayed(
-      { attemptShow(webView, imm, promise, attemptsRemaining - 1) },
-      40L,
+      {
+        val served = imm.isActive(webView) && imm.isAcceptingText
+        val insetsVisible =
+          ViewCompat.getRootWindowInsets(webView)
+            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        // With restartInput removed, accepting text means Chromium's original
+        // WebEditText connection is still served. Insets are retained as an
+        // additional visibility signal for devices that expose them here.
+        val shown = insetsVisible || (accepted && served)
+
+        if (shown) {
+          promise.resolve(
+            mapOf(
+              "shown" to true,
+              "served" to true,
+              "accepted" to accepted,
+            ),
+          )
+        } else if (attemptsRemaining <= 0) {
+          promise.resolve(
+            mapOf(
+              "shown" to false,
+              "served" to false,
+              "accepted" to accepted,
+              "reason" to "not-served",
+            ),
+          )
+        } else {
+          attemptShow(webView, imm, promise, attemptsRemaining - 1)
+        }
+      },
+      100L,
     )
   }
 
