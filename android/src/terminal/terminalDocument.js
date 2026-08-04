@@ -625,8 +625,16 @@ ${VIEWPORT_HELPERS}
     mouseModeState=createTerminalMouseModeState();
     touchGesture=null;
   }
-  function terminalOptions(cols,rows){
-    return {allowProposedApi:true,cursorBlink:true,fontSize:fontSize,cols:cols,rows:rows,
+  function snapshotCursorOptions(cursor){
+    if(!cursor||typeof cursor.blink!=='boolean'||['block','underline','bar'].indexOf(cursor.style)<0){
+      return {cursorBlink:true,cursorStyle:'block'};
+    }
+    return {cursorBlink:cursor.blink,cursorStyle:cursor.style};
+  }
+  function terminalOptions(cols,rows,cursor){
+    var cursorOptions=snapshotCursorOptions(cursor);
+    return {allowProposedApi:true,cursorBlink:cursorOptions.cursorBlink,cursorStyle:cursorOptions.cursorStyle,
+      fontSize:fontSize,cols:cols,rows:rows,
       fontFamily:"'Cascadia Code','JetBrains Mono','Fira Code','Courier New',monospace",
       theme:{background:'#1a1a1a',foreground:'#e6e6e6',cursor:'#e6e6e6',
         black:'#1a1a1a',red:'#da3633',green:'#2ea043',yellow:'#e3b341',
@@ -635,8 +643,8 @@ ${VIEWPORT_HELPERS}
         brightYellow:'#e3b341',brightBlue:'#79c0ff',brightMagenta:'#d2a8ff',
         brightCyan:'#56d4dd',brightWhite:'#f0f6fc'},scrollback:5000,convertEol:false};
   }
-  function openTerminal(container,cols,rows){
-    var next=new Terminal(terminalOptions(cols,rows));
+  function openTerminal(container,cols,rows,cursor){
+    var next=new Terminal(terminalOptions(cols,rows,cursor));
     next.loadAddon(new FitAddon.FitAddon());next.open(container);hardenTerminalTextarea(next);return next;
   }
   function bindTerminalInput(target){
@@ -665,7 +673,7 @@ ${VIEWPORT_HELPERS}
     var nextContainer=document.createElement('div');
     nextContainer.className='terminal-surface';nextContainer.style.visibility='hidden';
     document.getElementById('stage').appendChild(nextContainer);
-    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows);
+    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows,snapshot.cursor);
     nextTerm.write(snapshotAnsi,function(){
       if(token!==snapshotToken){
         nextTerm.dispose();nextContainer.remove();return;
@@ -689,7 +697,7 @@ ${VIEWPORT_HELPERS}
     var nextContainer=document.createElement('div');
     nextContainer.className='terminal-surface';nextContainer.style.visibility='hidden';
     document.getElementById('stage').appendChild(nextContainer);
-    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows);
+    var nextTerm=openTerminal(nextContainer,snapshot.cols,snapshot.rows,snapshot.cursor);
     nextTerm.write(ansi,function(){
       if(token!==snapshotToken){
         nextTerm.dispose();nextContainer.remove();return;

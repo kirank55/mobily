@@ -24,6 +24,9 @@
 /** DEC private modes that enable click / drag / motion mouse reporting. */
 const MOUSE_REPORTING_PARAMS = new Set(['1000', '1002', '1003']);
 
+/** DEC private modes for the alternate screen (save/restore on exit). */
+const ALTERNATE_SCREEN_PARAMS = new Set(['47', '1047', '1049']);
+
 /** Mobily-owned shell prompt prefix: a reliable process boundary. */
 export const MOBILY_SHELL_PROMPT = '[mobily] ';
 
@@ -60,6 +63,12 @@ export class MouseReportingGuard {
   private mouseInputPending = false;
   private suppressUntil = 0;
   private carry = '';
+  /**
+   * After `\x1b[?1049l` the saved main-screen prompt is replayed while the
+   * exiting TUI still owns the tty — flushing there would deliver VINTR to the
+   * TUI, not bash. Defer one flush until the next output chunk.
+   */
+  private flushOnNextOutput = false;
 
   constructor(options: MouseReportingGuardOptions = {}) {
     this.suppressionWindowMs = options.suppressionWindowMs ?? DEFAULT_SUPPRESSION_WINDOW_MS;
@@ -72,13 +81,26 @@ export class MouseReportingGuard {
    * caller should then write {@link MOUSE_REPORTING_BOUNDARY_FLUSH} to the PTY.
    */
   trackOutput(data: string): boolean {
-    if (typeof data !== 'string' || data.length === 0) return false;
+    if (typeof data !== 'string') return false;
+    if (this.flushOnNextOutput && this.reportingArmed && this.mouseInputPending) {
+      this.flushOnNextOutput = false;
+      this.suppressUntil = this.now() + this.suppressionWindowMs;
+      this.reportingArmed = false;
+      this.mouseInputPending = false;
+      return true;
+    }
+    if (data.length === 0) return false;
     const stream = this.carry + data;
     let flush = false;
+    let ignoreNextMobilyPrompt = false;
     BOUNDARY_PATTERN.lastIndex = 0;
     let match;
     while ((match = BOUNDARY_PATTERN.exec(stream))) {
       if (match[0] === MOBILY_SHELL_PROMPT) {
+        if (ignoreNextMobilyPrompt) {
+          ignoreNextMobilyPrompt = false;
+          continue;
+        }
         if (this.reportingArmed && this.mouseInputPending) {
           flush = true;
           this.suppressUntil = this.now() + this.suppressionWindowMs;
@@ -91,10 +113,23 @@ export class MouseReportingGuard {
       // disarm: packets queued while the TUI was stalled predate it, and only
       // the prompt proves the shell — not a still-running TUI — is reading.
       const enable = match[2] === 'h';
-      if (enable && match[1].split(';').some((value) => MOUSE_REPORTING_PARAMS.has(value))) {
+      const params = match[1].split(';');
+      if (
+        !enable &&
+        this.reportingArmed &&
+        this.mouseInputPending &&
+        params.some((value) => ALTERNATE_SCREEN_PARAMS.has(value))
+      ) {
+        // The restored main-screen prompt replays in this chunk while the TUI
+        // still owns the tty; defer the boundary flush until bash is reading.
+        this.flushOnNextOutput = true;
+        ignoreNextMobilyPrompt = true;
+      }
+      if (enable && params.some((value) => MOUSE_REPORTING_PARAMS.has(value))) {
         this.reportingArmed = true;
         // A TUI (re)taking mouse ownership ends stale-packet suppression.
         this.suppressUntil = 0;
+        this.flushOnNextOutput = false;
       }
     }
     this.carry = stream.slice(-(MOBILY_SHELL_PROMPT.length - 1));

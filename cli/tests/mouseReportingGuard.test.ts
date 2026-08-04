@@ -42,6 +42,16 @@ describe('MouseReportingGuard', () => {
     expect(guard.trackOutput('\r\n' + PROMPT)).toBe(true);
   });
 
+  it('ignores the alternate-screen restored prompt and flushes once bash regains control', () => {
+    const guard = new MouseReportingGuard();
+    guard.trackOutput('\x1b[?1049h\x1b[?1003h\x1b[?1006h');
+    guard.trackInput(SGR_MOTION);
+    // `\x1b[?1049l` replays the saved main-screen prompt while the TUI still
+    // owns the tty — flushing there would deliver VINTR to the TUI, not bash.
+    expect(guard.trackOutput('\x1b[?1003l\x1b[?1006l\x1b[?1049l' + PROMPT)).toBe(false);
+    expect(guard.trackOutput('')).toBe(true);
+  });
+
   it('arms from any of the click, drag, and motion DECSET params', () => {
     for (const sequence of ['\x1b[?1000h', '\x1b[?1002h', '\x1b[?1002;1006h', '\x1b[?1003h']) {
       const guard = new MouseReportingGuard();
