@@ -232,10 +232,7 @@ export class Session {
         // PTY reads often coalesce the returning prompt with mouse text the
         // shell already echoed from the pre-boundary queue. A second VINTR
         // aborts that polluted readline when the first interrupt races.
-        if (
-          data.includes(MOBILY_SHELL_PROMPT) &&
-          /(?:\u001b\[<\d+;\d+;\d+[Mm]|\d+;\d+;\d+M)/.test(data)
-        ) {
+        if (data.includes(MOBILY_SHELL_PROMPT) && /\d+;\d+;\d+[Mm]/.test(data)) {
           flushMouseBoundary();
         }
       }
