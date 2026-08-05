@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-05
+
+### Added
+
+- Gradle-based Android APK build and install scripts on the Android package (`android:build:apk` / related package.json scripts), with updated Gradle configuration and assets.
+- Native soft keyboard control for the terminal WebView, plus improved IME handling in `MobilyTerminalImeModule`.
+- Short biometric grace window for Device Key signing on Android.
+- Cursor Cloud environment setup notes in `AGENTS.md`, Android emulator testing docs, and Playwright helpers for terminal debugging.
+
+### Changed
+
+- Enhanced mouse reporting and related terminal options on the CLI/session path.
+- CI workflow optimizations and Android app.json / packaging alignment (app version now `0.1.3`).
+
+### Fixed
+
+- Flush queued mouse reports at the process boundary so they no longer leak into the shell (issue 3).
+- Leave alternate screen when the Mobily prompt returns, recovering scrollback after abrupt alt-screen exit (issue 2).
+- Terminal screen swipe / inner scrolling issues and terminal ownership fixes on Android.
+
 ## [0.1.2] - 2026-07-29
 
 ### Added
@@ -41,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Android Expo client for pairing, live xterm.js terminal, Stations list, foreground session alerts, and native Git controls.
 - Tagged `v*` workflow publishes the CLI to npm and creates a notes-only GitHub Release (no Android APK artifact).
 
+[0.1.3]: https://github.com/kirank55/mobily/releases/tag/v0.1.3
 [0.1.2]: https://github.com/kirank55/mobily/releases/tag/v0.1.2
 [0.1.0]: https://github.com/kirank55/mobily/releases/tag/v0.1.0
