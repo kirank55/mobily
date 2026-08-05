@@ -197,13 +197,21 @@ async function runStalledTuiScenario(
   const postBoundary = client.output();
 
   // A stale in-flight packet right after the boundary must be dropped, then a
-  // normal keypress must find an empty command line.
+  // normal keypress must find an empty command line. After clear(): returning
+  // prompt (+ optional ^C reprint) then Enter's prompt — require ≥2, not 3;
+  // bash does not always emit a separate prompt line for VINTR alone.
   client.sendInput(MOUSE_PACKETS[0]!);
   await sleep(400);
   client.sendInput('\r');
-  await vi.waitFor(() => expect(occurrences(client.output(), PROMPT)).toBeGreaterThanOrEqual(3), {
-    timeout: 10_000,
-  });
+  await vi.waitFor(
+    () => {
+      const out = client.output();
+      expect(out).toContain(FLUSH_MARKER);
+      expect(occurrences(out, PROMPT)).toBeGreaterThanOrEqual(2);
+      expect(out).not.toContain('command not found');
+    },
+    { timeout: 10_000 },
+  );
   const afterEnter = client.output();
 
   return { queuedWhileStalled, postBoundary, afterEnter };

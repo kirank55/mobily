@@ -49,16 +49,31 @@ const PURE_MOUSE_REPORT_INPUT = new RegExp(
 /** DECSET/DECRST sequences and the Mobily prompt, stitched across chunks. */
 const BOUNDARY_PATTERN = new RegExp(`${ESC}\\[\\?([0-9;]+)([hl])|\\[mobily\\] `, 'g');
 
+/** Backup delay when alt-screen exit defers the flush and no further output arrives. */
+const DEFAULT_DEFERRED_FLUSH_MS = 50;
+
 export interface MouseReportingGuardOptions {
   /** Post-boundary stale-packet suppression window. @default 1500 */
   suppressionWindowMs?: number;
+  /**
+   * Backup delay after alternate-screen exit before flushing if no further
+   * PTY output arrives (bash may already be idle at the restored prompt).
+   * @default 50
+   */
+  deferredFlushMs?: number;
   /** Clock, injectable for tests. @default Date.now */
   now?: () => number;
+  /** Timer schedule, injectable for tests. @default setTimeout / clearTimeout */
+  schedule?: (callback: () => void, ms: number) => unknown;
+  cancelSchedule?: (handle: unknown) => void;
 }
 
 export class MouseReportingGuard {
   private readonly suppressionWindowMs: number;
+  private readonly deferredFlushMs: number;
   private readonly now: () => number;
+  private readonly schedule: (callback: () => void, ms: number) => unknown;
+  private readonly cancelSchedule: (handle: unknown) => void;
   private reportingArmed = false;
   private mouseInputPending = false;
   private suppressUntil = 0;
@@ -66,13 +81,33 @@ export class MouseReportingGuard {
   /**
    * After `\x1b[?1049l` the saved main-screen prompt is replayed while the
    * exiting TUI still owns the tty — flushing there would deliver VINTR to the
-   * TUI, not bash. Defer one flush until the next output chunk.
+   * TUI, not bash. Defer one flush until the next output chunk (or the backup
+   * timer, when bash stays silent at the restored prompt).
    */
   private flushOnNextOutput = false;
+  private deferredFlushHandle: unknown = null;
+  private deferredFlushHandler: (() => void) | null = null;
 
   constructor(options: MouseReportingGuardOptions = {}) {
     this.suppressionWindowMs = options.suppressionWindowMs ?? DEFAULT_SUPPRESSION_WINDOW_MS;
+    this.deferredFlushMs = options.deferredFlushMs ?? DEFAULT_DEFERRED_FLUSH_MS;
     this.now = options.now ?? Date.now;
+    this.schedule = options.schedule ?? ((callback, ms) => setTimeout(callback, ms));
+    this.cancelSchedule = options.cancelSchedule ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
+  }
+
+  /**
+   * Invoked when a deferred alternate-screen flush fires without a further
+   * `trackOutput` chunk (Session should write {@link MOUSE_REPORTING_BOUNDARY_FLUSH}).
+   */
+  setDeferredFlushHandler(handler: (() => void) | null): void {
+    this.deferredFlushHandler = handler;
+  }
+
+  /** Cancel a pending deferred flush (Session.dispose). */
+  dispose(): void {
+    this.clearDeferredFlush();
+    this.deferredFlushHandler = null;
   }
 
   /**
@@ -83,11 +118,7 @@ export class MouseReportingGuard {
   trackOutput(data: string): boolean {
     if (typeof data !== 'string') return false;
     if (this.flushOnNextOutput && this.reportingArmed && this.mouseInputPending) {
-      this.flushOnNextOutput = false;
-      this.suppressUntil = this.now() + this.suppressionWindowMs;
-      this.reportingArmed = false;
-      this.mouseInputPending = false;
-      return true;
+      return this.consumeDeferredFlush();
     }
     if (data.length === 0) return false;
     const stream = this.carry + data;
@@ -105,6 +136,7 @@ export class MouseReportingGuard {
           flush = true;
           this.suppressUntil = this.now() + this.suppressionWindowMs;
         }
+        this.clearDeferredFlush();
         this.reportingArmed = false;
         this.mouseInputPending = false;
         continue;
@@ -124,16 +156,44 @@ export class MouseReportingGuard {
         // still owns the tty; defer the boundary flush until bash is reading.
         this.flushOnNextOutput = true;
         ignoreNextMobilyPrompt = true;
+        this.armDeferredFlushTimer();
       }
       if (enable && params.some((value) => MOUSE_REPORTING_PARAMS.has(value))) {
         this.reportingArmed = true;
         // A TUI (re)taking mouse ownership ends stale-packet suppression.
         this.suppressUntil = 0;
-        this.flushOnNextOutput = false;
+        this.clearDeferredFlush();
       }
     }
     this.carry = stream.slice(-(MOBILY_SHELL_PROMPT.length - 1));
     return flush;
+  }
+
+  private consumeDeferredFlush(): boolean {
+    this.clearDeferredFlush();
+    if (!this.reportingArmed || !this.mouseInputPending) return false;
+    this.suppressUntil = this.now() + this.suppressionWindowMs;
+    this.reportingArmed = false;
+    this.mouseInputPending = false;
+    return true;
+  }
+
+  private armDeferredFlushTimer(): void {
+    if (this.deferredFlushHandle !== null) return;
+    this.deferredFlushHandle = this.schedule(() => {
+      this.deferredFlushHandle = null;
+      if (!this.flushOnNextOutput) return;
+      if (!this.consumeDeferredFlush()) return;
+      this.deferredFlushHandler?.();
+    }, this.deferredFlushMs);
+  }
+
+  private clearDeferredFlush(): void {
+    this.flushOnNextOutput = false;
+    if (this.deferredFlushHandle !== null) {
+      this.cancelSchedule(this.deferredFlushHandle);
+      this.deferredFlushHandle = null;
+    }
   }
 
   /**
