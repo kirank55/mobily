@@ -35,7 +35,7 @@ import {
   type SessionStatusFrame,
 } from '@mobily/shared';
 import type { ExitEvent, IDisposable, SpawnOptions } from './pty.js';
-import { MouseReportingGuard, MOUSE_REPORTING_BOUNDARY_FLUSH } from './mouseReportingGuard.js';
+import { MouseReportingGuard, MOBILY_SHELL_PROMPT, MOUSE_REPORTING_BOUNDARY_FLUSH } from './mouseReportingGuard.js';
 import type { AuthManager } from './auth.js';
 import type { RpcRouter } from './rpcRouter.js';
 import { BareBackend } from './sessionBackend/bare.js';
@@ -221,10 +221,24 @@ export class Session {
 
     let initializingScreen = true;
     const pendingInitialOutput: string[] = [];
+    const flushMouseBoundary = (): void => {
+      try {
+        this.backend.write(MOUSE_REPORTING_BOUNDARY_FLUSH);
+      } catch {
+        // PTY already gone — nothing left to flush.
+      }
+    };
+    this.mouseReportingGuard.setDeferredFlushHandler(flushMouseBoundary);
     const acceptBackendOutput = (data: string): void => {
       this.deliverLocalOutput(data);
       if (this.mouseReportingGuard.trackOutput(data)) {
-        this.backend.write(MOUSE_REPORTING_BOUNDARY_FLUSH);
+        flushMouseBoundary();
+        // PTY reads often coalesce the returning prompt with mouse text the
+        // shell already echoed from the pre-boundary queue. A second VINTR
+        // aborts that polluted readline when the first interrupt races.
+        if (data.includes(MOBILY_SHELL_PROMPT) && /\d+;\d+;\d+[Mm]/.test(data)) {
+          flushMouseBoundary();
+        }
       }
       this.screen.write(data, () => {
         this.broadcast({ type: 'output', data });
@@ -639,6 +653,7 @@ export class Session {
   private handleExit(event: ExitEvent): void {
     this.exited = true;
     this.exitEvent = event;
+    this.mouseReportingGuard.dispose();
     this.sizeOwnership.clearSizeClaimants();
     this.sizeOwner = undefined;
     const localTerminal = this.localTerminal;
@@ -666,6 +681,7 @@ export class Session {
   dispose(): void {
     this.exited = true;
     if (this.revocationSweep) clearInterval(this.revocationSweep);
+    this.mouseReportingGuard.dispose();
     this.onDataDisposable.dispose();
     this.onExitDisposable.dispose();
     this.alertDetector.dispose();

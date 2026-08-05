@@ -49,7 +49,59 @@ describe('MouseReportingGuard', () => {
     // `\x1b[?1049l` replays the saved main-screen prompt while the TUI still
     // owns the tty — flushing there would deliver VINTR to the TUI, not bash.
     expect(guard.trackOutput('\x1b[?1003l\x1b[?1006l\x1b[?1049l' + PROMPT)).toBe(false);
-    expect(guard.trackOutput('')).toBe(true);
+    expect(guard.trackOutput('\r\n')).toBe(true);
+  });
+
+  it('flushes on the backup timer when bash stays silent after alternate-screen exit', () => {
+    const timers: Array<{ cb: () => void; ms: number }> = [];
+    let deferredWrites = 0;
+    const guard = new MouseReportingGuard({
+      deferredFlushMs: 50,
+      schedule: (callback, ms) => {
+        timers.push({ cb: callback, ms });
+        return timers.length;
+      },
+      cancelSchedule: () => undefined,
+    });
+    guard.setDeferredFlushHandler(() => {
+      deferredWrites += 1;
+    });
+    guard.trackOutput('\x1b[?1049h\x1b[?1003h\x1b[?1006h');
+    guard.trackInput(SGR_MOTION);
+    expect(guard.trackOutput('\x1b[?1003l\x1b[?1006l\x1b[?1049l' + PROMPT)).toBe(false);
+    expect(timers).toHaveLength(1);
+    expect(timers[0]!.ms).toBe(50);
+    timers[0]!.cb();
+    expect(deferredWrites).toBe(1);
+    // Disarmed: a later prompt must not flush again.
+    expect(guard.trackOutput(PROMPT)).toBe(false);
+  });
+
+  it('cancels a pending deferred flush on dispose', () => {
+    const timers: Array<{ cb: () => void }> = [];
+    const cancelled: unknown[] = [];
+    let deferredWrites = 0;
+    const guard = new MouseReportingGuard({
+      schedule: (callback) => {
+        timers.push({ cb: callback });
+        return timers.length;
+      },
+      cancelSchedule: (handle) => {
+        cancelled.push(handle);
+      },
+    });
+    guard.setDeferredFlushHandler(() => {
+      deferredWrites += 1;
+    });
+    guard.trackOutput('\x1b[?1049h\x1b[?1003h\x1b[?1006h');
+    guard.trackInput(SGR_MOTION);
+    guard.trackOutput('\x1b[?1003l\x1b[?1006l\x1b[?1049l' + PROMPT);
+    expect(timers).toHaveLength(1);
+    guard.dispose();
+    expect(cancelled).toHaveLength(1);
+    // A timer callback still firing after dispose must be inert.
+    timers[0]!.cb();
+    expect(deferredWrites).toBe(0);
   });
 
   it('arms from any of the click, drag, and motion DECSET params', () => {

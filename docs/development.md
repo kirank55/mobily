@@ -63,13 +63,45 @@ Scan the CLI QR from the app pair screen.
 For starting, checking, stopping, and troubleshooting the local Android
 emulator, see [`android-emulator.md`](android-emulator.md).
 
-## Publishing the CLI
+## Release format
 
-Tagged releases (`v*`) run [`.github/workflows/release.yml`](../.github/workflows/release.yml),
-which builds the CLI, publishes `mobily` to npm, and creates a notes-only GitHub
-Release (no Android APK upload). Requires the `NPM_TOKEN` repository secret.
+One product version ships the CLI (npm) and the Android APK (GitHub Releases
+asset) together. Example: [v0.1.3](https://github.com/kirank55/mobily/releases/tag/v0.1.3).
 
-Local dry-run (or `scripts/verify-cli-publish.sh`):
+### Version identity
+
+| Field | Value |
+| --- | --- |
+| Semver | `X.Y.Z` (no `v` prefix in package manifests) |
+| Git tag / GitHub Release | `vX.Y.Z` |
+| CLI | [`cli/package.json`](../cli/package.json) `version` → published as `mobily@X.Y.Z` |
+| Android | [`android/package.json`](../android/package.json) `version` **and** [`android/app.json`](../android/app.json) `expo.version` → same `X.Y.Z` |
+| Application ID | `io.github.kirank55.mobily` (unchanged across releases) |
+| Changelog | [`CHANGELOG.md`](../CHANGELOG.md) — [Keep a Changelog](https://keepachangelog.com/); move `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` and add the compare footer link |
+
+`@mobily/shared` stays private/`0.0.0`; it is bundled into the CLI via tsup
+(`noExternal`) and must not appear in published CLI runtime `dependencies`.
+
+### Cut checklist
+
+1. Branch from clean `main`: `release/X.Y.Z`.
+2. Bump the three version fields above and write the CHANGELOG section.
+3. Open a PR, merge to `main`.
+4. On `main`, tag and push:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+5. Tag push runs [`.github/workflows/release.yml`](../.github/workflows/release.yml)
+   (needs `NPM_TOKEN`): build CLI → `npm publish` → create the GitHub Release
+   `vX.Y.Z` with install notes. The workflow does **not** build or upload an APK.
+6. Build and attach the Gradle debug APK to that same release (see below).
+7. Smoke: `npm view mobily version` / `npx mobily@X.Y.Z --version`, and install
+   the APK from the release page.
+
+CLI pack dry-run before tagging (`scripts/verify-cli-publish.sh` or):
 
 ```bash
 pnpm --filter @mobily/shared build
@@ -77,27 +109,23 @@ pnpm --filter mobily build
 cd cli && npm pack --dry-run
 ```
 
-`@mobily/shared` is bundled into the CLI via tsup (`noExternal`) and must not
-appear in published runtime `dependencies`.
+### Android APK asset
 
-## Publishing the Android APK
+No Play Store listing. Attach one APK to the **`vX.Y.Z`** release (not a separate
+tag). Preferred build is local Gradle debug via the Android package scripts
+(requires a generated native tree under `android/android/` — run
+`pnpm --filter mobily-android prebuild` if missing):
 
-The Android app ships as a pre-release APK attached to a GitHub Release (for
-example tag `0.0.1`). There is no Play Store listing, and the release workflow
-does not build the APK — attach it manually:
+```bash
+pnpm --filter mobily-android apk:build
+# output: android/android/app/build/outputs/apk/debug/app-debug.apk
+cp android/android/app/build/outputs/apk/debug/app-debug.apk mobily-X.Y.Z.apk
+gh release upload vX.Y.Z mobily-X.Y.Z.apk --clobber
+rm mobily-X.Y.Z.apk   # do not commit the APK
+```
 
-1. Confirm `android/app.json`: `version` and `android.package` define the APK
-   identity (`io.github.kirank55.mobily`).
-2. Build the APK with the EAS `preview` profile (internal distribution):
+Asset naming convention: `mobily-X.Y.Z.apk`. Local install without uploading:
+`pnpm --filter mobily-android apk:install`.
 
-   ```bash
-   pnpm --filter mobily-android eas-prod
-   ```
-
-3. Download the finished artifact from the EAS build page and create a
-   pre-release with it:
-
-   ```bash
-   gh release create <tag> --prerelease --title <tag> \
-     --notes "Pre-release APK for testing." app.apk
-   ```
+Optional alternative: EAS preview (`pnpm --filter mobily-android eas-prod`), then
+upload that artifact to the same `vX.Y.Z` release with the same filename.
