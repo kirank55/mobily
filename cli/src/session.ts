@@ -234,7 +234,7 @@ export class Session {
         // aborts that polluted readline when the first interrupt races.
         if (
           data.includes(MOBILY_SHELL_PROMPT) &&
-          /(?:\x1b\[<\d+;\d+;\d+[Mm]|\d+;\d+;\d+M)/.test(data)
+          /(?:\u001b\[<\d+;\d+;\d+[Mm]|\d+;\d+;\d+M)/.test(data)
         ) {
           flushMouseBoundary();
         }
