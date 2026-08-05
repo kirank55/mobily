@@ -222,7 +222,11 @@ export class Session {
     let initializingScreen = true;
     const pendingInitialOutput: string[] = [];
     const flushMouseBoundary = (): void => {
-      this.backend.write(MOUSE_REPORTING_BOUNDARY_FLUSH);
+      try {
+        this.backend.write(MOUSE_REPORTING_BOUNDARY_FLUSH);
+      } catch {
+        // PTY already gone — nothing left to flush.
+      }
     };
     this.mouseReportingGuard.setDeferredFlushHandler(flushMouseBoundary);
     const acceptBackendOutput = (data: string): void => {
@@ -649,6 +653,7 @@ export class Session {
   private handleExit(event: ExitEvent): void {
     this.exited = true;
     this.exitEvent = event;
+    this.mouseReportingGuard.dispose();
     this.sizeOwnership.clearSizeClaimants();
     this.sizeOwner = undefined;
     const localTerminal = this.localTerminal;

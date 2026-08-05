@@ -77,6 +77,33 @@ describe('MouseReportingGuard', () => {
     expect(guard.trackOutput(PROMPT)).toBe(false);
   });
 
+  it('cancels a pending deferred flush on dispose', () => {
+    const timers: Array<{ cb: () => void }> = [];
+    const cancelled: unknown[] = [];
+    let deferredWrites = 0;
+    const guard = new MouseReportingGuard({
+      schedule: (callback) => {
+        timers.push({ cb: callback });
+        return timers.length;
+      },
+      cancelSchedule: (handle) => {
+        cancelled.push(handle);
+      },
+    });
+    guard.setDeferredFlushHandler(() => {
+      deferredWrites += 1;
+    });
+    guard.trackOutput('\x1b[?1049h\x1b[?1003h\x1b[?1006h');
+    guard.trackInput(SGR_MOTION);
+    guard.trackOutput('\x1b[?1003l\x1b[?1006l\x1b[?1049l' + PROMPT);
+    expect(timers).toHaveLength(1);
+    guard.dispose();
+    expect(cancelled).toHaveLength(1);
+    // A timer callback still firing after dispose must be inert.
+    timers[0]!.cb();
+    expect(deferredWrites).toBe(0);
+  });
+
   it('arms from any of the click, drag, and motion DECSET params', () => {
     for (const sequence of ['\x1b[?1000h', '\x1b[?1002h', '\x1b[?1002;1006h', '\x1b[?1003h']) {
       const guard = new MouseReportingGuard();
