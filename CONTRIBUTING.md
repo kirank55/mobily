@@ -14,7 +14,8 @@ Thanks for helping with Mobily.
 - Match existing TypeScript style and naming.
 - Run the supported gate from `docs/development.md` before requesting review.
 - Update docs when behavior users see changes (README, CHANGELOG for releases).
-- Do not commit secrets, local `.scratch/` notes, or machine-specific paths.
+- Cutting a versioned release (tag, npm, Gradle APK): see [Release format](docs/development.md#release-format).
+- Do not commit secrets, local `.scratch/` notes, machine-specific paths, or APK binaries.
 
 ## Security
 

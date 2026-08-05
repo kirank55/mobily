@@ -165,13 +165,13 @@ Normal CLI shutdown detaches Mobily; it does not kill a tmux Session. Use `--kil
 
 | Platform | Status |
 | --- | --- |
-| **Android** | Pre-release APK on [GitHub Releases](https://github.com/kirank55/mobily/releases), or build the Expo app locally with Expo / EAS (`pnpm --filter mobily-android android`; see [docs/development.md](docs/development.md)). Tagged `v*` releases publish the CLI to npm. |
+| **Android** | APK on [GitHub Releases](https://github.com/kirank55/mobily/releases) (`mobily-X.Y.Z.apk` on tag `vX.Y.Z`), or build locally (`pnpm --filter mobily-android android` / `apk:build`; see [docs/development.md](docs/development.md#release-format)). Tagged `v*` releases also publish the CLI to npm. |
 | **iOS** | Not available yet |
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — package map and runtime shape
-- [Local development](docs/development.md) — monorepo install and test gate
+- [Local development](docs/development.md) — monorepo install, test gate, and [release format](docs/development.md#release-format)
 - [Domain glossary](CONTEXT.md) — canonical terminology
 - [ADRs](docs/adr/) — architectural decision records
 - [Contributing](CONTRIBUTING.md)
